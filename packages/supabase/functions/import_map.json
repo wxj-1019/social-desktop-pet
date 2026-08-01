@@ -1,7 +1,0 @@
-{
-  "imports": {
-    "@pet/protocol": "../../protocol/src/index.ts",
-    "@pet/config": "../../config/src/index.ts",
-    "@pet/ai-graph": "../../ai-graph/src/index.ts"
-  }
-}

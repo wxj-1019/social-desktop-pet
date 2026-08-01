@@ -17,14 +17,16 @@
 
 ## 技术栈
 
-| 层       | 技术                                                              |
-| -------- | ----------------------------------------------------------------- |
-| 桌面端   | Electron + electron-vite + React + TypeScript                     |
-| 表现     | Live2D Cubism SDK for Web（许可待确认）                           |
-| 后端     | Supabase（PostgreSQL + RLS + Realtime + Edge Functions）          |
-| 记忆     | PostgreSQL + pgvector（HNSW + hybrid 检索）                       |
-| Graph    | 自研轻量状态图运行时（`@pet/ai-graph`，LangGraph 启发，依赖无关） |
-| Monorepo | pnpm workspaces                                                   |
+| 层       | 技术                                                                      |
+| -------- | ------------------------------------------------------------------------- |
+| 桌面端   | Electron + electron-vite + React + TypeScript                             |
+| 表现     | Live2D Cubism SDK for Web（许可待确认）                                   |
+| 后端     | 自建（D-13）：Postgres 社区版 + Node（Hono HTTP + WebSocket + 自建 Auth） |
+| 记忆     | PostgreSQL + pgvector（HNSW + hybrid 检索）                               |
+| Graph    | 自研轻量状态图运行时（`@pet/ai-graph`，LangGraph 启发，依赖无关）         |
+| Monorepo | pnpm workspaces                                                           |
+
+> **后端选型（2026-08-01 依 D-13）**：放弃 Supabase 托管改为自建 Postgres + Node——软件费 0（VPS 成本见设计稿 12.6）；9.9 migrations（纯 SQL + pgvector）原样复用，记忆检索方案不变；AI Gateway 直接在 Node 服务跑 `@pet/ai-graph`。
 
 ## 快速开始
 
@@ -38,21 +40,19 @@ pnpm test          # 单测（含 graph runtime 自测，alias 到源码不依�
 pnpm dev           # 启动桌面端（renderer 直接吃共享包源码，无需先 build）
 ```
 
-Supabase 后端（需 [Supabase CLI](https://supabase.com/docs/guides/cli) 与 Docker，项目根在 `packages/supabase`）：
+自建后端（需 Docker 或本地 Postgres 16）：
 
 ```bash
-cd packages/supabase
-supabase start        # 启动本地栈
-supabase db reset     # 应用 migrations（9.9 schema + RLS + pgvector）
-supabase functions serve  # 本地跑 Edge Functions（bundle 共享包）
+docker run -d --name pet-pg -e POSTGRES_PASSWORD=pet -p 5432:5432 postgres:16
+cp apps/server/.env.example apps/server/.env.local   # 填 DATABASE_URL / JWT_SECRET
+pnpm dev:server        # 启动（自动应用未执行的 migrations，幂等）
 ```
 
 ## 为什么自研 graph runtime 而非直接用 LangGraph.js
 
-1. Supabase Edge Functions 跑在 Deno，LangGraph.js 偏 Node 有兼容风险
-2. 设计稿 10.1 是固定 DAG（非自由 agent 探索），轻量 runtime（~300 LOC）足够且更可控
-3. 依赖无关 → 可在 Deno / Node / 浏览器（测试）三处复用
-4. 节点函数保持纯函数，未来可无痛迁移到 LangGraph.js
+1. 设计稿 10.1 是固定 DAG（非自由 agent 探索），轻量 runtime（~300 LOC）足够且更可控
+2. 依赖无关 → 可在 Node（`apps/server` 原生加载）/ 浏览器（测试）两处复用
+3. 节点函数保持纯函数，未来可无痛迁移到 LangGraph.js
 
 运行时见 [`packages/ai-graph/src/runtime/`](packages/ai-graph/src/runtime/)，核心图定义见 [`chat-flow.ts`](packages/ai-graph/src/graphs/chat-flow.ts)。
 

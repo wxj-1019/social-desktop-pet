@@ -11,7 +11,9 @@
   },
   "scripts": {
     "dev": "pnpm --filter @pet/desktop dev",
-    "build": "pnpm -r --filter=./packages/* build && pnpm --filter @pet/desktop build",
+    "dev:server": "pnpm --filter @pet/server dev",
+    "migrate": "pnpm --filter @pet/server migrate",
+    "build": "pnpm -r --filter=./packages/* build && pnpm --filter @pet/desktop build && pnpm --filter @pet/server typecheck",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -21,11 +23,9 @@
     "test:watch": "vitest",
     "test:e2e": "pnpm --filter @pet/desktop build && playwright test --config e2e/playwright.config.ts",
     "bench:resources": "node tools/bench/resource-bench.mjs",
-    "bench:presence": "node tools/bench/measure-presence.mjs",
+    "bench:ws": "node tools/bench/measure-ws.mjs",
     "clean": "pnpm -r exec rimraf dist node_modules/.cache .turbo || true",
-    "prepare": "husky",
-    "deno:check": "deno check --config packages/supabase/deno.json packages/supabase/functions/chat/index.ts || echo 'deno 未安装，跳过（CI 会检查）'",
-    "deno:lint": "deno lint --config packages/supabase/deno.json packages/supabase/functions/ || echo 'deno 未安装，跳过（CI 会检查）'"
+    "prepare": "husky"
   },
   "lint-staged": {
     "*.{ts,tsx,mjs,json}": [
@@ -40,7 +40,6 @@
     "@pet/eslint-config": "workspace:*",
     "@pet/tsconfig": "workspace:*",
     "@playwright/test": "^1.62.1",
-    "@supabase/realtime-js": "^2.10.0",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
     "eslint": "^9.12.0",

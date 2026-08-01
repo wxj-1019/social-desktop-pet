@@ -7,6 +7,7 @@
     { "path": "packages/config" },
     { "path": "packages/ai-graph" },
     { "path": "packages/pet-state" },
-    { "path": "packages/ui" }
+    { "path": "packages/ui" },
+    { "path": "apps/server" }
   ]
 }

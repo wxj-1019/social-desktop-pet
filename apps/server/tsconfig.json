@@ -1,0 +1,11 @@
+{
+  "extends": "@pet/tsconfig/node.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "out",
+    "composite": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}

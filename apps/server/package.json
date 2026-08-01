@@ -1,0 +1,32 @@
+{
+  "name": "@pet/server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "自建后端（D-13）：Postgres + Node（HTTP + WebSocket + 自建 Auth）",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -b",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -b",
+    "migrate": "tsx src/db/migrate.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@pet/ai-graph": "workspace:*",
+    "@pet/protocol": "workspace:*",
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.6.0",
+    "jose": "^5.9.0",
+    "pg": "^8.13.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "@types/pg": "^8.11.10",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.0",
+    "vitest": "^2.1.9"
+  }
+}

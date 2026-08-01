@@ -45,7 +45,8 @@
 ```text
 Electron + TypeScript
 Live2D Cubism SDK for Web
-Supabase Auth + PostgreSQL + Realtime
+PostgreSQL + pgvector 记忆（社区版免费，自建）
+自建 Node 服务：Auth + WebSocket + HTTP（依 D-13，替代 Supabase 托管）
 PostgreSQL + pgvector 记忆
 自有 AI Gateway + 付费模型 API
 HTTPS 权威命令 + WebSocket 事件通知
@@ -759,27 +760,26 @@ MVP 只支持整窗穿透切换，不承诺透明像素自动穿透。**Electron
 
 ### 9.1 推荐栈
 
-- Supabase Auth；
-- Supabase PostgreSQL；
-- PostgreSQL Row Level Security；
-- Supabase Realtime private Broadcast 与 Presence；
-- Supabase Edge Functions + 少量 SQL RPC；
-- PostgreSQL `pgvector`；
-- 对象存储；
-- 事务邮件服务；
-- 必要时单独部署 AI Gateway/Worker。
+> **2026-08-01 依 D-13 修订（用户拍板）**：放弃 Supabase 托管，改为**自建 Postgres + Node**——软件费 0，VPS 成本见 12.6；原 Supabase 套餐/并发档决策（D-9）作废。migrations（纯 SQL + pgvector）与记忆检索方案零改动；Deno Edge Functions 改为 Node 路由（`apps/server`，直接跑 `@pet/ai-graph` 状态图，比 Deno import_map 解析更顺）。
+
+- 自建 Node 服务（`apps/server`）：HTTP（Hono）+ WebSocket（ws）；
+- PostgreSQL 社区版（免费）+ `pgvector` 开源扩展——**9.9 migrations 原样复用**；
+- 自建 Auth：JWT（access 短 TTL + refresh 轮换）+ `devices.revoked_at` 撤销（替代 Supabase Auth/GoTrue）；
+- 自建 Realtime：WebSocket 长连接 + 收件箱投递 + 在线状态心跳（替代 Supabase Realtime Broadcast/Presence）；
+- PostgreSQL Row Level Security 保留作**纵深防御**，好友/羁绊权限以**应用层校验**为主（9.3）；
+- 对象存储（S3 兼容，Cloudflare R2 免费出口）、事务邮件（Resend/Postmark）为旁路服务；
+- AI Gateway 直接部署在 `apps/server`（Node 原生跑 chat-flow 状态图）。
 
 首版不引入 Redis、Kafka、Kubernetes、自建 WebSocket 集群、独立向量数据库或 WebRTC。
 
-**Supabase 关键限制（2026-08 核实）**：
+**自建后端关键约束（2026-08-01 依 D-13）**：
 
-- **Pro 档 500 并发连接为硬技术上限**（非计费配额），超过触发 `too_many_connections` 并**拒绝新连接**。桌宠是常驻桌面产品，并发率天然高于普通 Web 应用；1000 MAU 在线峰值 40–60% 即达 400–600。依 D-9 决策，封测期从一开始即关闭 spend cap 进入 10,000 连接档（仍按 $10/1000 峰值连接计超额），并设置并发连接告警。
-- **Presence 心跳可能是隐藏成本黑洞**：Presence 本质是 Broadcast 同步，常驻连接若每 10 秒同步一次，理论月消息量可达亿级。须在第 1–2 周 PoC 实测真实计费量（见 V-10），并据此回填 12.6 成本区间。
-- **Broadcast 默认不持久化**；仅当消息从数据库函数发出时才写入 `realtime.messages`，且**最多保留 72 小时**。这是快速重连的窗口上限（见 9.5）。
-- 封测使用 **Pro $25/月** 即足够（勿默认 Team $299）；Edge Function 冷启动优化后约 120–200ms，但高频低延迟事件（Presence/正在输入）应直接走 Realtime Broadcast，不经 Edge Function。
-- 当 Realtime 峰值连接成本超过阈值（如 $150/月）时，评估将收件箱 WebSocket 迁移到 Cloudflare Durable Objects + WebSocket Hibernation（长连接几乎不计费），作为 P1 优化项。
+- **运维责任回归团队**：备份、监控、升级、证书、容灾显式列入 14.2 排期；这是当初选托管的主要原因，代价已接受。
+- **资源上限从"平台配额"变成"VPS 资源"**：数据库连接池、WS 并发、带宽流量是自建方案的主战场；VPS 档位与并发量匹配待 V-10 压测回填（原"10,000 连接档/超额计费"问题随托管作废）。
+- **9.5 快速重连窗口**：原 Supabase Broadcast 72 小时上限改为服务端 retention 配置（`realtime.messages` 或等价表），语义不变。
+- **模型供应商密钥**只存服务端环境变量（8.3 要求不变）。
 
-参考 [Supabase Realtime Limits](https://supabase.com/docs/guides/realtime/limits)、[Realtime Pricing](https://supabase.com/docs/guides/realtime/pricing)、[Cloudflare Durable Objects](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)。
+参考 [ws（WebSocket）](https://github.com/websockets/ws)、[Hono](https://hono.dev/)、[pgvector](https://github.com/pgvector/pgvector)、[PostgreSQL 备份与监控](https://www.postgresql.org/docs/current/backup.html)。
 
 ### 9.2 通信方式
 
@@ -827,7 +827,7 @@ WSS：接收实时事件和在线软状态
 6. HTTP 响应和 WebSocket 事件使用同一 `eventId`；
 7. 客户端去重并更新自己的 `inboxSeq` 游标。
 
-数据库提交才代表成功，Broadcast 只代表低延迟通知。
+数据库提交才代表成功，WebSocket 通知只代表低延迟通知。
 
 ### 9.5 事件可靠性
 
@@ -839,7 +839,7 @@ WSS：接收实时事件和在线软状态
 
 **补偿双路径（2026-08 补充）**：
 
-- **快速路径（Broadcast Replay，72 小时窗口）**：仅当消息从数据库函数发出时才写入 `realtime.messages`，最多保留 72 小时。适用于"短时断线重连"（如睡眠恢复）的低延迟补齐。
+- **快速路径（服务端消息留存窗口，默认 72 小时）**：提交后写入 `realtime.messages`（自建服务 retention 配置，9.1；原 Supabase Broadcast 72 小时上限改为等价策略）。适用于"短时断线重连"（如睡眠恢复）的低延迟补齐。
 - **慢路径（`/sync`，A 类永久）**：A 类事件经事务持久化到 `user_inbox`，理论上可永久补齐。客户端发现序列缺口或离线超过 72 小时时调用 `/sync?afterInboxSeq=<n>`。
 
 **`/sync` 分页与游标策略**：
@@ -866,7 +866,7 @@ WSS：接收实时事件和在线软状态
 
 MVP 允许用户在新设备登录，但同一账号只能注册一台 `active_display_device_id`。激活新设备会停用旧设备的拜访播放并撤销旧设备刷新会话；旧设备需要重新激活才能继续使用云端功能。跨设备聊天历史的无缝同步与并发切换不作为 MVP 验收目标。桌宠位置、缩放、穿透和显示器设置属于设备本地数据。
 
-**撤销双保险（2026-08 补充）**：Supabase Auth 的 `signOut({ scope: 'others' })` 可撤销其他设备的 refresh token，但 access token 是无状态的，**过期前仍有效**（几分钟~1 小时）。因此"立即停用旧设备"不能仅靠 Auth 撤销，必须叠加应用层：每次拜访/命令落库时校验 `active_display_device_id` 是否等于当前设备，不等则拒绝（9.3 已覆盖方向）。建议 access token TTL 设短（如 15 分钟）以缩小撤销滞后窗口。
+**撤销双保险（2026-08 补充；2026-08-01 依 D-13 修订实现）**：服务端撤销 refresh token（写入 `devices.revoked_at`，原 Supabase Auth `signOut({ scope: 'others' })` 由自建 Auth 等价实现），但 access token 是无状态的，**过期前仍有效**（几分钟~1 小时）。因此"立即停用旧设备"不能仅靠 Auth 撤销，必须叠加应用层：每次拜访/命令落库时校验 `active_display_device_id` 是否等于当前设备，不等则拒绝（9.3 已覆盖方向）。建议 access token TTL 设短（如 15 分钟）以缩小撤销滞后窗口。
 
 ### 9.9 核心数据模型
 
@@ -910,11 +910,10 @@ reports(...)
 
 参考：
 
-- [Supabase Realtime](https://supabase.com/docs/guides/realtime)
-- [Supabase Broadcast](https://supabase.com/docs/guides/realtime/broadcast)
-- [Supabase Presence](https://supabase.com/docs/guides/realtime/presence)
-- [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security)
-- [Supabase Realtime Limits](https://supabase.com/docs/guides/realtime/limits)
+- [PostgreSQL RLS](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)
+- [jose（JWT，自建 Auth）](https://github.com/panva/jose)
+- [ws（WebSocket 服务端）](https://github.com/websockets/ws)
+- [pg（Node Postgres 驱动）](https://node-postgres.com/)
 
 ---
 
@@ -1311,19 +1310,20 @@ MVP 只向 100–300 名受邀测试者开放。测试者所在地必须位于�
 
 ### 12.6 基础设施量级
 
-> **修订（2026-08）**：初稿"封测 $155–950/月"下限不成立——Supabase Pro $25 之外，事务邮件、对象存储 CDN、Sentry、域名监控等必需项合计即超 $155。补全遗漏项后修订如下。详见[调研发现 §6](./2026-08-01-research-findings.md)。
+> **修订（2026-08）**：初稿"封测 $155–950/月"下限不成立——事务邮件、对象存储 CDN、Sentry、域名监控等必需项合计即超 $155。补全遗漏项后修订如下。详见[调研发现 §6](./2026-08-01-research-findings.md)。
+> **再修订（2026-08-01 依 D-13）**：删 Supabase Pro $25 与 Realtime 超额行，改为自建 VPS 行（含带宽）；区间下限下调。VPS 档位依 V-10 压测回填。
 
-封测 500–1,000 MAU：约 **US$80–500/月（不含 AI token）**。
+封测 500–1,000 MAU：约 **US$65–475/月（不含 AI token）**。
 
-| 项                                                    | 月成本（封测量级） |
-| ----------------------------------------------------- | -----------------: |
-| Supabase Pro（勿默认 Team $299）                      |                $25 |
-| 事务邮件（邮箱 OTP，Resend/Postmark）                 |             $20–80 |
-| 对象存储 + CDN（Live2D 资源，Cloudflare R2 出口免费） |              $5–50 |
-| 崩溃报告（Sentry）                                    |             $26–80 |
-| 域名 + DNS + 监控                                     |             $15–40 |
-| AI Gateway / Worker 自部署                            |             $0–100 |
-| Supabase Realtime 超额（Presence/连接，依 V-10 实测） |             待回填 |
+| 项                                                      | 月成本（封测量级） |
+| ------------------------------------------------------- | -----------------: |
+| VPS（2C4G 起，自建 Postgres + Node + WS；依 V-10 定档） |              $5–60 |
+| 事务邮件（邮箱 OTP，Resend/Postmark）                   |             $20–80 |
+| 对象存储 + CDN（Live2D 资源，Cloudflare R2 出口免费）   |              $5–50 |
+| 崩溃报告（Sentry）                                      |             $26–80 |
+| 域名 + DNS + 监控                                       |             $15–40 |
+| 备份存储（Postgres 全量 + WAL，S3/本地冷备）            |              $0–30 |
+| AI Gateway（与 VPS 同机部署，无独立成本）               |                 $0 |
 
 初期 5,000–10,000 MAU：约 US$1,300–8,800/月（拆分为基础设施 $400–1,500 + AI token $900–7,000，避免混合）。
 
@@ -1448,7 +1448,7 @@ macOS：Beta 后第一个版本（D-2）——仅 Apple Silicon；支持发布�
 - 先完成 Electron 同模型 PoC；仅在 Electron 未达明确资源门槛且根因为壳层时，追加最多 5 个工作日的 Tauri 评估；
 - Windows 透明、穿透、多屏（含 D-7 逐像素穿透体验实测、Electron ≥42.8.0 验证；macOS 待 Beta 后）；
 - 资源基线；
-- Supabase Auth/Realtime/RLS PoC（含 V-10 Presence 计费实测）；
+- 自建 Auth/WebSocket/RLS PoC（含 V-10 自建 WS 并发与 VPS 档位压测）；
 - 模型质量、成本、数据条款；
 - 数据地图与威胁模型。
 
@@ -1713,16 +1713,17 @@ macOS：Beta 后第一个版本（D-2）——仅 Apple Silicon；支持发布�
 
 **修订清单**（对应决策清单 R-9 到 R-16，均已按用户确认的决策方案执行）：
 
-| 编号 | 章节                   | 修订摘要                                                                                                                                                                                                                              |
-| ---- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R-9  | 10.5、10.6、10.7       | 记忆五层半分层（+episodic/semantic/反思层）；新字段（importance/memory_status/superseded_by/source_type/namespace）；写入流水（仅 owner turn 抽取+去重裁决 ADD/UPDATE/DELETE/NOOP）；hybrid 检索（RRF+时间衰减+重要性）；时态失效语义 |
-| R-10 | 11.2                   | 三道→四道隔离（+检索审计+输出侧校验）；embedding 按明文静态加密；RLS 第二道+分表/分区                                                                                                                                                 |
-| R-11 | 4.4、4.5、15.3         | 北极星降级为目标指标+封测期主指标（W1 留存+7 日配对率）；数字校准（邀请 15–20%/接受 15–25%/每周 4 天仅对留存用户）；D7+10pp→+15pp 或相对≥1.5 倍；前置门禁"未绑定 D30≥8%"；鼓励实验排除选择偏差                                        |
-| R-12 | 10.4、11.7、13.5       | 安全人格增补（反 sycophancy/反永久承诺/鼓励现实联系/危机脱离角色）；依赖操纵落地（话术清单+红队+训练信号约束+商业推荐隔离）；阻断项扩展到人格/安全行为                                                                                |
-| R-13 | 10.9、11.8、13.5、15.1 | 重度使用干预（连续使用提醒对齐 NY 3h/中国 2h）；危机检测三级响应+多轮判定+中文分类器自建+资源库；评测集四要素（规模/来源/防过拟合/阈值）；供应商静默更新回归；风险矩阵加危机事件行                                                    |
-| R-14 | 14.2                   | 排期 24→28–30 周；第 0–1 周外部依赖先行（Live2D 咨询+角色外包+EV 采购+waitlist）；第 6 周末 20–30 人 alpha；第 10–12 周封测招募预热；15–18 周拆分为收尾+封测运行；降级预案（砍 macOS>砍记忆治理高级部分>不砍好友联机）                |
-| R-15 | 6.1、6.2、6.4、7.4     | 注册推迟到云功能触发；首次价值含触摸/拖动；记忆确认改分级（敏感确认卡/普通自动保存+撤销）；首次见面共同揭晓机制；补羁绊三阶段数值曲线                                                                                                 |
-| R-16 | 12.3、12.5             | 付费假设按行业 2–5% 压力测试；LTV 按 2% 下限；封测先测付费信号                                                                                                                                                                        |
+| 编号 | 章节                                       | 修订摘要                                                                                                                                                                                                                                                                                                                        |
+| ---- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R-9  | 10.5、10.6、10.7                           | 记忆五层半分层（+episodic/semantic/反思层）；新字段（importance/memory_status/superseded_by/source_type/namespace）；写入流水（仅 owner turn 抽取+去重裁决 ADD/UPDATE/DELETE/NOOP）；hybrid 检索（RRF+时间衰减+重要性）；时态失效语义                                                                                           |
+| R-10 | 11.2                                       | 三道→四道隔离（+检索审计+输出侧校验）；embedding 按明文静态加密；RLS 第二道+分表/分区                                                                                                                                                                                                                                           |
+| R-11 | 4.4、4.5、15.3                             | 北极星降级为目标指标+封测期主指标（W1 留存+7 日配对率）；数字校准（邀请 15–20%/接受 15–25%/每周 4 天仅对留存用户）；D7+10pp→+15pp 或相对≥1.5 倍；前置门禁"未绑定 D30≥8%"；鼓励实验排除选择偏差                                                                                                                                  |
+| R-12 | 10.4、11.7、13.5                           | 安全人格增补（反 sycophancy/反永久承诺/鼓励现实联系/危机脱离角色）；依赖操纵落地（话术清单+红队+训练信号约束+商业推荐隔离）；阻断项扩展到人格/安全行为                                                                                                                                                                          |
+| R-13 | 10.9、11.8、13.5、15.1                     | 重度使用干预（连续使用提醒对齐 NY 3h/中国 2h）；危机检测三级响应+多轮判定+中文分类器自建+资源库；评测集四要素（规模/来源/防过拟合/阈值）；供应商静默更新回归；风险矩阵加危机事件行                                                                                                                                              |
+| R-14 | 14.2                                       | 排期 24→28–30 周；第 0–1 周外部依赖先行（Live2D 咨询+角色外包+EV 采购+waitlist）；第 6 周末 20–30 人 alpha；第 10–12 周封测招募预热；15–18 周拆分为收尾+封测运行；降级预案（砍 macOS>砍记忆治理高级部分>不砍好友联机）                                                                                                          |
+| R-15 | 6.1、6.2、6.4、7.4                         | 注册推迟到云功能触发；首次价值含触摸/拖动；记忆确认改分级（敏感确认卡/普通自动保存+撤销）；首次见面共同揭晓机制；补羁绊三阶段数值曲线                                                                                                                                                                                           |
+| R-16 | 12.3、12.5                                 | 付费假设按行业 2–5% 压力测试；LTV 按 2% 下限；封测先测付费信号                                                                                                                                                                                                                                                                  |
+| R-17 | 0.3、9.1、9.5、9.8、12.6、13.4、14.2、18.6 | **依 D-13（2026-08-01 用户拍板）后端自托管**：Supabase 托管 → 自建 Postgres（社区版免费）+ Node（HTTP/WS + 自建 JWT Auth + 自建 Realtime）；migrations（pgvector/RLS）零改动；撤销双保险实现改 `devices.revoked_at`；12.6 成本表删 Supabase Pro/Realtime 超额行，加 VPS/备份行；V-10 改自建 WS 并发压测；D-9（套餐/并发档）作废 |
 
 **本轮确认的决策**（用户已拍板）：D-3/D-10 记忆确认改分级、D-11 排期放宽至 28–30 周 + 降级预案、D-12 留存验证用鼓励实验 + 未接受邀请对照组。
 
@@ -1773,11 +1774,10 @@ macOS：Beta 后第一个版本（D-2）——仅 Apple Silicon；支持发布�
 
 ### 后端与实时通信
 
-- [Supabase Realtime](https://supabase.com/docs/guides/realtime)
-- [Supabase Broadcast](https://supabase.com/docs/guides/realtime/broadcast)
-- [Supabase Presence](https://supabase.com/docs/guides/realtime/presence)
-- [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security)
-- [Supabase Realtime Limits](https://supabase.com/docs/guides/realtime/limits)
+- [PostgreSQL RLS](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)
+- [jose（JWT，自建 Auth）](https://github.com/panva/jose)
+- [ws（WebSocket 服务端）](https://github.com/websockets/ws)
+- [pg（Node Postgres 驱动）](https://node-postgres.com/)
 - [MDN WebSocket](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API)
 - [MDN WebRTC DataChannel](https://developer.mozilla.org/en-US/docs/Web/API/RTCDataChannel)
 - [Cloudflare Durable Objects WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)
