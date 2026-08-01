@@ -57,8 +57,12 @@ $rows | ConvertTo-Json -Compress
   const out = execFileSync('powershell', ['-NoProfile', '-Command', ps], {
     encoding: 'utf8',
     timeout: 10_000,
+    // PowerShell 的 stderr 常有杂音（进度/警告），忽略以免 execFileSync 误判失败
+    stdio: ['ignore', 'pipe', 'ignore'],
   });
-  return JSON.parse(out.trim() || '[]');
+  const parsed = JSON.parse(out.trim() || '[]');
+  // 单进程时 ConvertTo-Json 输出对象而非数组 → 归一化
+  return Array.isArray(parsed) ? parsed : [parsed];
 }
 
 /** 总 RSS（字节）与总 CPU 秒 */
@@ -84,7 +88,13 @@ async function main() {
 
   void Date.now();
   console.log(`[bench] 启动 Electron（${MAIN_ENTRY}）…`);
-  const child = spawn(process.execPath, [MAIN_ENTRY], {
+  // 必须用 electron.exe 启动（node 跑 Electron 入口会崩：electron 包在 node 下是路径字符串）
+  const electronExe = join(APP_DIR, 'node_modules', 'electron', 'dist', 'electron.exe');
+  if (!existsSync(electronExe)) {
+    console.error(`未找到 ${electronExe}`);
+    process.exit(1);
+  }
+  const child = spawn(electronExe, ['.'], {
     cwd: APP_DIR,
     stdio: 'ignore',
     detached: true,

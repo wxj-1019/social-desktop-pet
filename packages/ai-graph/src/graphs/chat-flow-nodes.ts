@@ -4,6 +4,7 @@
  * 框架阶段：每个节点是可编译的 stub，标注 TODO 与对应设计稿章节，
  * 后续实现工作（第 7-10 周）在此填入真实逻辑（模型调用/分类器/检索等）。
  */
+import type { LlmClient } from '../llm/types.js';
 import type { NodeFn } from '../runtime/types.js';
 
 import type { ChatFlowState } from './chat-flow-state.js';
@@ -63,28 +64,58 @@ export const buildContextNode: NodeFn<ChatFlowState> = async (
 };
 
 /** 10.1 服务端模型路由（L1/L2/L3，按 10.3 路由调用） */
-export const generateNode: NodeFn<ChatFlowState> = async (
-  state,
-  ctx,
-): Promise<Partial<ChatFlowState>> => {
-  // TODO(第7-10周): AI Gateway 路由调用，流式 token 经 ctx.emit({type:'token',...}) 推流
-  // 10.2 结构化输出契约，拒绝额外字段
-  // 框架阶段：模拟模型流式输出（真实模型接入时仅替换本函数体，emit 接口不变）
-  const dialogue = `（骨架回复）你刚才说：${state.userMessage.slice(0, 40)}`;
-  for (const ch of dialogue) {
-    ctx.emit({ type: 'token', text: ch });
-    // 模拟流式节奏（真实模型按 token 到达 emit；测试依赖此节奏可注入）
-    await new Promise((r) => setTimeout(r, 12));
-  }
-  return {
-    modelOutput: {
-      dialogue,
-      emotion: 'neutral',
-      actionIntent: 'idle',
-      intensity: 1,
-    },
+/**
+ * 10.4 人格 system prompt（简版；第 7–10 周完善层级人格）。
+ * 安全约束：不承诺永久陪伴/依赖关系（10.4 反 sycophancy/反永久承诺）。
+ */
+export const PET_SYSTEM_PROMPT =
+  '你是一只陪伴用户的桌面宠物，语气温暖、简短、口语化（1-3 句话）。' +
+  '不要说"我永远不会离开你"之类的永久承诺，不要假装是人类。' +
+  '如果用户提到自伤/伤害他人，停止闲聊并建议联系专业帮助。';
+
+/** generateNode 工厂：注入 llm 走真实模型；无 llm 降级骨架（框架阶段行为不变） */
+export function generateNodeFactory(llm?: LlmClient): NodeFn<ChatFlowState> {
+  return async (state, ctx): Promise<Partial<ChatFlowState>> => {
+    if (!llm) {
+      // 骨架降级（无模型密钥环境；真实模型接入后仍作为错误降级保留）
+      const dialogue = `（骨架回复）你刚才说：${state.userMessage.slice(0, 40)}`;
+      for (const ch of dialogue) {
+        ctx.emit({ type: 'token', text: ch });
+        // 模拟流式节奏（测试依赖此节奏可注入）
+        await new Promise((r) => setTimeout(r, 12));
+      }
+      return {
+        modelOutput: {
+          dialogue,
+          emotion: 'neutral',
+          actionIntent: 'idle',
+          intensity: 1,
+        },
+      };
+    }
+
+    // 真实模型：10.2 输出契约（dialogue ≤600；emotion/actionIntent 的结构化解析
+    // 在第 7–10 周随分类器一起完善，当前用安全默认值）
+    const dialogue = await llm.streamChat(
+      [
+        { role: 'system', content: PET_SYSTEM_PROMPT },
+        { role: 'user', content: state.userMessage },
+      ],
+      (t) => ctx.emit({ type: 'token', text: t }),
+    );
+    return {
+      modelOutput: {
+        dialogue: dialogue.slice(0, 600),
+        emotion: 'neutral',
+        actionIntent: 'idle',
+        intensity: 1,
+      },
+    };
   };
-};
+}
+
+/** 无 llm 的默认 generate 节点（保持既有导出/测试兼容） */
+export const generateNode: NodeFn<ChatFlowState> = generateNodeFactory();
 
 /** 10.1 输出审核与隐私检查（11.2 第四道：输出侧记忆泄漏校验） */
 export const moderateOutputNode: NodeFn<ChatFlowState> = async (

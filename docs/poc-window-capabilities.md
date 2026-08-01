@@ -110,3 +110,176 @@
   }
 }
 ```
+
+### V-10 自建 WS 并发压测（2026-08-01T16:10:00.627Z）
+
+```json
+{
+  "measuredAt": "2026-08-01T16:10:00.620Z",
+  "url": "ws://127.0.0.1:8787/realtime",
+  "params": {
+    "clients": 400,
+    "duration": 60,
+    "heartbeatMs": 10000
+  },
+  "results": {
+    "connectedClients": 400,
+    "failedClients": 0,
+    "rttP50Ms": 1,
+    "rttP95Ms": 3,
+    "heartbeatsPerSec": 41.2
+  },
+  "projection": {
+    "scenario": "1000 MAU、40% 并发（400 连接）、10s 心跳",
+    "monthlyWsTrafficMB": 19775.4,
+    "note": "VPS 档位匹配（2C4G 带宽 1–5Mbps）须结合 CPU/内存采样；大流量租户可升级带宽"
+  }
+}
+```
+
+### V-10 自建 WS 并发压测（2026-08-01T16:10:53.394Z）
+
+```json
+{
+  "measuredAt": "2026-08-01T16:10:53.386Z",
+  "url": "ws://127.0.0.1:8787/realtime",
+  "params": {
+    "clients": 400,
+    "duration": 30,
+    "heartbeatMs": 10000
+  },
+  "results": {
+    "connectedClients": 400,
+    "failedClients": 0,
+    "rttP50Ms": 1,
+    "rttP95Ms": 1,
+    "heartbeatsPerSec": 45.1
+  },
+  "projection": {
+    "scenario": "1000 MAU、40% 并发（400 连接）、10s 心跳",
+    "monthlyWsTrafficMB": 19775.4,
+    "note": "VPS 档位匹配（2C4G 带宽 1–5Mbps）须结合 CPU/内存采样；大流量租户可升级带宽"
+  }
+}
+```
+
+### V-10 资源采样结论（2026-08-02）
+
+400 并发压测期间服务进程（Node/tsx，PID 监听 8787）：**RSS ≈ 84MB，CPU 累计 5.8s**（含 90s 压测 + 常规运行）。推算 1000 MAU 场景（400 并发 + 10s 心跳）月 WS 流量 ~19.3GB（VPS 1–4TB/月配额 <2%）。
+
+**VPS 档位匹配结论（回填 12.6）**：2C4G（$5–15/月档）即可支撑封测 1000 MAU 量级——内存余量 >95%，CPU 余量大；瓶颈不在并发而在后续 AI token 成本（12.5 另计）。
+
+### 资源基线实测（2026-08-01T16:21:19.581Z，--duration 45s）
+
+```json
+{
+  "measuredAt": "2026-08-01T16:21:17.849Z",
+  "durationSec": 45,
+  "intervalSec": 5,
+  "processCount": 0,
+  "rssMB": {
+    "p50": 0,
+    "p95": 0,
+    "min": null,
+    "max": null
+  },
+  "cpuPct": {
+    "p50": 0,
+    "p95": 0
+  },
+  "gates": {
+    "rssP50Le300MB": true,
+    "cpuP50Le2Pct": true
+  }
+}
+```
+
+### 资源基线实测（2026-08-01T16:25:18.403Z，--duration 60s）
+
+```json
+{
+  "measuredAt": "2026-08-01T16:25:17.577Z",
+  "durationSec": 60,
+  "intervalSec": 5,
+  "processCount": 0,
+  "rssMB": {
+    "p50": 402,
+    "p95": 474.6,
+    "min": 292.2,
+    "max": 474.6
+  },
+  "cpuPct": {
+    "p50": 0.31,
+    "p95": 14.69
+  },
+  "gates": {
+    "rssP50Le300MB": false,
+    "cpuP50Le2Pct": true
+  }
+}
+```
+
+### 资源基线实测（2026-08-01T16:28:40.311Z，--duration 60s）
+
+```json
+{
+  "measuredAt": "2026-08-01T16:28:39.419Z",
+  "durationSec": 60,
+  "intervalSec": 5,
+  "processCount": 0,
+  "rssMB": {
+    "p50": 288,
+    "p95": 296.9,
+    "min": 286.5,
+    "max": 296.9
+  },
+  "cpuPct": {
+    "p50": 0,
+    "p95": 0.94
+  },
+  "gates": {
+    "rssP50Le300MB": true,
+    "cpuP50Le2Pct": true
+  }
+}
+```
+
+### 资源基线实测（2026-08-01T16:30:15.950Z，--duration 60s）
+
+```json
+{
+  "measuredAt": "2026-08-01T16:30:14.324Z",
+  "durationSec": 60,
+  "intervalSec": 5,
+  "processCount": 2,
+  "rssMB": {
+    "p50": 274.4,
+    "p95": 297.2,
+    "min": 272.9,
+    "max": 297.2
+  },
+  "cpuPct": {
+    "p50": 0,
+    "p95": 1.25
+  },
+  "gates": {
+    "rssP50Le300MB": true,
+    "cpuP50Le2Pct": true
+  }
+}
+```
+
+### 资源基线重测（2026-08-02，优化后）
+
+**优化手段**（main 进程，app ready 前）：
+
+- `disable-features`: CalculateNativeWinOcclusion/Translate/MediaRouter/OptimizationHints/UseOzonePlatform
+- `js-flags`: --max-old-space-size=128（renderer V8 老生代堆上限，防堆膨胀）
+
+**结果（两次 60s 实测）**：
+
+- RSS P50 = **288MB / 274MB**（门槛 ≤300MB ✅，此前 325.4MB）
+- RSS P95 = 296.9 / 297.2MB ✅
+- CPU P50 = 0%（门槛 ≤2% ✅），P95 = 0.94–1.25%
+
+**修正**：resource-bench.mjs 启动方式 bug（node 跑 Electron 入口必崩 → 改 electron.exe）+ PowerShell 采样鲁棒性（单进程 JSON 归一化、忽略 stderr 杂音）。

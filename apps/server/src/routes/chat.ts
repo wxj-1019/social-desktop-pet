@@ -10,9 +10,10 @@
  * 客户端解析器见 apps/desktop/src/lib/api/sse.ts（fetch + ReadableStream，
  * 不用 EventSource——后者无法带 Authorization header）。
  */
-import type { GraphEvent } from '@pet/ai-graph';
 import { buildChatFlow } from '@pet/ai-graph';
 import { initialChatFlowState } from '@pet/ai-graph';
+import type { GraphEvent } from '@pet/ai-graph';
+import type { LlmClient } from '@pet/ai-graph';
 import { type Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
 import { streamSSE } from 'hono/streaming';
@@ -24,12 +25,13 @@ import { requireAuth } from './business.js';
 
 export interface ChatDeps {
   jwt: JwtService;
+  llm?: LlmClient;
 }
 
-/** 图实例缓存（compile 一次，全进程复用） */
+/** 图实例缓存（compile 一次，全进程复用；llm 注入一次） */
 let compiledGraph: ReturnType<typeof buildChatFlow> | null = null;
-function getGraph(): ReturnType<typeof buildChatFlow> {
-  compiledGraph ??= buildChatFlow();
+function getGraph(llm?: LlmClient): ReturnType<typeof buildChatFlow> {
+  compiledGraph ??= buildChatFlow({ llm });
   return compiledGraph;
 }
 
@@ -66,7 +68,7 @@ export function registerChatRoutes(
         void stream.writeSSE({ event: e.type, data: JSON.stringify(e) });
       };
       try {
-        const finalState = await getGraph().invoke(initialState, { threadId: id, emit });
+        const finalState = await getGraph(deps.llm).invoke(initialState, { threadId: id, emit });
         await stream.writeSSE({
           event: 'done',
           data: JSON.stringify({

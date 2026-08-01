@@ -10,15 +10,15 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import type pg from 'pg';
 
+import { createOpenAiCompatibleClient, llmConfigFromEnv } from './ai/llm.js';
 import { JwtService } from './auth/jwt.js';
 import { SessionManager, type SessionStore } from './auth/session.js';
 import { migrate } from './db/migrate.js';
 import { createPool } from './db/pool.js';
 import { PgDevicesStore, PgSessionStore, PgUsersStore } from './db/stores.js';
 import { RealtimeServer } from './realtime/ws.js';
-import type { AuthDeps } from './routes/auth.js';
-import { createAuthRouter } from './routes/auth.js';
-import { createBusinessRouter } from './routes/business.js';
+import { createAuthRouter, type AuthDeps } from './routes/auth.js';
+import { createBusinessRouter, type BusinessDeps } from './routes/business.js';
 
 function env(name: string): string {
   const v = process.env[name];
@@ -34,6 +34,8 @@ export interface AppDeps {
   users: AuthDeps['users'];
   devices: AuthDeps['devices'];
   realtime: RealtimeServer;
+  /** 模型客户端（10.1；无则 chat 降级骨架回复） */
+  llm?: BusinessDeps['llm'];
 }
 
 export function buildApp(deps: AppDeps) {
@@ -48,6 +50,7 @@ export function buildApp(deps: AppDeps) {
     pool: deps.pool,
     jwt: deps.jwt,
     realtime: deps.realtime,
+    llm: deps.llm,
   });
   app.route('/', business);
 
@@ -72,7 +75,14 @@ export async function main(): Promise<void> {
   // ---- 自建 Realtime（9.2/9.4）----
   const realtime = new RealtimeServer(jwt);
 
-  const app = buildApp({ pool, jwt, sessions, store, users, devices, realtime });
+  // ---- 模型客户端（10.1；密钥只存服务端环境变量 8.3；未配置则 chat 降级骨架）----
+  const llmConfig = llmConfigFromEnv();
+  if (llmConfig) {
+    console.info(`[server] AI 模型已启用：${llmConfig.model}（${llmConfig.baseUrl}）`);
+  }
+  const llm = llmConfig ? createOpenAiCompatibleClient(llmConfig) : undefined;
+
+  const app = buildApp({ pool, jwt, sessions, store, users, devices, realtime, llm });
 
   const port = Number(process.env['PORT'] ?? 8787);
   const server = serve({ fetch: app.fetch, port });

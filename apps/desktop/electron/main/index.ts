@@ -19,6 +19,21 @@ import { TrayController } from './tray-controller.js';
 import { UpdateController } from './update-controller.js';
 import { createPetWindow, setPassThrough } from './window-controller.js';
 
+// ---- 8.7 资源削减（app ready 前必须设置）----
+// 禁用无关 Chromium 特性（Windows 遮挡计算/翻译/媒体路由/优化提示）——降低后台 CPU 与内存杂项
+app.commandLine.appendSwitch(
+  'disable-features',
+  [
+    'CalculateNativeWinOcclusion',
+    'Translate',
+    'MediaRouter',
+    'OptimizationHints',
+    'UseOzonePlatform',
+  ].join(','),
+);
+// 渲染进程 V8 老生代堆上限（防堆膨胀；Live2D 动画所需堆远低于此）
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=128');
+
 // 单实例锁
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {

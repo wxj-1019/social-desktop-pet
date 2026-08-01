@@ -2,6 +2,7 @@ import { Bubble } from '@pet/ui';
 import { useCallback, useEffect, useState } from 'react';
 
 import { initApi, setAccessToken } from '../lib/api/client.js';
+import { stateToMotion } from '../pet/motion-mapping.js';
 import { usePetStateMachine } from '../pet/use-pet-state-machine.js';
 
 import { ChatPanel } from './chat-panel.js';
@@ -101,7 +102,9 @@ export function App() {
       <div className="pet-stage">
         <header className="app-header">
           <span>🏠 本地模式</span>
-          <span className="pet-state">桌宠：{pet.state}</span>
+          <span className="pet-state">
+            桌宠：{pet.state} · {stateToMotion(pet.state)}
+          </span>
           <button className="link-button" onClick={() => setPhase('signed_out')}>
             登录
           </button>
@@ -115,7 +118,9 @@ export function App() {
     <div className="pet-stage">
       <header className="app-header">
         <span>👤 {user?.nickname}</span>
-        <span className="pet-state">桌宠：{pet.state}</span>
+        <span className="pet-state">
+          桌宠：{pet.state} · {stateToMotion(pet.state)}
+        </span>
         <button className="link-button" onClick={() => void onLogout()}>
           退出
         </button>
