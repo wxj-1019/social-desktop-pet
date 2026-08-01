@@ -1,0 +1,15 @@
+{
+  "$schema": "./model-manifest.schema.json",
+  "version": 1,
+  "character": "placeholder",
+  "models": [
+    {
+      "id": "character-default",
+      "path": "character-default/model3.json",
+      "status": "pending-license"
+    }
+  ],
+  "motions": ["idle", "walk", "sit", "sleep", "happy", "sad", "surprised", "wave", "touch", "talk"],
+  "expressions": ["neutral", "warm", "happy", "sad", "surprised", "shy"],
+  "note": "Live2D Cubism SDK 与原创模型受许可门禁（设计稿 8.8 / V-1）约束。未获书面许可前不放入真实模型文件，此清单仅供第 3 周集成占位。"
+}

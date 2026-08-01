@@ -1,0 +1,33 @@
+{
+  "name": "ai-social-desktop-pet",
+  "version": "0.0.0",
+  "private": true,
+  "description": "跨平台 AI 社交桌宠：面向真实好友共同养成的桌宠（Electron + Supabase + Graph Engineering）",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20.11",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @pet/desktop dev",
+    "build": "pnpm -r --filter=./packages/* build && pnpm --filter @pet/desktop build",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "pnpm -r exec rimraf dist node_modules/.cache .turbo || true"
+  },
+  "devDependencies": {
+    "@pet/eslint-config": "workspace:*",
+    "@pet/tsconfig": "workspace:*",
+    "eslint": "^9.12.0",
+    "prettier": "^3.3.3",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

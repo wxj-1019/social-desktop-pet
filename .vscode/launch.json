@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Electron: Main (desktop)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/apps/desktop",
+      "runtimeExecutable": "${workspaceFolder}/apps/desktop/node_modules/.bin/electron",
+      "runtimeArgs": ["."],
+      "env": { "ELECTRON_DISABLE_SECURITY_WARNINGS": "false" }
+    }
+  ]
+}

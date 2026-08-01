@@ -1,0 +1,10 @@
+dist
+out
+build
+coverage
+node_modules
+**/*.tsbuildinfo
+pnpm-lock.yaml
+apps/desktop/out
+apps/desktop/release
+packages/supabase/db/migrations

@@ -1,0 +1,30 @@
+{
+  "name": "@pet/ui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "共享 React 组件库（渲染进程复用，按需增长）",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.11",
+    "react": "^18.3.1"
+  }
+}

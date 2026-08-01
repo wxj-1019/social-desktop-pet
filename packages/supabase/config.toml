@@ -1,0 +1,41 @@
+# Supabase 本地项目配置（packages/supabase 即 CLI 项目根）
+# 用法：cd packages/supabase && supabase start / db reset / functions serve
+project_id = "ai-social-desktop-pet"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+
+[db]
+port = 54322
+major_version = 15
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+
+# Edge Functions —— 审查修复 #4：统一开启 bundle，
+# 使 import_map.json 指向的 workspace 共享包（@pet/protocol 等源码）被 esbuild 打进单文件，
+# 避免 Deno 运行时无法解析本地 workspace 包的问题。
+[functions.chat]
+verify_jwt = true
+bundle = true
+
+[functions.gift]
+verify_jwt = true
+bundle = true
+
+[functions.invite]
+verify_jwt = true
+bundle = true
+
+[functions.sync]
+verify_jwt = true
+bundle = true
+
+[functions.visit]
+verify_jwt = true
+bundle = true
+
+# Live2D 等静态资源用对象存储，不走 functions；后续按需增配。

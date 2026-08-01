@@ -1,0 +1,26 @@
+{
+  "name": "@pet/ai-graph",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Graph engineering 核心：轻量状态图运行时（LangGraph 启发，依赖无关，可 Deno/Node/浏览器三处复用）",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@pet/protocol": "workspace:*"
+  }
+}

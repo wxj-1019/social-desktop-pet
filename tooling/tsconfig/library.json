@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Library (packages/*)",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "${configDir}/src",
+    "outDir": "${configDir}/dist"
+  },
+  "include": ["${configDir}/src"]
+}

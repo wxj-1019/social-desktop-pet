@@ -1,0 +1,26 @@
+{
+  "name": "@pet/config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Feature flags、模型路由配置、限额/配额/保留期（对应设计稿 10.3 / 10.9 / 11.4 / 12.5 / 12.7）",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@pet/protocol": "workspace:*"
+  }
+}

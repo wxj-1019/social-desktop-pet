@@ -1,0 +1,27 @@
+{
+  "name": "@pet/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "单一真相源：跨端共享的类型与 zod schema（客户端/Edge Functions/测试三处复用）",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}

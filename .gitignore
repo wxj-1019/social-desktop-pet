@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+out/
+build/
+*.tsbuildinfo
+
+# Electron / electron-vite
+apps/desktop/out/
+apps/desktop/release/
+
+# Vitest / coverage
+coverage/
+*.lcov
+
+# Supabase local
+supabase/.branches
+supabase/.temp
+packages/supabase/.branches
+packages/supabase/.temp
+# Supabase CLI 生成的本地数据库/卷
+packages/supabase/.db
+packages/supabase/.storage
+
+# .zcode 工具目录
+.zcode/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

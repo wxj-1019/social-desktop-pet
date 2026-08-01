@@ -1,0 +1,12 @@
+{
+  "extends": "@pet/tsconfig/web.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "out/renderer",
+    "composite": false,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "electron/preload/index.ts"]
+}

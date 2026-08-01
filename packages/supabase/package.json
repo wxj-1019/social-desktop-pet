@@ -1,0 +1,12 @@
+{
+  "name": "@pet/supabase",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Supabase 后端：DB migrations（9.9 schema + RLS + pgvector）+ Edge Functions 骨架",
+  "scripts": {
+    "typecheck": "echo 'Supabase functions 由 Deno 类型检查，跳过 tsc'",
+    "db:reset": "supabase db reset",
+    "functions:serve": "supabase functions serve --env-file .env.local",
+    "start": "supabase start"
+  }
+}
