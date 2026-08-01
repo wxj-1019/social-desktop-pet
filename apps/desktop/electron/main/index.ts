@@ -17,6 +17,7 @@ import { createAuthApi, createSessionHandlers } from './session-service.js';
 import { StartupController, parseStartupArgs } from './startup-controller.js';
 import { TrayController } from './tray-controller.js';
 import { UpdateController } from './update-controller.js';
+import { createUpdateApi } from './update-source.js';
 import { createPetWindow, setPassThrough } from './window-controller.js';
 
 // ---- 8.7 资源削减（app ready 前必须设置）----
@@ -137,17 +138,10 @@ void app.whenReady().then(async () => {
   if (startupDeepLink) void deepLink?.handle(startupDeepLink);
 
   // 8.2 更新：启动 30s 后静默检查（不自打扰）；仅打包版执行
+  // 13.1/13.5：manifest 经 HTTPS 拉取 + sha256 校验（下载/安装待 V-11 签名链）
   if (app.isPackaged) {
     updater = new UpdateController(
-      {
-        // Update API：待接入更新服务器（HTTPS manifest + 签名校验，见 8.3/13.5）
-        checkForUpdate: async () => null,
-        download: async () => {
-          throw new Error('UpdateController: 更新源尚未接入');
-        },
-        verify: async () => undefined,
-        install: async () => undefined,
-      },
+      createUpdateApi(process.env['UPDATE_MANIFEST_URL']),
       app.getVersion(),
       'stable',
     );

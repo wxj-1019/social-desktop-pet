@@ -50,6 +50,11 @@ export async function initApi(): Promise<void> {
   baseUrl = await window.pet.getApiBase();
 }
 
+/** 当前 API 基址（可能为 null——initApi 前调用返回 null；WS 客户端用它推导 ws 地址） */
+export function apiBase(): string | null {
+  return baseUrl;
+}
+
 /** 登录/注册/恢复后由调用方设置 access token */
 export function setAccessToken(token: string | null): void {
   accessToken = token;

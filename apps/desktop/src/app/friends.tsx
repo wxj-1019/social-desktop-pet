@@ -3,7 +3,8 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 
-import { api, type Friend, type SyncEvent } from '../lib/api/client.js';
+import { api, apiBase, getAccessToken, type Friend, type SyncEvent } from '../lib/api/client.js';
+import { RealtimeClient, toWsUrl } from '../lib/realtime.js';
 
 interface FriendsPageProps {
   userId: string;
@@ -36,13 +37,30 @@ export function FriendsPage({ userId }: FriendsPageProps) {
     }
   }, [lastSeq]);
 
-  // 首次加载 + 轮询（10s，替代 WS 订阅的首版方案）
+  // 首次加载 + 兜底轮询（30s；低延迟事件走 WS，9.2/9.4）
   useEffect(() => {
     void refreshFriends();
     void pullSync();
-    const timer = setInterval(() => void pullSync(), 10_000);
+    const timer = setInterval(() => void pullSync(), 30_000);
     return () => clearInterval(timer);
   }, [refreshFriends, pullSync]);
+
+  // 9.2/9.4：WS 实时事件（inbox.delivered → 立即 sync；重连 → 补缺）
+  useEffect(() => {
+    const base = apiBase();
+    if (!base) return;
+    const client = new RealtimeClient(toWsUrl(base), getAccessToken, {
+      onEvent: (e) => {
+        if (e.type === 'inbox.delivered') {
+          void pullSync();
+          void refreshFriends();
+        }
+      },
+      onReconnected: () => void pullSync(), // 9.7 重连后拉取缺失 Inbox
+    });
+    client.connect();
+    return () => client.close();
+  }, [pullSync]);
 
   // 6.3 深链：接受邀请（登录完成后由主进程恢复转发）
   useEffect(() => {
