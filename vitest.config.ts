@@ -19,7 +19,11 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['packages/**/src/**/*.test.ts', 'packages/**/src/**/*.test.tsx'],
+    include: [
+      'packages/**/src/**/*.test.ts',
+      'packages/**/src/**/*.test.tsx',
+      'apps/desktop/electron/**/*.test.ts',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

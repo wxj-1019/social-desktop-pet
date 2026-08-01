@@ -1,20 +1,40 @@
 /**
- * WindowController —— 对应设计稿 8.2 / 8.4。
- * 创建透明、无边框、置顶、可整窗穿透的桌宠窗口。
+ * WindowController —— 对应设计稿 8.2 / 8.4 / 8.5。
+ * 创建透明、无边框、置顶、可整窗穿透的桌宠窗口；集成多屏位置恢复。
  *
  * 注意（8.4 / D-7）：Electron 原生不支持透明区域点击穿透，
  * 只能整窗穿透切换 setIgnoreMouseEvents(true,{forward:true}) + 渲染进程 alpha 探测。
  */
 import { join } from 'node:path';
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, screen } from 'electron';
 
+import { resolvePetPosition, toAnchor, type PetPosition } from './display-controller.js';
 import { SECURE_WEB_PREFS } from './security.js';
 
-export function createPetWindow(): BrowserWindow {
+export interface WindowOptions {
+  /** 持久化的宠物位置（8.5；无则默认底部中央） */
+  savedPosition?: PetPosition | null;
+  /** 位置变化回调（8.5 持久化） */
+  onPositionChanged?: (pos: PetPosition) => void;
+}
+
+const PET_WINDOW_SIZE = { width: 360, height: 480 };
+
+export function createPetWindow(options: WindowOptions = {}): BrowserWindow {
+  const displays = screen.getAllDisplays().map((d) => ({
+    id: String(d.id),
+    workArea: d.workArea,
+    scaleFactor: d.scaleFactor,
+  }));
+  // 8.5：恢复位置（找不到原显示器回主屏 + 夹进可见区域 + 负数坐标支持）
+  const restored = resolvePetPosition(options.savedPosition ?? null, displays, PET_WINDOW_SIZE);
+
   const win = new BrowserWindow({
-    width: 360,
-    height: 480,
+    width: PET_WINDOW_SIZE.width,
+    height: PET_WINDOW_SIZE.height,
+    x: restored.x,
+    y: restored.y,
     frame: false,
     transparent: true,
     resizable: true,
@@ -29,6 +49,30 @@ export function createPetWindow(): BrowserWindow {
   });
 
   win.once('ready-to-show', () => win.show());
+
+  // 8.5：位置变化时回调（由调用方持久化）
+  win.on('moved', () => {
+    const pos = win.getPosition();
+    const x = pos[0] ?? 0;
+    const y = pos[1] ?? 0;
+    const current = displays.find(
+      (d) =>
+        x >= d.workArea.x &&
+        x < d.workArea.x + d.workArea.width &&
+        y >= d.workArea.y &&
+        y < d.workArea.y + d.workArea.height,
+    );
+    if (current && options.onPositionChanged) {
+      const anchor = toAnchor(current, { x, y });
+      options.onPositionChanged({
+        displayId: current.id,
+        anchorX: anchor.anchorX,
+        anchorY: anchor.anchorY,
+        scale: 1,
+        savedAt: Date.now(),
+      });
+    }
+  });
 
   // CSP 由 renderer 的 index.html <meta> 注入（见 security.ts CSP 常量）；
   // 也可通过 session.webRequest.onHeadersReceived 注入响应头，第 3 周实现。
