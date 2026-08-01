@@ -22,7 +22,8 @@ export function registerQueryRoutes(
   const auth = requireAuth(deps.jwt);
 
   app.get('/me', auth, async (c) => {
-    const { userId, deviceId } = c.get('userId') as unknown as { userId: string; deviceId: string };
+    const userId = c.get('userId');
+    const deviceId = c.get('deviceId');
     const { rows } = await deps.pool.query(
       `select p.user_id, p.nickname, p.avatar, p.active_display_device_id,
               d.platform, d.app_version, d.last_seen_at
@@ -50,7 +51,7 @@ export function registerQueryRoutes(
   });
 
   app.get('/friends', auth, async (c) => {
-    const { userId } = c.get('userId') as unknown as { userId: string };
+    const userId = c.get('userId');
     const { rows } = await deps.pool.query(
       `select case
                 when f.user_low_id = $1 then f.user_high_id

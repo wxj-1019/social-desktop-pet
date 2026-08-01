@@ -5,14 +5,16 @@ import { initApi, setAccessToken } from '../lib/api/client.js';
 import { usePetStateMachine } from '../pet/use-pet-state-machine.js';
 
 import { FriendsPage } from './friends.js';
+import { LocalChat } from './local-chat.js';
 import { LoginPage, type AuthResult } from './login.js';
 
-type SessionPhase = 'booting' | 'signed_out' | 'active';
+type SessionPhase = 'booting' | 'signed_out' | 'local' | 'active';
 
 /**
- * 主应用：会话状态机（9.8）驱动 登录页 ↔ 主界面。
+ * 主应用：会话状态机（9.8）驱动 登录页 ↔ 本地模式 ↔ 主界面。
  * - booting：启动恢复（主进程读 safeStorage refresh token → 自动刷新）
- * - signed_out：登录/注册页（深链待恢复时提示）
+ * - signed_out：登录/注册页（深链待恢复时提示；可进本地模式）
+ * - local：本地降级（规则聊天，数据不出本机；Alpha 退出标准）
  * - active：好友/送礼/拜访/事件流
  */
 export function App() {
@@ -83,6 +85,25 @@ export function App() {
     return (
       <div className="pet-stage">
         <LoginPage onAuthed={onAuthed} pendingInvite={pendingInvite} />
+        {/* 本地降级：未登录也能养桌宠（Alpha 退出标准） */}
+        <button className="local-entry" onClick={() => setPhase('local')}>
+          先逛逛（本地模式）
+        </button>
+      </div>
+    );
+  }
+
+  if (phase === 'local') {
+    return (
+      <div className="pet-stage">
+        <header className="app-header">
+          <span>🏠 本地模式</span>
+          <span className="pet-state">桌宠：{pet.state}</span>
+          <button className="link-button" onClick={() => setPhase('signed_out')}>
+            登录
+          </button>
+        </header>
+        <LocalChat onLoginClick={() => setPhase('signed_out')} />
       </div>
     );
   }

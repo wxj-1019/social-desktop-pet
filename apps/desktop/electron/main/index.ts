@@ -116,6 +116,11 @@ void app.whenReady().then(async () => {
     console.warn(`[startup] degraded hooks: ${failures.join(', ')}`);
   }
 
+  // 6.3：应用未运行时点击 pet:// 链接 → 启动 argv 携带 URL → 记入 pending
+  //（已运行场景由 second-instance 事件处理；未登录时登录成功后 restorePending 恢复）
+  const startupDeepLink = process.argv.find((a) => a.startsWith('pet://'));
+  if (startupDeepLink) void deepLink?.handle(startupDeepLink);
+
   // 8.2 更新：启动 30s 后静默检查（不自打扰）；仅打包版执行
   if (app.isPackaged) {
     updater = new UpdateController(

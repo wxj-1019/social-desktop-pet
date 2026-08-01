@@ -23,6 +23,7 @@ export default defineConfig({
       'packages/**/src/**/*.test.ts',
       'packages/**/src/**/*.test.tsx',
       'apps/desktop/electron/**/*.test.ts',
+      'apps/desktop/src/**/*.test.ts',
       'apps/server/src/**/*.test.ts',
     ],
     coverage: {

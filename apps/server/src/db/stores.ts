@@ -111,7 +111,7 @@ export class PgDevicesStore {
       ]);
       // profiles 行（devices.user_id 外键前提；已存在则不动，9.9）
       await client.query(
-        `insert into profiles (user_id, nickname) values ($1, $2)
+        `insert into profiles (user_id, nickname) values ($1, coalesce(nullif($2, ''), '新朋友'))
          on conflict (user_id) do nothing`,
         [userId, nickname],
       );
