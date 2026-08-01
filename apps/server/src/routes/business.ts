@@ -9,6 +9,7 @@ import type pg from 'pg';
 import type { JwtService } from '../auth/jwt.js';
 import type { RealtimeServer } from '../realtime/ws.js';
 
+import { registerChatRoutes } from './chat.js';
 import { registerGiftRoutes } from './gift.js';
 import { registerInviteRoutes } from './invite.js';
 import { registerQueryRoutes } from './queries.js';
@@ -46,15 +47,9 @@ export function requireAuth(jwt: JwtService): MiddlewareHandler<{ Variables: Bus
 
 export function createBusinessRouter(deps: BusinessDeps): Hono<{ Variables: BusinessVariables }> {
   const app = new Hono<{ Variables: BusinessVariables }>();
-  const auth = requireAuth(deps.jwt);
 
-  // POST /chat —— 10.1：加载 chat-flow 图并执行（SSE 流式）
-  // TODO(第 7–10 周): buildChatFlow().invoke(initialState, { threadId, emit }) 并 SSE 推流
-  app.post('/chat', auth, async (c) => {
-    const body = await c.req.json();
-    void body;
-    return c.json({ dialogue: '(scaffold: chat flow not yet wired)', actionIntent: 'idle' });
-  });
+  // 10.1：chat-flow 图经 SSE 流式执行（graph engineering；第 7–10 周换真实模型节点）
+  registerChatRoutes(app, deps);
 
   // 9.4 gift（幂等 + 配额 + 双 inbox + WS 通知）
   registerGiftRoutes(app, deps);

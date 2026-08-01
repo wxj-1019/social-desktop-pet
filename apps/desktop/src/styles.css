@@ -244,3 +244,36 @@ body,
   color: #fff;
   cursor: pointer;
 }
+
+/* ---- tab 切换 ---- */
+.app-tabs {
+  position: fixed;
+  top: 40px;
+  left: 8px;
+  display: flex;
+  gap: 4px;
+  z-index: 10;
+}
+.tab {
+  background: rgba(20, 20, 30, 0.8);
+  border: none;
+  color: #b2bec3;
+  border-radius: 8px 8px 0 0;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tab.active {
+  background: rgba(108, 92, 231, 0.85);
+  color: #fff;
+}
+.chat-panel {
+  width: 300px;
+  max-height: 62vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 20, 30, 0.85);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 16px;
+}

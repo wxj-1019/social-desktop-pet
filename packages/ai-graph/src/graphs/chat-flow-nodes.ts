@@ -69,10 +69,16 @@ export const generateNode: NodeFn<ChatFlowState> = async (
 ): Promise<Partial<ChatFlowState>> => {
   // TODO(第7-10周): AI Gateway 路由调用，流式 token 经 ctx.emit({type:'token',...}) 推流
   // 10.2 结构化输出契约，拒绝额外字段
-  void ctx;
+  // 框架阶段：模拟模型流式输出（真实模型接入时仅替换本函数体，emit 接口不变）
+  const dialogue = `（骨架回复）你刚才说：${state.userMessage.slice(0, 40)}`;
+  for (const ch of dialogue) {
+    ctx.emit({ type: 'token', text: ch });
+    // 模拟流式节奏（真实模型按 token 到达 emit；测试依赖此节奏可注入）
+    await new Promise((r) => setTimeout(r, 12));
+  }
   return {
     modelOutput: {
-      dialogue: '(scaffold)',
+      dialogue,
       emotion: 'neutral',
       actionIntent: 'idle',
       intensity: 1,

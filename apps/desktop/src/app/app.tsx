@@ -4,11 +4,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { initApi, setAccessToken } from '../lib/api/client.js';
 import { usePetStateMachine } from '../pet/use-pet-state-machine.js';
 
+import { ChatPanel } from './chat-panel.js';
 import { FriendsPage } from './friends.js';
 import { LocalChat } from './local-chat.js';
 import { LoginPage, type AuthResult } from './login.js';
 
 type SessionPhase = 'booting' | 'signed_out' | 'local' | 'active';
+type ActiveTab = 'friends' | 'chat';
 
 /**
  * 主应用：会话状态机（9.8）驱动 登录页 ↔ 本地模式 ↔ 主界面。
@@ -19,6 +21,7 @@ type SessionPhase = 'booting' | 'signed_out' | 'local' | 'active';
  */
 export function App() {
   const [phase, setPhase] = useState<SessionPhase>('booting');
+  const [tab, setTab] = useState<ActiveTab>('friends');
   const [user, setUser] = useState<AuthResult | null>(null);
   const [pendingInvite, setPendingInvite] = useState(false);
   const pet = usePetStateMachine();
@@ -117,7 +120,18 @@ export function App() {
           退出
         </button>
       </header>
-      <FriendsPage userId={user?.userId ?? ''} />
+      <nav className="app-tabs">
+        <button
+          className={tab === 'friends' ? 'tab active' : 'tab'}
+          onClick={() => setTab('friends')}
+        >
+          好友
+        </button>
+        <button className={tab === 'chat' ? 'tab active' : 'tab'} onClick={() => setTab('chat')}>
+          聊天
+        </button>
+      </nav>
+      {tab === 'friends' ? <FriendsPage userId={user?.userId ?? ''} /> : <ChatPanel />}
     </div>
   );
 }

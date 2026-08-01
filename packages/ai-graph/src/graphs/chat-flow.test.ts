@@ -21,7 +21,7 @@ describe('chat-flow graph', () => {
     const result = await graph.invoke(state, { threadId: 't1' });
     // 骨架路径：classify=none → retrieve → build_context(L1) → generate → moderate → approve → END
     expect(result.authenticated).toBe(true);
-    expect(result.responseText).toBe('(scaffold)');
+    expect(result.modelOutput?.dialogue).toContain('你好');
     expect(result.memoryExtractTriggered).toBe(true);
   });
 
@@ -75,5 +75,27 @@ describe('chat-flow graph', () => {
     });
     expect(events).toContain('node_start');
     expect(events).toContain('node_end');
+  });
+
+  it('generateNode streams token events and final dialogue matches (SSE 链路基础)', async () => {
+    const graph = buildChatFlow();
+    const tokens: string[] = [];
+    const state = initialChatFlowState({
+      threadId: 't4',
+      userId: 'u1',
+      deviceId: 'd1',
+      userMessage: '今天天气不错',
+      scenario: 'private_chat',
+    });
+    const result = await graph.invoke(state, {
+      threadId: 't4',
+      emit: (e) => {
+        if (e.type === 'token') tokens.push(e.text);
+      },
+    });
+    // token 流非空且拼接结果 = modelOutput.dialogue（客户端按序拼 token 可得完整回复）
+    expect(tokens.length).toBeGreaterThan(0);
+    expect(tokens.join('')).toBe(result.modelOutput?.dialogue);
+    expect(result.modelOutput?.dialogue).toContain('今天天气不错');
   });
 });
