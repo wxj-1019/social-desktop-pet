@@ -211,4 +211,18 @@ export const api = {
       reader.releaseLock();
     }
   },
+  /** GET /chat/history：AI 对话历史（10.x，最近 N 条） */
+  async chatHistory(
+    limit = 50,
+  ): Promise<Array<{ role: 'user' | 'assistant'; content: string; at: string }>> {
+    const res = await apiFetch(`/chat/history?limit=${limit}`);
+    const body = (await jsonOrThrow(res)) as {
+      messages: Array<{ role: string; content: string; at: string }>;
+    };
+    return body.messages.map((m) => ({
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: m.content,
+      at: m.at,
+    }));
+  },
 };

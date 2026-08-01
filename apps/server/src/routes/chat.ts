@@ -162,14 +162,17 @@ export function registerChatRoutes(
       };
       try {
         const finalState = await getGraph(deps.llm).invoke(initialState, { threadId: id, emit });
+        const dialogue = finalState.modelOutput?.dialogue ?? '';
         await stream.writeSSE({
           event: 'done',
           data: JSON.stringify({
-            dialogue: finalState.modelOutput?.dialogue ?? '',
+            dialogue,
             emotion: finalState.modelOutput?.emotion ?? 'neutral',
             actionIntent: finalState.modelOutput?.actionIntent ?? 'idle',
           }),
         });
+        // 对话历史落库（10.x：user 消息 + assistant 回复；保留期 11.4）
+        await saveChatMessages(deps.pool, userId, id, message, dialogue);
       } catch (e) {
         await stream.writeSSE({
           event: 'error',
@@ -180,4 +183,48 @@ export function registerChatRoutes(
       }
     });
   });
+
+  // 对话历史（10.x）：最近 N 条，按时间正序返回
+  app.get('/chat/history', auth, async (c) => {
+    const userId = c.get('userId');
+    const limit = Math.min(Number(c.req.query('limit') ?? 50), 200);
+    const { rows } = await deps.pool.query(
+      `select role, content, created_at
+       from (
+         select role, content, created_at
+         from chat_messages
+         where user_id = $1
+         order by created_at desc
+         limit $2
+       ) recent
+       order by created_at asc`,
+      [userId, limit],
+    );
+    return c.json({
+      messages: rows.map((r) => ({
+        role: String(r.role),
+        content: String(r.content),
+        at: (r.created_at as Date).toISOString(),
+      })),
+    });
+  });
+}
+
+/** 对话落库（user 消息 + assistant 回复；失败不阻塞响应） */
+async function saveChatMessages(
+  pool: pg.Pool,
+  userId: string,
+  threadId: string,
+  userMessage: string,
+  reply: string,
+): Promise<void> {
+  try {
+    await pool.query(
+      `insert into chat_messages (user_id, thread_id, role, content) values
+       ($1, $2, 'user', $3), ($1, $2, 'assistant', $4)`,
+      [userId, threadId, userMessage, reply],
+    );
+  } catch {
+    /* 历史落库失败不阻塞对话 */
+  }
 }

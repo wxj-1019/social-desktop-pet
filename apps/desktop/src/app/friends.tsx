@@ -92,19 +92,33 @@ export function FriendsPage({ userId }: FriendsPageProps) {
     }
   }
 
-  async function sendGift(friend: Friend) {
+  async function sendGift(friend: Friend, snackId: string) {
     try {
-      const result = await api.sendGift(friend.userId, 'snack_cookie', crypto.randomUUID());
-      setNotice(`已给 ${friend.nickname} 送了一块小饼干 🍪 (event ${result.eventId.slice(0, 8)})`);
+      const snackLabel: Record<string, string> = {
+        snack_cookie: '小饼干 🍪',
+        snack_candy: '糖果 🍬',
+        snack_tea: '茶 🍵',
+      };
+      const result = await api.sendGift(friend.userId, snackId, crypto.randomUUID());
+      setNotice(
+        `已给 ${friend.nickname} 送了${snackLabel[snackId] ?? '点心'} (event ${result.eventId.slice(0, 8)})`,
+      );
     } catch (e) {
       setNotice((e as Error).message);
     }
   }
 
-  async function sendVisit(friend: Friend) {
+  async function sendVisit(friend: Friend, type: 'wave' | 'share_snack' | 'leave_message') {
     try {
-      const result = await api.sendVisit(friend.userId, 'wave');
-      setNotice(`已去 ${friend.nickname} 家拜访 👋 (visit ${result.visitId.slice(0, 8)})`);
+      const visitLabel: Record<string, string> = {
+        wave: '挥手拜访 👋',
+        share_snack: '分享点心 🍪',
+        leave_message: '留言 💬',
+      };
+      const result = await api.sendVisit(friend.userId, type);
+      setNotice(
+        `已${visitLabel[type] ?? '拜访'} ${friend.nickname} (visit ${result.visitId.slice(0, 8)})`,
+      );
     } catch (e) {
       setNotice((e as Error).message);
     }
@@ -124,14 +138,13 @@ export function FriendsPage({ userId }: FriendsPageProps) {
       <ul className="friend-list">
         {friends.length === 0 && <li className="empty">还没有好友——把邀请链接发给朋友吧</li>}
         {friends.map((f) => (
-          <li key={f.userId} className="friend-item">
-            <span>
-              {f.nickname}
-              {f.userId === userId ? '（我）' : ''}
-            </span>
-            <button onClick={() => void sendGift(f)}>🍪 送点心</button>
-            <button onClick={() => void sendVisit(f)}>👋 拜访</button>
-          </li>
+          <FriendActions
+            key={f.userId}
+            friend={f}
+            userId={userId}
+            onGift={sendGift}
+            onVisit={sendVisit}
+          />
         ))}
       </ul>
 
@@ -148,5 +161,48 @@ export function FriendsPage({ userId }: FriendsPageProps) {
         ))}
       </ul>
     </div>
+  );
+}
+
+/** 单个好友行：昵称 + 礼物类型选择 + 拜访类型选择 */
+function FriendActions({
+  friend,
+  userId,
+  onGift,
+  onVisit,
+}: {
+  friend: Friend;
+  userId: string;
+  onGift: (friend: Friend, snackId: string) => Promise<void>;
+  onVisit: (friend: Friend, type: 'wave' | 'share_snack' | 'leave_message') => Promise<void>;
+}) {
+  const [snack, setSnack] = useState('snack_cookie');
+  const [visitType, setVisitType] = useState<'wave' | 'share_snack' | 'leave_message'>('wave');
+
+  return (
+    <li className="friend-item">
+      <span>
+        {friend.nickname}
+        {friend.userId === userId ? '（我）' : ''}
+      </span>
+      <div className="friend-actions">
+        <select value={snack} onChange={(e) => setSnack(e.target.value)} aria-label="点心类型">
+          <option value="snack_cookie">🍪 饼干</option>
+          <option value="snack_candy">🍬 糖果</option>
+          <option value="snack_tea">🍵 茶</option>
+        </select>
+        <button onClick={() => void onGift(friend, snack)}>送</button>
+        <select
+          value={visitType}
+          onChange={(e) => setVisitType(e.target.value as typeof visitType)}
+          aria-label="拜访类型"
+        >
+          <option value="wave">👋 挥手</option>
+          <option value="share_snack">🍪 分享</option>
+          <option value="leave_message">💬 留言</option>
+        </select>
+        <button onClick={() => void onVisit(friend, visitType)}>拜访</button>
+      </div>
+    </li>
   );
 }

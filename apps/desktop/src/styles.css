@@ -277,3 +277,23 @@ body,
   padding: 12px;
   margin-bottom: 16px;
 }
+
+/* ---- 好友行操作区 ---- */
+.friend-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.friend-actions select {
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+.friend-actions button {
+  background: #2d3436;
+  font-size: 11px;
+  padding: 4px 8px;
+}

@@ -3,7 +3,7 @@
  * 登录后可用；本地模式走 local-chat（规则引擎）。
  * 联动：对话期间桌宠进入 CHATTING（口型动作），结束回 IDLE（7.1 状态机）。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { api } from '../lib/api/client.js';
 import type { PetStateController } from '../pet/use-pet-state-machine.js';
@@ -22,6 +22,20 @@ export function ChatPanel({ pet }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 挂载时恢复对话历史（10.x：服务端持久化，跨设备可续）
+  useEffect(() => {
+    void (async () => {
+      try {
+        const msgs = await api.chatHistory();
+        setHistory(
+          msgs.map((m) => ({ role: m.role === 'user' ? 'user' : 'pet', text: m.content })),
+        );
+      } catch {
+        /* 历史加载失败不阻塞（新对话） */
+      }
+    })();
+  }, []);
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
