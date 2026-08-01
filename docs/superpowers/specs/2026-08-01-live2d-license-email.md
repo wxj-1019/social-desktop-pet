@@ -46,8 +46,8 @@ We are developing a desktop AI companion application ("desktop pet") using the C
 We aim to begin the Publication License Agreement process at least one month before release. Thank you for your guidance.
 
 Best regards,
-[Your Name / Studio Name]
-[Contact Email]
+Coconut Latte (生椰拿铁)
+18967498922@163.com
 
 ---
 
