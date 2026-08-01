@@ -47,7 +47,7 @@ test('登录 → 好友页 → 创建邀请（桌面 ↔ 后端全链路）', as
   // 登录既有测试账号（本机 pet 库：alice@test.local）
   await page.locator('input[type="email"]').fill('alice@test.local');
   await page.locator('input[type="password"]').fill('password123');
-  await page.getByRole('button', { name: '登录' }).click();
+  await page.getByRole('button', { name: '登录', exact: true }).click();
 
   // 好友页出现（会话 ACTIVE）
   await expect(page.locator('.friends-page')).toBeVisible({ timeout: 15_000 });

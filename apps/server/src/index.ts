@@ -36,12 +36,24 @@ export interface AppDeps {
   realtime: RealtimeServer;
   /** 模型客户端（10.1；无则 chat 降级骨架回复） */
   llm?: BusinessDeps['llm'];
+  /** 本地 e2e 专用：注册测试数据重置端点（仅 PET_DEV_RESET=true 时开启，生产无此端点） */
+  devReset?: boolean;
 }
 
 export function buildApp(deps: AppDeps) {
   const app = new Hono();
 
   app.get('/healthz', (c) => c.json({ ok: true, onlineUsers: deps.realtime.onlineUsers }));
+
+  if (deps.devReset) {
+    // e2e 自愈：清空配额计数（gift 每日 3 次会被反复 e2e 耗尽，12.7 成本保护）。
+    // 端点仅本地开发开启——生产环境不设 PET_DEV_RESET，攻击面为零。
+    app.post('/__dev/reset-test-data', async (c) => {
+      await deps.pool.query('delete from gift_events');
+      await deps.pool.query('delete from chat_usage');
+      return c.json({ ok: true });
+    });
+  }
 
   const auth = createAuthRouter(deps);
   app.route('/auth', auth);
@@ -82,7 +94,17 @@ export async function main(): Promise<void> {
   }
   const llm = llmConfig ? createOpenAiCompatibleClient(llmConfig) : undefined;
 
-  const app = buildApp({ pool, jwt, sessions, store, users, devices, realtime, llm });
+  const app = buildApp({
+    pool,
+    jwt,
+    sessions,
+    store,
+    users,
+    devices,
+    realtime,
+    llm,
+    devReset: process.env['PET_DEV_RESET'] === 'true',
+  });
 
   const port = Number(process.env['PORT'] ?? 8787);
   const server = serve({ fetch: app.fetch, port });

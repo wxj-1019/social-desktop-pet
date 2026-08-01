@@ -24,6 +24,8 @@ test.beforeAll(async () => {
   } catch {
     test.skip(1, `后端不可达（${API_BASE}）`);
   }
+  // 自愈：清空配额计数（gift 每日 3 次会被反复 e2e 耗尽；端点仅本地 PET_DEV_RESET 开启）
+  await fetch(`${API_BASE}/__dev/reset-test-data`, { method: 'POST' }).catch(() => {});
   const mainEntry = join(APP_DIR, 'out', 'main', 'index.js');
   if (!existsSync(mainEntry)) {
     throw new Error(`未找到 ${mainEntry} —— 请先运行 pnpm --filter @pet/desktop build`);
@@ -59,7 +61,7 @@ test('alice 送礼 → bob 的 WS 实时收到事件（10s 内，非 30s 轮询�
   await expect(page.locator('.login-page')).toBeVisible({ timeout: 15_000 });
   await page.locator('input[type="email"]').fill('bob@test.local');
   await page.locator('input[type="password"]').fill('password123');
-  await page.getByRole('button', { name: '登录' }).click();
+  await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(page.locator('.friends-page')).toBeVisible({ timeout: 15_000 });
 
   // node 侧：alice 登录 → 给 bob 送点心（幂等键唯一）
