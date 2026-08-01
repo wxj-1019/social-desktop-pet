@@ -33,12 +33,15 @@ export function llmConfigFromEnv(env: NodeJS.ProcessEnv = process.env): LlmConfi
 export function createOpenAiCompatibleClient(config: LlmConfig): LlmClient {
   return {
     async streamChat(messages: LlmMessage[], onToken: (token: string) => void): Promise<string> {
+      const t0 = Date.now();
+      // 模型调用超时兜底（供应商偶发挂起时不能让对话永远卡住；超时 → error 事件 → 客户端恢复）
       const res = await fetch(`${config.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           authorization: `Bearer ${config.apiKey}`,
         },
+        signal: AbortSignal.timeout(45_000),
         body: JSON.stringify({
           model: config.model,
           messages,
@@ -52,7 +55,7 @@ export function createOpenAiCompatibleClient(config: LlmConfig): LlmClient {
         throw new Error(`模型调用失败 (${res.status}): ${body.slice(0, 200)}`);
       }
       if (!res.body) throw new Error('模型响应无流');
-
+      console.info(`[llm] 模型响应已开始：${config.model}（${Date.now() - t0}ms）`);
       // 解析 SSE：data: {...}\n\n；delta.content 逐片回调
       const reader = res.body.getReader();
       const decoder = new TextDecoder();

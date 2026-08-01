@@ -73,14 +73,22 @@ class ApiError extends Error {
   }
 }
 
-/** 带鉴权 + 401 刷新重试的 fetch */
+/** 普通请求超时（防网络黑洞卡死 UI） */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/** 带鉴权 + 401 刷新重试 + 超时的 fetch */
 async function apiFetch(path: string, init: RequestInit = {}, retried = false): Promise<Response> {
   if (!baseUrl) await initApi();
   const headers = new Headers(init.headers);
   headers.set('content-type', 'application/json');
   if (accessToken) headers.set('authorization', `Bearer ${accessToken}`);
 
-  const res = await fetch(`${baseUrl}${path}`, { ...init, headers });
+  const res = await fetch(`${baseUrl}${path}`, {
+    ...init,
+    headers,
+    // 调用方未指定 signal 时加超时（流式请求自行传入更长超时）
+    signal: init.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
   if (res.status === 401 && !retried && accessToken) {
     // access token 过期 → 主进程用 refresh token 换新 → 重试一次
     const refreshed = (await window.pet.session.refresh()) as
@@ -172,9 +180,11 @@ export const api = {
     },
     threadId?: string,
   ): Promise<void> {
+    // 流式对话超时放宽（真实模型生成可能 30s+）；超时经 AbortError → catch → onError
     const res = await apiFetch('/chat', {
       method: 'POST',
       body: JSON.stringify({ message, threadId }),
+      signal: AbortSignal.timeout(120_000),
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as { error?: string } | null;

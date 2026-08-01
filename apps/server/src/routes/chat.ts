@@ -155,6 +155,7 @@ export function registerChatRoutes(
       scenario: 'private_chat',
     });
 
+    console.info(`[chat] 进入流式：user=${userId.slice(0, 8)} msg=${message.slice(0, 20)}`);
     return streamSSE(c, async (stream) => {
       // 节点事件 → SSE 帧（writeSSE 内部队列化，保证顺序）
       const emit = (e: GraphEvent): void => {

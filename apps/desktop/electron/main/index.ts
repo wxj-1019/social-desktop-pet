@@ -32,8 +32,8 @@ app.commandLine.appendSwitch(
     'UseOzonePlatform',
   ].join(','),
 );
-// 渲染进程 V8 老生代堆上限（防堆膨胀；Live2D 动画所需堆远低于此）
-app.commandLine.appendSwitch('js-flags', '--max-old-space-size=128');
+// 渲染进程 V8 老生代堆上限（防堆膨胀；128MB 在历史消息+流式渲染下会 OOM 崩渲染进程，取 256MB）
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256');
 
 // 单实例锁
 const gotLock = app.requestSingleInstanceLock();
