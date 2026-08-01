@@ -6,6 +6,7 @@
  */
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import type pg from 'pg';
 
 import { JwtService } from './auth/jwt.js';
 import { SessionManager, type SessionStore } from './auth/session.js';
@@ -24,6 +25,7 @@ function env(name: string): string {
 }
 
 export interface AppDeps {
+  pool: pg.Pool;
   jwt: JwtService;
   sessions: SessionManager;
   store: SessionStore;
@@ -40,7 +42,11 @@ export function buildApp(deps: AppDeps) {
   const auth = createAuthRouter(deps);
   app.route('/auth', auth);
 
-  const business = createBusinessRouter({ jwt: deps.jwt, realtime: deps.realtime });
+  const business = createBusinessRouter({
+    pool: deps.pool,
+    jwt: deps.jwt,
+    realtime: deps.realtime,
+  });
   app.route('/', business);
 
   return app;
@@ -64,7 +70,7 @@ export async function main(): Promise<void> {
   // ---- 自建 Realtime（9.2/9.4）----
   const realtime = new RealtimeServer(jwt);
 
-  const app = buildApp({ jwt, sessions, store, users, devices, realtime });
+  const app = buildApp({ pool, jwt, sessions, store, users, devices, realtime });
 
   const port = Number(process.env['PORT'] ?? 8787);
   const server = serve({ fetch: app.fetch, port });
