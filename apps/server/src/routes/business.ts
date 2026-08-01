@@ -11,6 +11,7 @@ import type { RealtimeServer } from '../realtime/ws.js';
 
 import { registerGiftRoutes } from './gift.js';
 import { registerInviteRoutes } from './invite.js';
+import { registerQueryRoutes } from './queries.js';
 import { registerSyncRoutes } from './sync.js';
 import { registerVisitRoutes } from './visit.js';
 
@@ -63,6 +64,8 @@ export function createBusinessRouter(deps: BusinessDeps): Hono<{ Variables: Busi
   registerVisitRoutes(app, deps);
   // 9.5 /sync 慢路径补齐
   registerSyncRoutes(app, deps);
+  // 查询（/me /friends）
+  registerQueryRoutes(app, deps);
 
   return app;
 }

@@ -11,6 +11,8 @@ export default defineConfig({
   timeout: 60_000,
   retries: 0,
   reporter: [['list']],
+  // Electron 应用有单实例锁：spec 文件必须串行（workers=1）
+  workers: 1,
   // Electron 通过 _electron.launch 启动，无需 Playwright 浏览器
   use: {
     trace: 'retain-on-failure',

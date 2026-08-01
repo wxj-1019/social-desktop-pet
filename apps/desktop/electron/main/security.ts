@@ -17,7 +17,8 @@ export const CSP =
   "script-src 'self'; " +
   "style-src 'self' 'unsafe-inline'; " +
   "img-src 'self' data: blob:; " +
-  "connect-src 'self' https: wss:; " + // Supabase HTTPS/WSS
+  // 自建后端（D-13）：本机回环 API + WS（生产指向 HTTPS 域名时收紧为具体源）
+  "connect-src 'self' https: wss: http://127.0.0.1:8787 ws://127.0.0.1:8787; " +
   "font-src 'self'; " +
   "object-src 'none'; " +
   "base-uri 'self';";
@@ -25,6 +26,12 @@ export const CSP =
 /** 8.3 IPC allowlist：preload 只暴露最小、版本化 API */
 export const IPC_ALLOWLIST = [
   'app:version',
+  'app:getApiBase',
+  'session:init',
+  'session:login',
+  'session:register',
+  'session:refresh',
+  'session:revoke',
   'window:setIgnoreMouseEvents', // 8.1 整窗穿透
   'window:minimize',
   'window:hide',

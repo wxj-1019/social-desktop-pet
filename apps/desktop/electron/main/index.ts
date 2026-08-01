@@ -13,6 +13,7 @@ import type { PetPosition } from './display-controller.js';
 import { registerIpcAllowlist } from './ipc/register.js';
 import { SecureStorageController } from './secure-storage-controller.js';
 import { SessionController } from './session-controller.js';
+import { createAuthApi, createSessionHandlers } from './session-service.js';
 import { StartupController, parseStartupArgs } from './startup-controller.js';
 import { TrayController } from './tray-controller.js';
 import { UpdateController } from './update-controller.js';
@@ -77,15 +78,17 @@ void app.whenReady().then(async () => {
     {
       name: 'session-restore',
       run: async () => {
-        // 9.8 / 8.3：会话（令牌经 safeStorage 加密存储）
+        // 9.8 / 8.3：会话（令牌经 safeStorage 加密存储；Auth API 直连自建后端，D-13）
         const secureStorage = new SecureStorageController({ dir: app.getPath('userData') });
-        // Auth API：待 Supabase 原生 auth（Edge Functions + GoTrue）接入后替换实现
-        session = new SessionController(secureStorage, {
-          refreshAccessToken: async () => {
-            throw new Error('SessionController: auth 尚未接入（第 3 周 Alpha 后）');
+        // SecureStorageController（get/set/deleteToken）适配 SessionStorage 接口
+        session = new SessionController(
+          {
+            loadRefreshToken: () => secureStorage.getToken(),
+            saveRefreshToken: (token) => secureStorage.setToken(token),
+            deleteRefreshToken: () => secureStorage.deleteToken(),
           },
-          revoke: async () => undefined,
-        });
+          createAuthApi(),
+        );
         await session.restore();
       },
     },
@@ -141,8 +144,11 @@ void app.whenReady().then(async () => {
   });
   tray.create();
 
-  // 8.3 IPC allowlist 生效
-  registerIpcAllowlist(() => win);
+  // 8.3 IPC allowlist 生效（session 通道：登录完成 → 恢复 pending 邀请，6.3）
+  registerIpcAllowlist(
+    () => win,
+    createSessionHandlers(session!, () => void deepLink?.restorePending()),
+  );
 
   // Windows：注册 pet:// 为默认协议（用户点击链接拉起应用）
   if (process.platform === 'win32') {

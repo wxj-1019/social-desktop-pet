@@ -1,0 +1,134 @@
+/**
+ * 好友页 —— 6.3 邀请 + 9.4 送礼 + 拜访 + 9.5 事件流（MVP 极简版）。
+ */
+import { useCallback, useEffect, useState } from 'react';
+
+import { api, type Friend, type SyncEvent } from '../lib/api/client.js';
+
+interface FriendsPageProps {
+  userId: string;
+}
+
+export function FriendsPage({ userId }: FriendsPageProps) {
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [events, setEvents] = useState<SyncEvent[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [lastSeq, setLastSeq] = useState(0);
+
+  const refreshFriends = useCallback(async () => {
+    try {
+      setFriends(await api.friends());
+    } catch {
+      /* 列表刷新失败不阻塞 */
+    }
+  }, []);
+
+  const pullSync = useCallback(async () => {
+    try {
+      const page = await api.sync(lastSeq);
+      if (page.events.length > 0) {
+        setEvents((prev) => [...prev, ...page.events].slice(-20));
+        setLastSeq(page.nextInboxSeq);
+      }
+    } catch {
+      /* sync 失败静默，下次再试 */
+    }
+  }, [lastSeq]);
+
+  // 首次加载 + 轮询（10s，替代 WS 订阅的首版方案）
+  useEffect(() => {
+    void refreshFriends();
+    void pullSync();
+    const timer = setInterval(() => void pullSync(), 10_000);
+    return () => clearInterval(timer);
+  }, [refreshFriends, pullSync]);
+
+  // 6.3 深链：接受邀请（登录完成后由主进程恢复转发）
+  useEffect(() => {
+    const off = window.pet.onDeepLink((payload) => {
+      if (payload === 'NEED_SIGN_IN') {
+        setNotice('请先登录，再点击邀请链接');
+        return;
+      }
+      void (async () => {
+        try {
+          await api.acceptInvite(payload);
+          setNotice('邀请接受成功，好友已添加 🎉');
+          await refreshFriends();
+        } catch (e) {
+          setNotice((e as Error).message);
+        }
+      })();
+    });
+    return off;
+  }, [refreshFriends]);
+
+  async function createInvite() {
+    try {
+      const created = await api.createInvite();
+      setInviteLink(`pet://invite?token=${created.token}`);
+      setNotice('邀请链接已生成，复制发给好友');
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }
+
+  async function sendGift(friend: Friend) {
+    try {
+      const result = await api.sendGift(friend.userId, 'snack_cookie', crypto.randomUUID());
+      setNotice(`已给 ${friend.nickname} 送了一块小饼干 🍪 (event ${result.eventId.slice(0, 8)})`);
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }
+
+  async function sendVisit(friend: Friend) {
+    try {
+      const result = await api.sendVisit(friend.userId, 'wave');
+      setNotice(`已去 ${friend.nickname} 家拜访 👋 (visit ${result.visitId.slice(0, 8)})`);
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }
+
+  return (
+    <div className="friends-page">
+      <h2>好友</h2>
+      <button onClick={createInvite}>创建邀请链接</button>
+      {inviteLink && (
+        <p className="invite-link">
+          邀请链接：<code>{inviteLink}</code>
+        </p>
+      )}
+      {notice && <p className="notice">{notice}</p>}
+
+      <ul className="friend-list">
+        {friends.length === 0 && <li className="empty">还没有好友——把邀请链接发给朋友吧</li>}
+        {friends.map((f) => (
+          <li key={f.userId} className="friend-item">
+            <span>
+              {f.nickname}
+              {f.userId === userId ? '（我）' : ''}
+            </span>
+            <button onClick={() => void sendGift(f)}>🍪 送点心</button>
+            <button onClick={() => void sendVisit(f)}>👋 拜访</button>
+          </li>
+        ))}
+      </ul>
+
+      <h3>最近事件（sync）</h3>
+      <ul className="event-list">
+        {events.length === 0 && <li className="empty">暂无事件</li>}
+        {events.map((e) => (
+          <li key={e.inboxSeq}>
+            <code>#{e.inboxSeq}</code> {e.event.type}
+            <span className="event-time">
+              {new Date(e.event.serverTimestamp).toLocaleTimeString()}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
