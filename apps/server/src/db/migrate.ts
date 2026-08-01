@@ -4,6 +4,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import pg from 'pg';
 
@@ -56,7 +57,7 @@ export async function migrate(pool: pg.Pool, dir = migrationsDir()): Promise<Mig
 }
 
 /** CLI 入口：pnpm --filter @pet/server migrate */
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const pool = new pg.Pool({ connectionString: process.env['DATABASE_URL'] });
   try {
     const result = await migrate(pool);

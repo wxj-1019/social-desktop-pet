@@ -20,9 +20,10 @@ export function createPool(config: DbConfig): pg.Pool {
 }
 
 /**
- * RLS 身份 claims（0003 兼容层：auth.uid() 从 request.jwt.claims 读取）。
+ * RLS 身份 claims（0000 兼容层：auth.uid() 从 request.jwt.claims 读取）。
  * 9.1：RLS 保留作纵深防御，应用层校验为主。
- * 用法：在事务连接上 `set local request.jwt.claims = $1`。
+ * 用法：事务内 `select set_config('request.jwt.claims', $1, true)`
+ * （SET LOCAL 不支持参数化，set_config(..., is_local=true) 等效且事务作用域）。
  */
 export function rlsClaimsJson(userId: string): string {
   return JSON.stringify({ sub: userId });

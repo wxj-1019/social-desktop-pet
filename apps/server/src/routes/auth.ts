@@ -21,8 +21,8 @@ export interface AuthDeps {
     create(email: string, passwordHash: string): Promise<string>;
   };
   devices: {
-    /** 注册设备并激活（9.8：激活新设备撤销旧设备会话） */
-    register(userId: string, deviceId: string, platform: string): Promise<void>;
+    /** 注册设备并激活（9.8：激活新设备撤销旧设备会话）；nickname 仅首次注册生效 */
+    register(userId: string, deviceId: string, platform: string, nickname: string): Promise<void>;
   };
 }
 
@@ -34,14 +34,24 @@ export function createAuthRouter(deps: AuthDeps): Hono {
   }
 
   app.post('/register', async (c) => {
-    const { email, password, deviceId, platform } = await c.req.json();
+    const { email, password, deviceId, platform, nickname } = await c.req.json();
     if (typeof email !== 'string' || typeof password !== 'string' || password.length < 8) {
       return c.json({ error: 'email/password 非法' }, 400);
     }
     const salt = randomBytes(16).toString('hex');
     // 存储格式：salt(32 hex) + scrypt hash(128 hex)；login 时按此拆分
     const userId = await deps.users.create(email, salt + hashPassword(password, salt));
-    await deps.devices.register(userId, String(deviceId), String(platform ?? 'windows'));
+    // 默认昵称 = email 前缀（6.x 注册流程接入后由用户设置）
+    const defaultNickname =
+      typeof nickname === 'string' && nickname.length > 0
+        ? nickname
+        : (email.split('@')[0] ?? '新朋友');
+    await deps.devices.register(
+      userId,
+      String(deviceId),
+      String(platform ?? 'windows'),
+      defaultNickname,
+    );
     return c.json({ userId }, 201);
   });
 
@@ -55,7 +65,8 @@ export function createAuthRouter(deps: AuthDeps): Hono {
       return c.json({ error: 'invalid credentials' }, 401);
     }
     const devId = String(deviceId);
-    await deps.devices.register(user.id, devId, String(platform ?? 'windows'));
+    // login 时 profile 已存在（on conflict do nothing）；昵称不变
+    await deps.devices.register(user.id, devId, String(platform ?? 'windows'), '');
     const refreshToken = await deps.sessions.createRefreshToken(user.id, devId);
     const accessToken = await deps.jwt.sign({ sub: user.id, deviceId: devId });
     return c.json({ accessToken, refreshToken, userId: user.id });

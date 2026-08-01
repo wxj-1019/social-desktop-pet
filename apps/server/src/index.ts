@@ -4,6 +4,8 @@
  * 对应 9.1 推荐栈：Postgres（pg）+ 自建 Auth（jose）+ 自建 Realtime（ws）。
  * AI Gateway 同进程部署（跑 @pet/ai-graph chat-flow，第 7–10 周接线）。
  */
+import { pathToFileURL } from 'node:url';
+
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import type pg from 'pg';
@@ -80,7 +82,7 @@ export async function main(): Promise<void> {
   console.info(`[server] listening on :${port} (ws: /realtime)`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   void main().catch((e) => {
     console.error('[server] 启动失败：', (e as Error).message);
     process.exit(1);

@@ -90,7 +90,7 @@ async function main() {
         try {
           const msg = JSON.parse(String(data));
           if (msg.type === 'auth_ok') {
-            connected.push(i);
+            connected.push(ws);
             timers.push(sampleRtt(ws, heartbeats, latencies));
           } else {
             failed.push(i);
@@ -142,7 +142,7 @@ async function main() {
   console.log(JSON.stringify(report, null, 2));
 
   const fs = await import('node:fs');
-  const recordFile = new URL('../docs/poc-window-capabilities.md', import.meta.url);
+  const recordFile = new URL('../../docs/poc-window-capabilities.md', import.meta.url);
   fs.appendFileSync(
     recordFile,
     `\n### V-10 自建 WS 并发压测（${new Date().toISOString()}）\n\n\`\`\`json\n${JSON.stringify(report, null, 2)}\n\`\`\`\n`,

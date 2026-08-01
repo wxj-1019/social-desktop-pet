@@ -84,3 +84,29 @@
   }
 }
 ```
+
+### V-10 自建 WS 并发压测（2026-08-01T13:48:04.276Z）
+
+```json
+{
+  "measuredAt": "2026-08-01T13:48:04.274Z",
+  "url": "ws://127.0.0.1:8787/realtime",
+  "params": {
+    "clients": 30,
+    "duration": 15,
+    "heartbeatMs": 10000
+  },
+  "results": {
+    "connectedClients": 30,
+    "failedClients": 0,
+    "rttP50Ms": 0,
+    "rttP95Ms": 1,
+    "heartbeatsPerSec": 4
+  },
+  "projection": {
+    "scenario": "1000 MAU、40% 并发（400 连接）、10s 心跳",
+    "monthlyWsTrafficMB": 19775.4,
+    "note": "VPS 档位匹配（2C4G 带宽 1–5Mbps）须结合 CPU/内存采样；大流量租户可升级带宽"
+  }
+}
+```

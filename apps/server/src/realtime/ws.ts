@@ -49,8 +49,6 @@ export class RealtimeServer {
     this.wss.on('connection', (ws) => {
       // 鉴权握手：首条消息 { type: 'auth', token }
       ws.once('message', (data) => void this.handleAuth(ws, data));
-      // 心跳保活
-      ws.on('pong', () => undefined);
       ws.on('close', () => this.remove(ws));
     });
   }
@@ -64,6 +62,17 @@ export class RealtimeServer {
       }
       const payload = await this.jwt.verify(msg.token);
       this.register(payload.sub, ws);
+      // 鉴权通过后：心跳保活（客户端 ping → pong；V-10 压测依赖）
+      ws.on('message', (heartbeat) => {
+        try {
+          const m = JSON.parse(String(heartbeat)) as { type?: string };
+          if (m.type === 'ping') {
+            ws.send(JSON.stringify({ type: 'pong', t: Date.now() }));
+          }
+        } catch {
+          /* 非 JSON 消息忽略 */
+        }
+      });
       ws.send(JSON.stringify({ type: 'auth_ok', userId: payload.sub }));
     } catch {
       ws.close(4401, 'invalid token');

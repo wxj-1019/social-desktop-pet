@@ -15,7 +15,9 @@ export class PgSessionStore implements SessionStore {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      await client.query('set local request.jwt.claims = $1', [rlsClaimsJson(session.userId)]);
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        rlsClaimsJson(session.userId),
+      ]);
       // 同一设备只保留最新会话（9.8 轮换语义）
       await client.query(
         'update refresh_sessions set revoked_at = now() where user_id = $1 and device_id = $2',
@@ -95,11 +97,24 @@ export class PgDevicesStore {
   constructor(private readonly pool: pg.Pool) {}
 
   /** 注册设备并激活（9.8：新设备激活 → 停用旧设备 refresh 会话 + 切换 active_display_device_id） */
-  async register(userId: string, deviceId: string, platform: string): Promise<void> {
+  async register(
+    userId: string,
+    deviceId: string,
+    platform: string,
+    nickname: string,
+  ): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      await client.query('set local request.jwt.claims = $1', [rlsClaimsJson(userId)]);
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        rlsClaimsJson(userId),
+      ]);
+      // profiles 行（devices.user_id 外键前提；已存在则不动，9.9）
+      await client.query(
+        `insert into profiles (user_id, nickname) values ($1, $2)
+         on conflict (user_id) do nothing`,
+        [userId, nickname],
+      );
       await client.query(
         `insert into devices (device_id, user_id, platform) values ($1::uuid, $2, $3)
          on conflict (device_id) do nothing`,
