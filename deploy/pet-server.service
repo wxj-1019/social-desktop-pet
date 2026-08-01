@@ -1,0 +1,30 @@
+# systemd 服务单元 —— 自建后端生产部署（D-13）
+# 安装：sudo cp pet-server.service /etc/systemd/system/ && sudo systemctl daemon-reload
+# 启动：sudo systemctl enable --now pet-server
+# 环境变量放 /etc/pet/pet-server.env（权限 600，含 JWT_SECRET/模型密钥——8.3）
+
+[Unit]
+Description=AI Pet backend (Hono + WebSocket + Postgres)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 生产构建产物（pnpm --filter @pet/server build 后）
+WorkingDirectory=/opt/pet/server
+ExecStart=/usr/bin/node /opt/pet/server/dist/index.js
+EnvironmentFile=/etc/pet/pet-server.env
+Restart=on-failure
+RestartSec=3
+# 单实例 WebSocket：防止误起多实例抢占同一端口（9.1 单 Node 进程设计）
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+# 安全加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadOnlyPaths=/opt/pet/server
+
+[Install]
+WantedBy=multi-user.target

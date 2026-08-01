@@ -36,16 +36,20 @@
 pnpm install
 pnpm format:check  # 格式化检查（CI 门禁）
 pnpm typecheck     # 类型检查（含 references 链）
-pnpm test          # 单测（含 graph runtime 自测，alias 到源码不依赖 dist）
+pnpm test          # 单测（alias 到源码不依赖 dist）
 pnpm dev           # 启动桌面端（renderer 直接吃共享包源码，无需先 build）
+pnpm test:e2e      # e2e（需后端运行；Electron 单实例锁 → workers=1）
 ```
 
-自建后端（需 Docker 或本地 Postgres 16）：
+自建后端（需本地 Postgres 16+ 或 Docker）：
 
 ```bash
-docker run -d --name pet-pg -e POSTGRES_PASSWORD=pet -p 5432:5432 postgres:16
+docker run -d --name pet-pg -e POSTGRES_PASSWORD=pet -p 5432:5432 postgres:16   # 或使用本机 Postgres
 cp apps/server/.env.example apps/server/.env.local   # 填 DATABASE_URL / JWT_SECRET
 pnpm dev:server        # 启动（自动应用未执行的 migrations，幂等）
+pnpm migrate           # 手动应用 migrations
+pnpm bench:ws          # V-10 WS 压测（需 BENCH_TOKEN）
+pnpm package:win       # 打包 Windows 安装包（NSIS per-user，13.1）
 ```
 
 ## 为什么自研 graph runtime 而非直接用 LangGraph.js
@@ -62,7 +66,14 @@ pnpm dev:server        # 启动（自动应用未执行的 migrations，幂等�
 
 ## 状态
 
-框架阶段（可编译可跑空窗口），业务逻辑按 [设计稿 14.2 实施路线](docs/superpowers/specs/2026-08-01-ai-social-desktop-pet-design.md) 推进。
+**2026-08-02：14.2 第 1–2 周 PoC 已闭环，第 3–6 周 Alpha 骨架完成度高。**
+
+- 后端（自建 Postgres + Node）：Auth/邀请/礼物/拜访/sync/chat(SSE) 全链路真实可用，WS 实时推送
+- 桌面端：登录/好友/聊天/深链邀请/本地降级全部可用；8 控制器齐备
+- 已通过：单测 135、e2e 10/10、V-10 压测（400 并发）、资源基线（RSS 288MB ≤300MB）
+- 封测准备：`pnpm package:win` 出安装包；部署指南见 [docs/deployment.md](docs/deployment.md)
+
+当前状态速览与交接要点见 [docs/status-2026-08-02.md](docs/status-2026-08-02.md)，业务逻辑按 [设计稿 14.2 实施路线](docs/superpowers/specs/2026-08-01-ai-social-desktop-pet-design.md) 推进。
 
 ## 许可
 

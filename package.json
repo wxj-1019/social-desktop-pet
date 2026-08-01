@@ -22,6 +22,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "pnpm --filter @pet/desktop build && playwright test --config e2e/playwright.config.ts",
+    "package:win": "pnpm --filter @pet/desktop package:win",
     "bench:resources": "node tools/bench/resource-bench.mjs",
     "bench:ws": "node tools/bench/measure-ws.mjs",
     "clean": "pnpm -r exec rimraf dist node_modules/.cache .turbo || true",

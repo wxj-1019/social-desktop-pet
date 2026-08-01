@@ -1,0 +1,36 @@
+# electron-builder 配置 —— 13.1 Windows 发行（默认按用户安装，不要求管理员权限）
+appId: com.pet.desktop
+productName: AI Pet
+copyright: Copyright © 2026 AI Pet
+
+directories:
+  output: release
+  buildResources: resources
+
+# 只打包构建产物 + 模型资源（模型文件受 V-1 许可门禁，未就绪前不随包）
+files:
+  - out/**
+  - package.json
+
+win:
+  # NSIS 默认 per-user 安装（13.1：不要求管理员权限）
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # 图标：V-12 角色/视觉资产就绪后提供 build/icon.ico（当前用 Electron 默认）
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  # 中文名安装目录与开始菜单
+  shortcutName: AI Pet
+  uninstallDisplayName: AI Pet
+
+# 压缩产物 hash（更新 manifest 校验用，13.1/8.3）
+compression: maximum
+
+publish:
+  - provider: generic
+    url: https://updates.example.com/pet
