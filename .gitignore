@@ -15,6 +15,10 @@ apps/desktop/release/
 coverage/
 *.lcov
 
+# Playwright
+test-results/
+playwright-report/
+
 # Supabase local
 supabase/.branches
 supabase/.temp

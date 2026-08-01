@@ -24,3 +24,32 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm --filter @pet/desktop typecheck
       - run: pnpm test
+
+  # 补 3+4：Edge Functions 用 Deno 检查（本地无 deno 时跳过，CI 兜底）
+  supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno lint --config packages/supabase/deno.json packages/supabase/functions/
+      - run: deno check --config packages/supabase/deno.json packages/supabase/functions/chat/index.ts packages/supabase/functions/sync/index.ts
+
+  # 补 2：Electron e2e 冒烟（Linux 需 xvfb + Electron 系统依赖）
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Electron 在 Ubuntu 的运行时依赖
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2
+      - run: pnpm --filter @pet/desktop build
+      - run: xvfb-run -a npx playwright test --config e2e/playwright.config.ts

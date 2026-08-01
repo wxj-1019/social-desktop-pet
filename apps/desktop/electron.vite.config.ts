@@ -14,6 +14,10 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       lib: { entry: 'electron/preload/index.ts' },
+      rollupOptions: {
+        // 8.3 sandbox:true 时 preload 必须是 CJS（ESM preload 在沙箱下无法加载）
+        output: { format: 'cjs', entryFileNames: '[name].js' },
+      },
     },
   },
   renderer: {

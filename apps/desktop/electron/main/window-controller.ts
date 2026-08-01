@@ -24,7 +24,7 @@ export function createPetWindow(): BrowserWindow {
     show: false, // ready-to-show 时再显示
     webPreferences: {
       ...SECURE_WEB_PREFS,
-      preload: join(__dirname, '../preload/index.js'),
+      preload: join(__dirname, '../preload/index.js'), // CJS（sandbox 要求）
     },
   });
 
