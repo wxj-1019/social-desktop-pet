@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@pet/ai-graph": "workspace:*",
+    "@pet/config": "workspace:*",
     "@pet/protocol": "workspace:*",
     "@hono/node-server": "^1.13.0",
     "hono": "^4.6.0",

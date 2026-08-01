@@ -10,12 +10,14 @@ import {
   localReply,
   type ChatMessage,
 } from '../lib/local-mode.js';
+import type { PetStateController } from '../pet/use-pet-state-machine.js';
 
 interface LocalChatProps {
   onLoginClick: () => void;
+  pet: PetStateController;
 }
 
-export function LocalChat({ onLoginClick }: LocalChatProps) {
+export function LocalChat({ onLoginClick, pet }: LocalChatProps) {
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -42,6 +44,9 @@ export function LocalChat({ onLoginClick }: LocalChatProps) {
     };
     setHistory((prev) => appendLocalMessage(appendLocalMessage(prev, userMsg), petMsg));
     setInput('');
+    // 联动：短暂 CHATTING 后回 IDLE（本地规则回复瞬时完成）
+    pet.transition('CHATTING', 'local_chat');
+    setTimeout(() => pet.transition('IDLE', 'local_chat_end'), 1_500);
   }
 
   return (

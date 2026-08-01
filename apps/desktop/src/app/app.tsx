@@ -109,7 +109,7 @@ export function App() {
             登录
           </button>
         </header>
-        <LocalChat onLoginClick={() => setPhase('signed_out')} />
+        <LocalChat onLoginClick={() => setPhase('signed_out')} pet={pet} />
       </div>
     );
   }
@@ -136,7 +136,7 @@ export function App() {
           聊天
         </button>
       </nav>
-      {tab === 'friends' ? <FriendsPage userId={user?.userId ?? ''} /> : <ChatPanel />}
+      {tab === 'friends' ? <FriendsPage userId={user?.userId ?? ''} /> : <ChatPanel pet={pet} />}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import type { LlmClient } from '../llm/types.js';
 import type { NodeFn } from '../runtime/types.js';
 
 import type { ChatFlowState } from './chat-flow-state.js';
+import { detectCrisis } from './crisis-rules.js';
 
 /** 10.1 认证、配额、限流 */
 export const authNode: NodeFn<ChatFlowState> = async (
@@ -21,16 +22,17 @@ export const authNode: NodeFn<ChatFlowState> = async (
 
 /** 10.1 输入安全分类（11.8 + 11.7 + 第二轮 sycophancy/永久承诺） */
 export const classifyInputNode: NodeFn<ChatFlowState> = async (
-  _state,
+  state,
   _ctx,
 ): Promise<Partial<ChatFlowState>> => {
-  // TODO(第7-10周): 调用免费 Moderation + 注入检测器（@pet/config MODERATION_CONFIG）
-  // 第二轮：危机三级（none/low/medium/high）+ 依赖操纵/永久承诺/sycophancy 类别
+  // 11.8 危机预筛（规则版，2026-08-02；V-13 自建中文分类器就绪后替换）
+  // 命中 high/medium → 图的 crisis_response 条件边激活（11.8 固定协议）
+  const crisis = detectCrisis(state.userMessage);
   return {
     inputClassification: {
-      categories: [],
-      crisisLevel: 'none',
-      confidence: 1,
+      categories: crisis.categories,
+      crisisLevel: crisis.crisisLevel,
+      confidence: crisis.crisisLevel === 'none' ? 1 : 0.8, // 规则版置信保守
     },
   };
 };

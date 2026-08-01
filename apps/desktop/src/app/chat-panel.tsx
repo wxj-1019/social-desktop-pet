@@ -1,17 +1,23 @@
 /**
  * 聊天面板（云端）—— 10.1 chat-flow SSE 流式对话。
  * 登录后可用；本地模式走 local-chat（规则引擎）。
+ * 联动：对话期间桌宠进入 CHATTING（口型动作），结束回 IDLE（7.1 状态机）。
  */
 import { useState } from 'react';
 
 import { api } from '../lib/api/client.js';
+import type { PetStateController } from '../pet/use-pet-state-machine.js';
 
 interface ChatEntry {
   role: 'user' | 'pet';
   text: string;
 }
 
-export function ChatPanel() {
+interface ChatPanelProps {
+  pet: PetStateController;
+}
+
+export function ChatPanel({ pet }: ChatPanelProps) {
   const [history, setHistory] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -27,6 +33,7 @@ export function ChatPanel() {
     setHistory((prev) => [...prev, { role: 'user', text }]);
     // 占位条目：token 流式填充
     setHistory((prev) => [...prev, { role: 'pet', text: '' }]);
+    pet.transition('CHATTING', 'chat_start');
 
     await api.chatStream(
       text,
@@ -39,10 +46,14 @@ export function ChatPanel() {
             return next;
           });
         },
-        onDone: () => setStreaming(false),
+        onDone: () => {
+          setStreaming(false);
+          pet.transition('IDLE', 'chat_end');
+        },
         onError: (m) => {
           setError(m);
           setStreaming(false);
+          pet.transition('IDLE', 'chat_error');
         },
       },
       'local-thread',

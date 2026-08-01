@@ -24,6 +24,10 @@ export const LIMITS = {
   maxRetries: 2,
   /** 12.7 每设备并发请求数 */
   concurrencyPerDevice: 2,
+  /** 12.7 每用户每日 chat 请求预算（成本保护；按 dailyTokenBudgetPerUser 折算的保守值） */
+  dailyChatRequestsPerUser: 200,
+  /** 12.7 每设备速率限制（60s 窗口内请求数） */
+  chatRateLimitPerMinute: 20,
 } as const;
 
 /**

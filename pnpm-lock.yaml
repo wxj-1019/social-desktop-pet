@@ -133,6 +133,9 @@ importers:
       '@pet/ai-graph':
         specifier: workspace:*
         version: link:../../packages/ai-graph
+      '@pet/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@pet/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
