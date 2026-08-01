@@ -17,6 +17,10 @@ export interface WindowOptions {
   savedPosition?: PetPosition | null;
   /** 位置变化回调（8.5 持久化） */
   onPositionChanged?: (pos: PetPosition) => void;
+  /** 加载 URL 附加后缀（如 --poc 时 ?poc 进入窗口能力自检页） */
+  urlSuffix?: string;
+  /** 启动隐藏（--minimized：启动后最小化到托盘，不显示主窗） */
+  startHidden?: boolean;
 }
 
 const PET_WINDOW_SIZE = { width: 360, height: 480 };
@@ -48,7 +52,10 @@ export function createPetWindow(options: WindowOptions = {}): BrowserWindow {
     },
   });
 
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    // --minimized：启动隐藏到托盘
+    if (!options.startHidden) win.show();
+  });
 
   // 8.5：位置变化时回调（由调用方持久化）
   win.on('moved', () => {
@@ -77,11 +84,15 @@ export function createPetWindow(options: WindowOptions = {}): BrowserWindow {
   // CSP 由 renderer 的 index.html <meta> 注入（见 security.ts CSP 常量）；
   // 也可通过 session.webRequest.onHeadersReceived 注入响应头，第 3 周实现。
 
-  // electron-vite dev/prod 入口
+  // electron-vite dev/prod 入口（--poc 时附加 ?poc 进入窗口能力自检页）
+  const suffix = options.urlSuffix ?? '';
   if (process.env['ELECTRON_RENDERER_URL']) {
-    void win.loadURL(process.env['ELECTRON_RENDERER_URL']);
+    void win.loadURL(process.env['ELECTRON_RENDERER_URL'] + suffix);
   } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'));
+    void win.loadFile(
+      join(__dirname, '../renderer/index.html'),
+      suffix ? { search: suffix.slice(1) } : undefined,
+    );
   }
 
   return win;
