@@ -5,7 +5,7 @@
  * 1. 只注册 allowlist 内的通道（其余一律拒绝）
  * 2. 输入用 @pet/protocol 的 zod schema 校验
  */
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain, screen } from 'electron';
 
 import { IPC_ALLOWLIST } from '../security.js';
 
@@ -41,4 +41,14 @@ export function registerIpcAllowlist(getWindow: () => BrowserWindow | null): voi
   registerIpcHandler('app:version', () => getWindow()?.webContents.getURL() ?? null);
   // tray:toggle / deeplink:payload / storage:get / storage:set —— 第 3 周接 TrayController/SecureStorage
   void getWindow;
+
+  // PoC 专用：多屏信息（第 1–2 周窗口能力 PoC；第 3 周由 DisplayController 正式接入）
+  ipcMain.handle('poc:getDisplays', () => {
+    return screen.getAllDisplays().map((d) => ({
+      id: String(d.id),
+      bounds: d.bounds,
+      workArea: d.workArea,
+      scaleFactor: d.scaleFactor,
+    }));
+  });
 }

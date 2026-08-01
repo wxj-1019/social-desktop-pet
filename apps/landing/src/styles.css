@@ -1,0 +1,89 @@
+:root {
+  color-scheme: light dark;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, #f7f0ff 0%, #e8f4ff 100%);
+  color: #1f2430;
+}
+
+.landing {
+  max-width: 640px;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.hero h1 {
+  font-size: 2.2rem;
+  line-height: 1.3;
+  margin: 0 0 12px;
+}
+
+.sub {
+  color: #5a6270;
+  margin: 0 0 32px;
+}
+
+.waitlist {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.waitlist input {
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid #c9d2e0;
+  min-width: 260px;
+  font-size: 1rem;
+}
+
+.waitlist button {
+  padding: 12px 24px;
+  border-radius: 10px;
+  border: none;
+  background: #6c5ce7;
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.waitlist button:disabled {
+  opacity: 0.6;
+}
+
+.error {
+  color: #d63031;
+  font-size: 0.85rem;
+  margin: 8px 0 0;
+}
+
+.success h2 {
+  margin-bottom: 8px;
+}
+
+.features {
+  list-style: none;
+  padding: 0;
+  margin: 32px 0 0;
+  display: grid;
+  gap: 10px;
+  color: #3a4250;
+}
+
+.note {
+  margin-top: 40px;
+  font-size: 0.8rem;
+  color: #8a92a2;
+}

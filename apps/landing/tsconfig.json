@@ -1,0 +1,10 @@
+{
+  "extends": "@pet/tsconfig/web.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "types": ["vite/client"]
+  },
+  "include": ["src"]
+}
