@@ -20,6 +20,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "pnpm --filter @pet/desktop build && playwright test --config e2e/playwright.config.ts",
+    "bench:resources": "node tools/bench/resource-bench.mjs",
     "clean": "pnpm -r exec rimraf dist node_modules/.cache .turbo || true",
     "prepare": "husky",
     "deno:check": "deno check --config packages/supabase/deno.json packages/supabase/functions/chat/index.ts || echo 'deno 未安装，跳过（CI 会检查）'",

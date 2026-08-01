@@ -53,6 +53,9 @@ importers:
       '@pet/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@pet/pet-state':
+        specifier: workspace:*
+        version: link:../../packages/pet-state
       '@pet/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -123,6 +126,12 @@ importers:
         version: link:../protocol
 
   packages/config:
+    dependencies:
+      '@pet/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
+  packages/pet-state:
     dependencies:
       '@pet/protocol':
         specifier: workspace:*

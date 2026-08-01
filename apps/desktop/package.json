@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@pet/config": "workspace:*",
+    "@pet/pet-state": "workspace:*",
     "@pet/protocol": "workspace:*",
     "@pet/ui": "workspace:*",
     "react": "^18.3.1",

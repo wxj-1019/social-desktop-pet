@@ -30,7 +30,8 @@ ai-social-desktop-pet/
 | 加一张表 / 改 RLS / 索引                        | `packages/supabase/db/migrations/`（新 migration）           | 9.9 / 11.2               |
 | 加/改一个后端命令（礼物/拜访/邀请/sync）        | `packages/supabase/functions/<name>/index.ts`                | 9.4 / 6.x                |
 | 改桌宠窗口/穿透/托盘/更新                       | `apps/desktop/electron/main/*`                               | 8.1–8.7                  |
-| 改桌宠动画/状态机/气泡                          | `apps/desktop/src/pet/*`                                     | 7.1                      |
+| 改桌宠状态机逻辑（转换/动作审批/白名单）        | `packages/pet-state/src/index.ts`（纯逻辑，可单测）          | 7.1                      |
+| 改桌宠动画/渲染/气泡                            | `apps/desktop/src/pet/*`（状态机经 usePetStateMachine 接入） | 7.1–7.3                  |
 | 加渲染页（聊天/好友/记忆中心）                  | `apps/desktop/src/app/*`                                     | 6.x                      |
 | 改限额/配额/保留期                              | `packages/config/src/limits.ts`                              | 6.5 / 10.9 / 11.4 / 12.7 |
 | 改 feature 开关                                 | `packages/config/src/feature-flags.ts`                       | P0 运维                  |

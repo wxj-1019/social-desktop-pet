@@ -1,0 +1,26 @@
+{
+  "name": "@pet/pet-state",
+  "version": "0.0.0",
+  "private": true,
+  "description": "桌宠确定性状态机（设计稿 7.1）：状态转换 + AI 动作审批（勿扰/冷却/白名单）",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@pet/protocol": "workspace:*"
+  }
+}

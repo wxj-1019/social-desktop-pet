@@ -11,6 +11,9 @@ export default defineConfig({
       '@pet/protocol': fileURLToPath(new URL('./packages/protocol/src/index.ts', import.meta.url)),
       '@pet/config': fileURLToPath(new URL('./packages/config/src/index.ts', import.meta.url)),
       '@pet/ai-graph': fileURLToPath(new URL('./packages/ai-graph/src/index.ts', import.meta.url)),
+      '@pet/pet-state': fileURLToPath(
+        new URL('./packages/pet-state/src/index.ts', import.meta.url),
+      ),
       '@pet/ui': fileURLToPath(new URL('./packages/ui/src/index.ts', import.meta.url)),
     },
   },
