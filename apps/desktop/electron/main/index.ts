@@ -6,11 +6,16 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { app, BrowserWindow } from 'electron';
+import type { PanelOpen } from '@pet/protocol';
+import { app, BrowserWindow, screen } from 'electron';
 
 import { DeepLinkController } from './deep-link-controller.js';
 import type { PetPosition } from './display-controller.js';
 import { registerIpcAllowlist } from './ipc/register.js';
+import type { PetIpcDependencies } from './ipc/register.js';
+import { PetDragController } from './pet-drag-controller.js';
+import { PetProfileStore } from './pet-profile-store.js';
+import { PetRuntimeController } from './pet-runtime-controller.js';
 import { SecureStorageController } from './secure-storage-controller.js';
 import { SessionController } from './session-controller.js';
 import { createAuthApi, createSessionHandlers } from './session-service.js';
@@ -18,7 +23,8 @@ import { StartupController, parseStartupArgs } from './startup-controller.js';
 import { TrayController } from './tray-controller.js';
 import { UpdateController } from './update-controller.js';
 import { createUpdateApi } from './update-source.js';
-import { createPetWindow, setPassThrough } from './window-controller.js';
+import { createPanelWindow, createPetWindow, setPassThrough } from './window-controller.js';
+import type { PanelWindowHandle } from './window-controller.js';
 
 // ---- 8.7 资源削减（app ready 前必须设置）----
 // 禁用无关 Chromium 特性（Windows 遮挡计算/翻译/媒体路由/优化提示）——降低后台 CPU 与内存杂项
@@ -92,12 +98,56 @@ void app.whenReady().then(async () => {
   session = createdSession;
   const restorePromise = createdSession.restore();
   let win: BrowserWindow | null = null;
+  let panelHandle: PanelWindowHandle | null = null;
+
+  // Task 4：宠物档案持久化（userData/pet-profile.json）
+  const profile = new PetProfileStore(app.getPath('userData'));
+  // Task 6：安全拖动控制器
+  const drag = new PetDragController();
+  // Task 5：唯一桌宠运行时；生命周期启动与 snapshot/visual 推送接线在 Task 10
+  const runtime = new PetRuntimeController({
+    emitSnapshot: () => undefined,
+    emitVisual: () => undefined,
+  });
+
+  // 8.2 面板：首次打开时懒创建，锚定到宠物旁
+  const openPanel = (view: PanelOpen): void => {
+    if (!panelHandle) {
+      panelHandle = createPanelWindow();
+    }
+    if (win) panelHandle.showPanel(win.getBounds());
+    panelHandle.win.webContents.send('panel:navigate', view);
+  };
 
   // 8.3 IPC allowlist 在窗口加载前生效；session:init 等待上面的唯一 restorePromise。
-  registerIpcAllowlist(
-    () => win,
-    createSessionHandlers(createdSession, () => void deepLink?.restorePending(), restorePromise),
-  );
+  const deps: PetIpcDependencies = {
+    getPetWindow: () => win,
+    getPanelWindow: () => panelHandle?.win ?? null,
+    runtime,
+    drag,
+    profile,
+    getDisplays: () =>
+      screen.getAllDisplays().map((d) => ({
+        id: String(d.id),
+        workArea: d.workArea,
+        scaleFactor: d.scaleFactor,
+      })),
+    openPanel,
+    closePanel: () => panelHandle?.hide(),
+    showContextMenu: () => {
+      // 第 3 周接 ContextMenuController；先以打开面板兜底
+      if (win) openPanel({ view: 'chat' });
+    },
+    setPassThrough: (enabled) => {
+      if (win) setPassThrough(win, enabled);
+    },
+    sessionHandlers: createSessionHandlers(
+      createdSession,
+      () => void deepLink?.restorePending(),
+      restorePromise,
+    ),
+  };
+  registerIpcAllowlist(deps);
 
   const createdWindow = createPetWindow({
     savedPosition,

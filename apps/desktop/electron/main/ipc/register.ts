@@ -1,13 +1,30 @@
 /**
- * IPC 注册 —— 对应设计稿 8.3（IPC 输入使用 Schema 验证、allowlist）。
+ * IPC 注册 —— 对应设计稿 8.3（IPC 输入使用 Schema 验证、allowlist、sender 窗口绑定）。
  *
- * 审查修复 #6：preload 只暴露最小 API，main 侧必须：
+ * 审查修复 #6 + Task 7：
  * 1. 只注册 allowlist 内的通道（其余一律拒绝）
- * 2. 输入用 @pet/protocol 的 zod schema 校验
+ * 2. 输入用 @pet/protocol 的 zod schema 校验（parseIpcPayload，失败抛稳定错误）
+ * 3. 每个 handler 先用 validateIpcSender 绑定窗口身份（pet/panel surface），
+ *    越权 surface 调用一律拒绝
+ * 4. main→renderer 推送辅助 broadcastPetSnapshot / sendPetVisual（Task 10 接线）
  */
-import { BrowserWindow, ipcMain, screen } from 'electron';
-import type { ZodType } from 'zod';
+import {
+  BooleanSettingSchema,
+  PanelOpenSchema,
+  PetActionRequestSchema,
+  PetChatEventSchema,
+  PetDragPointSchema,
+  PetInteractionSchema,
+  PetProfileSchema,
+} from '@pet/protocol';
+import type { PanelOpen, PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
+import { ipcMain, screen } from 'electron';
+import type { BrowserWindow } from 'electron';
 
+import type { DisplayLike } from '../display-controller.js';
+import type { PetDragController } from '../pet-drag-controller.js';
+import type { PetProfileStore } from '../pet-profile-store.js';
+import type { PetRuntimeController } from '../pet-runtime-controller.js';
 import { IPC_ALLOWLIST } from '../security.js';
 import {
   apiBaseUrl,
@@ -16,79 +33,198 @@ import {
   type SessionServiceHandlers,
 } from '../session-service.js';
 
+import { parseIpcPayload, validateIpcSender } from './ipc-validation.js';
+import type { IpcSenderEvent, IpcSurface } from './ipc-validation.js';
+
 const ALLOWED = new Set<string>(IPC_ALLOWLIST);
 
-/** 注册一个受 allowlist + schema 保护的 IPC handler */
-export function registerIpcHandler(
+/** Task 7：registerIpcAllowlist 的依赖端口（窗口 + 运行时 + 拖动 + 档案 + 面板动作） */
+export interface PetIpcDependencies {
+  /** 桌宠窗口（可空，未创建前拒绝调用） */
+  getPetWindow: () => BrowserWindow | null;
+  /** 面板窗口（可空） */
+  getPanelWindow: () => BrowserWindow | null;
+  /** 桌宠唯一运行时（Task 5） */
+  runtime: PetRuntimeController;
+  /** 安全拖动控制器（Task 6） */
+  drag: PetDragController;
+  /** 档案持久化（Task 4） */
+  profile: PetProfileStore;
+  /** 全部显示器（拖动夹取用，8.5） */
+  getDisplays: () => DisplayLike[];
+  /** 打开面板（按目标视图） */
+  openPanel: (view: PanelOpen) => void;
+  /** 关闭面板 */
+  closePanel: () => void;
+  /** 桌宠右键菜单 */
+  showContextMenu: () => void;
+  /** 整窗穿透切换（8.4） */
+  setPassThrough: (enabled: boolean) => void;
+  /** 会话 handler（Task 1；可选，缺省不注册会话通道） */
+  sessionHandlers?: SessionServiceHandlers;
+}
+
+function senderWindow(surface: IpcSurface, deps: PetIpcDependencies): BrowserWindow | null {
+  return surface === 'pet' ? deps.getPetWindow() : deps.getPanelWindow();
+}
+
+/**
+ * 校验 sender 属于某个（些）surface 的期望窗口；多 surface 通道逐个尝试，
+ * 全部失败抛最后一个校验错误。
+ */
+function validateSender(
+  event: IpcSenderEvent,
+  deps: PetIpcDependencies,
+  surface: IpcSurface | IpcSurface[],
+): BrowserWindow {
+  const surfaces = Array.isArray(surface) ? surface : [surface];
+  let lastError: unknown = null;
+  for (const s of surfaces) {
+    try {
+      return validateIpcSender(event, senderWindow(s, deps), s);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (lastError instanceof Error) throw lastError;
+  throw new Error('[IPC] 发送窗口不被允许');
+}
+
+/** 注册一个受 allowlist + sender 校验保护的 invoke 通道 */
+function registerInvoke(
+  deps: PetIpcDependencies,
   channel: string,
+  surface: IpcSurface | IpcSurface[],
   handler: (win: BrowserWindow, payload: unknown) => unknown,
 ): void {
   if (!ALLOWED.has(channel)) {
     throw new Error(`[IPC] 通道 "${channel}" 不在 allowlist 中`);
   }
-  ipcMain.on(channel, (event, payload: unknown) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) return;
+  ipcMain.handle(channel, (event, payload) => {
+    const win = validateSender(event, deps, surface);
+    return handler(win, payload);
+  });
+}
+
+/** 注册一个受 allowlist + sender 校验保护的 on（send）通道 */
+function registerOn(
+  deps: PetIpcDependencies,
+  channel: string,
+  surface: IpcSurface | IpcSurface[],
+  handler: (win: BrowserWindow, payload: unknown) => void,
+): void {
+  if (!ALLOWED.has(channel)) {
+    throw new Error(`[IPC] 通道 "${channel}" 不在 allowlist 中`);
+  }
+  ipcMain.on(channel, (event, payload) => {
+    const win = validateSender(event, deps, surface);
     handler(win, payload);
   });
 }
 
-/** 注册 session IPC（async invoke 模式；通道必须在 allowlist 内） */
-function registerSessionIpc(handlers: SessionServiceHandlers): void {
-  const parsePayload = <T>(schema: ZodType<T>, payload: unknown, message: string): T => {
-    const parsed = schema.safeParse(payload);
-    if (!parsed.success) throw new TypeError(message);
-    return parsed.data;
-  };
+/** 注册会话 IPC（Task 1 基线；仅面板窗可调用；失败统一返回 { error } 信封） */
+function registerSessionIpc(deps: PetIpcDependencies, handlers: SessionServiceHandlers): void {
   const register = (channel: string, fn: (payload: unknown) => Promise<unknown>) => {
-    if (!ALLOWED.has(channel)) throw new Error(`[IPC] 通道 "${channel}" 不在 allowlist 中`);
-    ipcMain.handle(channel, async (_event, payload: unknown) => {
+    if (!ALLOWED.has(channel)) {
+      throw new Error(`[IPC] 通道 "${channel}" 不在 allowlist 中`);
+    }
+    ipcMain.handle(channel, (event, payload) => {
       try {
-        return await fn(payload);
-      } catch (e) {
-        return { error: (e as Error).message };
+        // sender 与 payload 校验都进 { error } 信封（会话通道的既有契约）
+        validateIpcSender(event, deps.getPanelWindow(), 'panel');
+        return fn(payload);
+      } catch (error) {
+        return { error: (error as Error).message };
       }
     });
   };
   register('session:init', () => handlers.init());
-  register('session:login', (p) =>
-    handlers.login(parsePayload(SessionLoginPayloadSchema, p, '登录参数无效')),
-  );
+  register('session:login', (p) => handlers.login(parseIpcPayload(SessionLoginPayloadSchema, p)));
   register('session:register', (p) =>
-    handlers.register(parsePayload(SessionRegisterPayloadSchema, p, '注册参数无效')),
+    handlers.register(parseIpcPayload(SessionRegisterPayloadSchema, p)),
   );
   register('session:refresh', () => handlers.refresh());
   register('session:revoke', () => handlers.revoke());
 }
 
-/** 注册全部基础通道（第 3 周接 WindowController/TrayController 时扩展） */
-export function registerIpcAllowlist(
-  getWindow: () => BrowserWindow | null,
-  sessionHandlers?: SessionServiceHandlers,
-): void {
-  registerIpcHandler('window:setIgnoreMouseEvents', (win, payload) => {
-    if (typeof payload !== 'boolean') throw new TypeError('payload 必须是 boolean');
-    win.setIgnoreMouseEvents(payload, { forward: true });
+/**
+ * 注册全部 IPC 通道（Task 7：全部通道带 schema + sender 校验）。
+ * 推送通道 pet:runtime:snapshot / pet:visual-command / deeplink:payload 只由 main
+ * 内部 webContents.send，不在这里注册 renderer→main handler。
+ */
+export function registerIpcAllowlist(deps: PetIpcDependencies): void {
+  const { runtime, drag, profile, getDisplays } = deps;
+
+  // ---- 基础通道 ----
+  registerInvoke(deps, 'app:version', ['pet', 'panel'], (win) => win.webContents.getURL() ?? null);
+  registerInvoke(deps, 'app:getApiBase', ['pet', 'panel'], () => apiBaseUrl());
+
+  registerOn(deps, 'window:setIgnoreMouseEvents', 'pet', (win, payload) => {
+    const { enabled } = parseIpcPayload(BooleanSettingSchema, payload);
+    win.setIgnoreMouseEvents(enabled, { forward: true });
   });
-  registerIpcHandler('window:minimize', (win) => {
+  registerOn(deps, 'window:minimize', 'pet', (win) => {
     win.minimize();
   });
-  registerIpcHandler('window:hide', (win) => {
+  registerOn(deps, 'window:hide', 'pet', (win) => {
     win.hide();
   });
-  registerIpcHandler('app:version', () => getWindow()?.webContents.getURL() ?? null);
 
-  // 自建后端地址（D-13）：渲染进程 API client 用
-  ipcMain.handle('app:getApiBase', () => apiBaseUrl());
+  // ---- 会话（9.8）：仅面板窗可调用 ----
+  if (deps.sessionHandlers) registerSessionIpc(deps, deps.sessionHandlers);
 
-  // 会话（9.8）：登录/恢复/刷新/登出
-  if (sessionHandlers) registerSessionIpc(sessionHandlers);
+  // ---- 桌宠运行时（7.x）：runtime:get 两窗皆可；动作/交互仅 pet ----
+  registerInvoke(deps, 'pet:runtime:get', ['pet', 'panel'], () => runtime.snapshot);
+  registerInvoke(deps, 'pet:request-action', 'pet', (_win, payload) =>
+    runtime.requestAction(parseIpcPayload(PetActionRequestSchema, payload)),
+  );
+  registerOn(deps, 'pet:interaction', 'pet', (_win, payload) =>
+    runtime.handleInteraction(parseIpcPayload(PetInteractionSchema, payload)),
+  );
+  registerOn(deps, 'pet:chat-event', 'pet', (_win, payload) =>
+    runtime.handleChat(parseIpcPayload(PetChatEventSchema, payload)),
+  );
+  registerOn(deps, 'pet:set-dnd', 'pet', (_win, payload) => {
+    const { enabled } = parseIpcPayload(BooleanSettingSchema, payload);
+    runtime.setDnd(enabled);
+    broadcastPetSnapshot(deps, runtime.snapshot); // 面板同步勿扰状态
+  });
+  registerOn(deps, 'pet:set-pass-through', 'pet', (_win, payload) => {
+    const { enabled } = parseIpcPayload(BooleanSettingSchema, payload);
+    deps.setPassThrough(enabled);
+  });
+  registerOn(deps, 'pet:show-context-menu', 'pet', () => deps.showContextMenu());
 
-  // tray:toggle / deeplink:payload / storage:get / storage:set —— 第 3 周接 TrayController/SecureStorage
-  void getWindow;
+  // ---- 拖动（8.5）：仅 pet ----
+  registerOn(deps, 'pet:drag-start', 'pet', (win, payload) =>
+    drag.start(win, parseIpcPayload(PetDragPointSchema, payload)),
+  );
+  registerOn(deps, 'pet:drag-move', 'pet', (win, payload) =>
+    drag.move(win, parseIpcPayload(PetDragPointSchema, payload), getDisplays()),
+  );
+  registerOn(deps, 'pet:drag-end', 'pet', () => drag.end());
 
-  // PoC 专用：多屏信息（第 1–2 周窗口能力 PoC；第 3 周由 DisplayController 正式接入）
-  ipcMain.handle('poc:getDisplays', () => {
+  // ---- 面板（8.2）：仅 panel 窗可调用 ----
+  registerOn(deps, 'panel:open', 'panel', (_win, payload) =>
+    deps.openPanel(parseIpcPayload(PanelOpenSchema, payload)),
+  );
+  registerOn(deps, 'panel:close', 'panel', () => deps.closePanel());
+  registerInvoke(deps, 'panel:navigate', 'panel', (_win, payload) => {
+    const view = parseIpcPayload(PanelOpenSchema, payload);
+    deps.getPanelWindow()?.webContents.send('panel:navigate', view);
+    return view;
+  });
+
+  // ---- 档案（Task 4）：读取两窗皆可；写入仅 panel ----
+  registerInvoke(deps, 'pet-profile:get', ['pet', 'panel'], () => profile.load());
+  registerInvoke(deps, 'pet-profile:set', 'panel', (_win, payload) => {
+    const next = parseIpcPayload(PetProfileSchema, payload);
+    profile.save(next);
+    return next;
+  });
+
+  // ---- PoC 专用：多屏信息（第 1–2 周窗口能力 PoC；第 3 周由 DisplayController 正式接入）----
+  registerInvoke(deps, 'poc:getDisplays', 'pet', () => {
     return screen.getAllDisplays().map((d) => ({
       id: String(d.id),
       bounds: d.bounds,
@@ -96,4 +232,15 @@ export function registerIpcAllowlist(
       scaleFactor: d.scaleFactor,
     }));
   });
+}
+
+/** 推送运行时快照到 pet（及可选 panel）窗口 —— Task 10 接线用 */
+export function broadcastPetSnapshot(deps: PetIpcDependencies, snapshot: PetRuntimeSnapshot): void {
+  deps.getPetWindow()?.webContents.send('pet:runtime:snapshot', snapshot);
+  deps.getPanelWindow()?.webContents.send('pet:runtime:snapshot', snapshot);
+}
+
+/** 推送视觉指令到 pet 窗口 —— Task 10 接线用 */
+export function sendPetVisual(deps: PetIpcDependencies, command: PetVisualCommand): void {
+  deps.getPetWindow()?.webContents.send('pet:visual-command', command);
 }

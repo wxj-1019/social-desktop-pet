@@ -23,7 +23,11 @@ export const CSP =
   "object-src 'none'; " +
   "base-uri 'self';";
 
-/** 8.3 IPC allowlist：preload 只暴露最小、版本化 API */
+/**
+ * 8.3 IPC allowlist：preload 只暴露最小、版本化 API。
+ * 原则：allowlist == 实际注册的通道（含 main→renderer 推送通道 pet:runtime:snapshot /
+ * pet:visual-command / deeplink:payload）；未实现通道（tray:toggle / storage:*）不入列。
+ */
 export const IPC_ALLOWLIST = [
   'app:version',
   'app:getApiBase',
@@ -35,8 +39,23 @@ export const IPC_ALLOWLIST = [
   'window:setIgnoreMouseEvents', // 8.1 整窗穿透
   'window:minimize',
   'window:hide',
-  'tray:toggle',
-  'deeplink:payload',
-  'storage:get',
-  'storage:set',
+  'deeplink:payload', // main→renderer 推送（6.3 Deep Link）
+  'poc:getDisplays', // PoC 专用：多屏信息（第 3 周由 DisplayController 正式接入）
+  'pet:runtime:get', // 运行时快照（invoke）
+  'pet:runtime:snapshot', // main→pet 推送
+  'pet:visual-command', // main→pet 推送
+  'pet:interaction', // 桌面触摸/点击交互
+  'pet:request-action', // 动作请求（状态机审批）
+  'pet:chat-event', // 聊天事件
+  'pet:drag-start', // 拖动会话（8.5）
+  'pet:drag-move',
+  'pet:drag-end',
+  'pet:set-dnd', // 勿扰开关
+  'pet:set-pass-through', // 整窗穿透
+  'pet:show-context-menu', // 桌宠右键菜单
+  'panel:open', // 面板打开（8.2）
+  'panel:close',
+  'panel:navigate', // 面板内导航
+  'pet-profile:get',
+  'pet-profile:set',
 ] as const;
