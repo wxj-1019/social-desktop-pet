@@ -22,6 +22,19 @@ export function apiBaseUrl(): string {
 }
 
 const SESSION_REQUEST_TIMEOUT_MS = 15_000;
+
+export type SessionServiceErrorCode = 'profile_unavailable' | 'profile_invalid' | 'profile_http';
+
+export class SessionServiceError extends Error {
+  constructor(
+    readonly code: SessionServiceErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'SessionServiceError';
+  }
+}
+
 const errorBodySchema = z.object({ error: z.string() });
 const profileBodySchema = z.object({
   userId: z.string().min(1),
@@ -65,15 +78,24 @@ export function createAuthApi(baseUrl = apiBaseUrl()): SessionAuthApi {
       };
     },
     async loadProfile(accessToken: string) {
-      const res = await fetch(`${baseUrl}/me`, {
-        headers: { authorization: `Bearer ${accessToken}` },
-        signal: AbortSignal.timeout(SESSION_REQUEST_TIMEOUT_MS),
-      });
-      if (!res.ok) {
-        throw new Error(await stableResponseError(res, `资料加载失败 (${res.status})`));
+      let res: Response;
+      try {
+        res = await fetch(`${baseUrl}/me`, {
+          headers: { authorization: `Bearer ${accessToken}` },
+          signal: AbortSignal.timeout(SESSION_REQUEST_TIMEOUT_MS),
+        });
+      } catch {
+        throw new SessionServiceError('profile_unavailable', '资料服务暂时不可用');
       }
-      const parsed = profileBodySchema.safeParse(await res.json().catch(() => null));
-      if (!parsed.success) throw new Error('资料响应无效');
+      if (!res.ok) {
+        throw new SessionServiceError(
+          'profile_http',
+          await stableResponseError(res, `资料加载失败 (${res.status})`),
+        );
+      }
+      const body: unknown = await res.json().catch(() => null);
+      const parsed = profileBodySchema.safeParse(body);
+      if (!parsed.success) throw new SessionServiceError('profile_invalid', '资料响应无效');
       return {
         userId: parsed.data.userId,
         nickname: parsed.data.nickname,
@@ -211,9 +233,9 @@ export function createSessionHandlers(
       onActivated?.(); // 注册即登录 → 同样恢复 pending 邀请
       return { phase: 'ACTIVE', accessToken, profile };
     },
-    /** 刷新（业务 401 时调用） */
+    /** 刷新（业务 401 时调用；controller 从当前状态或安全存储解析 token） */
     refresh: async (): Promise<SessionIpcResult> => {
-      await session.refresh(session.snapshot.tokens?.refreshToken ?? '');
+      await session.refresh(undefined);
       return toIpcResult(session.snapshot);
     },
     /** 登出/撤销设备 */

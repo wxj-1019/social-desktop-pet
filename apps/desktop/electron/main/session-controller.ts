@@ -115,21 +115,23 @@ export class SessionController {
   }
 
   /** access token 过期前自动刷新；仅相同代际和 refresh token 共享请求 */
-  async refresh(refreshToken: string): Promise<SessionState> {
+  async refresh(refreshToken?: string): Promise<SessionState> {
+    const token =
+      refreshToken ?? this.state.tokens?.refreshToken ?? this.storage.loadRefreshToken() ?? '';
     const generation = this.generation;
     if (
       this.refreshInFlight?.generation === generation &&
-      this.refreshInFlight.refreshToken === refreshToken
+      this.refreshInFlight.refreshToken === token
     ) {
       return this.refreshInFlight.promise;
     }
 
     const operationId = Symbol('session-refresh');
     this.state = { ...this.state, phase: 'REFRESHING' };
-    const promise = this.performRefresh(generation, refreshToken, operationId).finally(() => {
+    const promise = this.performRefresh(generation, token, operationId).finally(() => {
       if (this.refreshInFlight?.operationId === operationId) this.refreshInFlight = null;
     });
-    this.refreshInFlight = { generation, refreshToken, operationId, promise };
+    this.refreshInFlight = { generation, refreshToken: token, operationId, promise };
     return promise;
   }
 
@@ -195,19 +197,16 @@ export class SessionController {
     return this.now() < this.state.tokens.accessExpiresAt;
   }
 
-  /** 9.8：撤销（Auth 撤销 refresh token）—— 但 access token 过期前仍有效 */
+  /** 9.8：撤销远端会话并立即完成本地登出，不等待网络响应 */
   async revoke(): Promise<void> {
     this.generation += 1;
-    const refresh = this.state.tokens?.refreshToken;
-    if (refresh) {
-      try {
-        await this.auth.revoke(refresh);
-      } finally {
-        this.revokedAt = this.now();
-        this.storage.deleteRefreshToken();
-        this.state = { phase: 'SIGNED_OUT', profile: null, tokens: null };
-      }
-    }
+    const refresh = this.state.tokens?.refreshToken ?? this.storage.loadRefreshToken();
+
+    this.revokedAt = this.now();
+    this.storage.deleteRefreshToken();
+    this.state = { phase: 'SIGNED_OUT', profile: null, tokens: null };
+
+    if (refresh) void this.auth.revoke(refresh).catch(() => undefined);
   }
 
   /** 标记撤销滞后窗口结束（access token 到期后，应用层校验应已生效） */

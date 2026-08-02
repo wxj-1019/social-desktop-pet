@@ -79,6 +79,16 @@ describe('session service', () => {
     expect(restore).toHaveBeenCalledTimes(1);
   });
 
+  it('refresh handler lets the controller resolve its stored token', async () => {
+    const session = new SessionController(new MemoryStorage(), makeAuth());
+    const refresh = vi.spyOn(session, 'refresh').mockResolvedValue(session.snapshot);
+    const handlers = createSessionHandlers(session);
+
+    await handlers.refresh();
+
+    expect(refresh).toHaveBeenCalledWith(undefined);
+  });
+
   it('loadProfile() loads the authenticated device profile', async () => {
     const fetchMock = vi.fn(
       async () =>
@@ -167,24 +177,38 @@ describe('session service', () => {
   });
 
   it.each([
+    ['network', new Error('socket closed')],
+    ['abort', new DOMException('platform abort text', 'AbortError')],
+  ])('loadProfile() maps %s failures to profile_unavailable', async (_caseName, error) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Promise.reject(error)),
+    );
+
+    await expect(
+      createAuthApi('https://pet.example').loadProfile('access-1'),
+    ).rejects.toMatchObject({ code: 'profile_unavailable', message: '资料服务暂时不可用' });
+  });
+
+  it.each([
     ['malformed JSON', '{'],
     ['missing field', JSON.stringify({ userId: 'u1', nickname: 'Alice', device: {} })],
     [
       'wrong field type',
       JSON.stringify({ userId: 1, nickname: 'Alice', device: { deviceId: 'dev-1' } }),
     ],
-  ])('loadProfile() rejects %s with a stable error', async (_caseName, body) => {
+  ])('loadProfile() maps %s to profile_invalid', async (_caseName, body) => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response(body, { status: 200 })),
     );
 
-    await expect(createAuthApi('https://pet.example').loadProfile('access-1')).rejects.toThrow(
-      '资料响应无效',
-    );
+    await expect(
+      createAuthApi('https://pet.example').loadProfile('access-1'),
+    ).rejects.toMatchObject({ code: 'profile_invalid', message: '资料响应无效' });
   });
 
-  it('loadProfile() preserves a stable non-2xx backend error', async () => {
+  it('loadProfile() maps non-2xx backend errors to profile_http', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(
@@ -196,8 +220,8 @@ describe('session service', () => {
       ),
     );
 
-    await expect(createAuthApi('https://pet.example').loadProfile('access-1')).rejects.toThrow(
-      'profile forbidden',
-    );
+    await expect(
+      createAuthApi('https://pet.example').loadProfile('access-1'),
+    ).rejects.toMatchObject({ code: 'profile_http', message: 'profile forbidden' });
   });
 });

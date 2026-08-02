@@ -115,6 +115,41 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     expect(storage.loadRefreshToken()).toBeNull();
   });
 
+  it('revoke() immediately signs out while restore refresh is pending', async () => {
+    const storage = new MemoryStorage();
+    storage.saveRefreshToken('refresh-1');
+    const auth = makeAuth();
+    let resolveRefresh!: (tokens: SessionTokens) => void;
+    let resolveRevoke!: () => void;
+    auth.refreshAccessToken = vi.fn(
+      () =>
+        new Promise<SessionTokens>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    auth.revoke = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRevoke = resolve;
+        }),
+    );
+    const c = new SessionController(storage, auth);
+
+    const restorePromise = c.restore();
+    const revokePromise = c.revoke();
+    expect(c.snapshot).toEqual({ phase: 'SIGNED_OUT', profile: null, tokens: null });
+    expect(storage.loadRefreshToken()).toBeNull();
+    expect(auth.revoke).toHaveBeenCalledWith('refresh-1');
+
+    resolveRefresh({ ...makeTokens(), accessToken: 'access-old', refreshToken: 'refresh-2' });
+    await restorePromise;
+    expect(c.snapshot).toEqual({ phase: 'SIGNED_OUT', profile: null, tokens: null });
+    expect(storage.loadRefreshToken()).toBeNull();
+
+    resolveRevoke();
+    await revokePromise;
+  });
+
   it('activate() invalidates an in-flight refresh from the previous account', async () => {
     const storage = new MemoryStorage();
     const auth = makeAuth();
@@ -219,8 +254,10 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     expect(c.snapshot.phase).toBe('ERROR');
     expect(c.snapshot.error).toBe('网络超时');
 
-    await c.refresh('refresh-1');
+    await c.refresh();
+    expect(auth.refreshAccessToken).toHaveBeenLastCalledWith('refresh-1');
     expect(c.snapshot.phase).toBe('ACTIVE');
+    expect(c.snapshot.profile).toEqual({ userId: 'u1', deviceId: 'dev-1', nickname: 'Alice' });
     expect(storage.loadRefreshToken()).toBe('refresh-2');
   });
 
