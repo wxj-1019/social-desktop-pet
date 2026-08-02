@@ -166,6 +166,10 @@ export class SessionController {
     );
   }
 
+  private revokeStaleRefreshToken(token: string): void {
+    void this.auth.revoke(token).catch(() => undefined);
+  }
+
   private async performRefresh(
     context: RefreshOperationContext,
     key: string,
@@ -189,18 +193,27 @@ export class SessionController {
       return this.state;
     }
 
-    if (!this.isCurrentRefresh(context, key)) return this.state;
+    if (!this.isCurrentRefresh(context, key)) {
+      this.revokeStaleRefreshToken(tokens.refreshToken);
+      return this.state;
+    }
     this.storage.saveRefreshToken(tokens.refreshToken);
     this.state = { phase: 'REFRESHING', profile: this.state.profile, tokens };
 
     try {
       const profile = await this.auth.loadProfile(tokens.accessToken);
-      if (!this.isCurrentRefresh(context, key)) return this.state;
+      if (!this.isCurrentRefresh(context, key)) {
+        this.revokeStaleRefreshToken(tokens.refreshToken);
+        return this.state;
+      }
 
       this.state = { phase: 'ACTIVE', profile, tokens };
       return this.state;
     } catch (e) {
-      if (!this.isCurrentRefresh(context, key)) return this.state;
+      if (!this.isCurrentRefresh(context, key)) {
+        this.revokeStaleRefreshToken(tokens.refreshToken);
+        return this.state;
+      }
 
       this.state = {
         phase: 'ERROR',
@@ -228,7 +241,7 @@ export class SessionController {
     this.storage.deleteRefreshToken();
     this.state = { phase: 'SIGNED_OUT', profile: null, tokens: null };
 
-    if (refresh) void this.auth.revoke(refresh).catch(() => undefined);
+    if (refresh) this.revokeStaleRefreshToken(refresh);
   }
 
   /** 标记撤销滞后窗口结束（access token 到期后，应用层校验应已生效） */

@@ -98,6 +98,123 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     expect(storage.loadRefreshToken()).toBeNull();
   });
 
+  it('reclaims a rotated token when revoke invalidates a pending refresh', async () => {
+    const storage = new MemoryStorage();
+    storage.saveRefreshToken('old');
+    const auth = makeAuth();
+    let resolveRefresh!: (tokens: SessionTokens) => void;
+    auth.refreshAccessToken = vi.fn(
+      () =>
+        new Promise<SessionTokens>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    auth.revoke = vi.fn(async () => undefined);
+    const c = new SessionController(storage, auth);
+
+    const pending = c.refresh('old');
+    const revokePromise = c.revoke();
+    expect(c.snapshot).toEqual({ phase: 'SIGNED_OUT', profile: null, tokens: null });
+    expect(storage.loadRefreshToken()).toBeNull();
+    expect(auth.revoke).toHaveBeenCalledWith('old');
+
+    resolveRefresh({
+      accessToken: 'access-old',
+      refreshToken: 'new',
+      accessExpiresAt: Date.now() + 15 * 60_000,
+    });
+    await pending;
+    await revokePromise;
+
+    expect(auth.revoke).toHaveBeenCalledTimes(2);
+    expect(auth.revoke).toHaveBeenNthCalledWith(1, 'old');
+    expect(auth.revoke).toHaveBeenNthCalledWith(2, 'new');
+    expect(c.snapshot).toEqual({ phase: 'SIGNED_OUT', profile: null, tokens: null });
+    expect(storage.loadRefreshToken()).toBeNull();
+  });
+
+  it('reclaims a rotated token when revoke invalidates refresh during profile loading', async () => {
+    const storage = new MemoryStorage();
+    storage.saveRefreshToken('old');
+    const auth = makeAuth();
+    let resolveProfile!: (profile: SessionProfile) => void;
+    let profileStarted!: () => void;
+    const profileStartedPromise = new Promise<void>((resolve) => {
+      profileStarted = resolve;
+    });
+    auth.refreshAccessToken = vi.fn(async () => ({
+      accessToken: 'access-new',
+      refreshToken: 'new',
+      accessExpiresAt: Date.now() + 15 * 60_000,
+    }));
+    auth.loadProfile = vi.fn(
+      () =>
+        new Promise<SessionProfile>((resolve) => {
+          resolveProfile = resolve;
+          profileStarted();
+        }),
+    );
+    auth.revoke = vi.fn(async () => undefined);
+    const c = new SessionController(storage, auth);
+
+    const pending = c.refresh('old');
+    await profileStartedPromise;
+    expect(storage.loadRefreshToken()).toBe('new');
+
+    const revokePromise = c.revoke();
+    expect(auth.revoke).toHaveBeenCalledWith('new');
+    resolveProfile(profile);
+    await pending;
+    await revokePromise;
+
+    expect(auth.revoke).toHaveBeenCalledTimes(2);
+    expect(auth.revoke).toHaveBeenNthCalledWith(1, 'new');
+    expect(auth.revoke).toHaveBeenNthCalledWith(2, 'new');
+    expect(c.snapshot).toEqual({ phase: 'SIGNED_OUT', profile: null, tokens: null });
+    expect(storage.loadRefreshToken()).toBeNull();
+  });
+
+  it('reclaims a rotated token when revoke invalidates refresh during failed profile loading', async () => {
+    const storage = new MemoryStorage();
+    storage.saveRefreshToken('old');
+    const auth = makeAuth();
+    let rejectProfile!: (error: Error) => void;
+    let profileStarted!: () => void;
+    const profileStartedPromise = new Promise<void>((resolve) => {
+      profileStarted = resolve;
+    });
+    auth.refreshAccessToken = vi.fn(async () => ({
+      accessToken: 'access-new',
+      refreshToken: 'new',
+      accessExpiresAt: Date.now() + 15 * 60_000,
+    }));
+    auth.loadProfile = vi.fn(
+      () =>
+        new Promise<SessionProfile>((_, reject) => {
+          rejectProfile = reject;
+          profileStarted();
+        }),
+    );
+    auth.revoke = vi.fn(async () => undefined);
+    const c = new SessionController(storage, auth);
+
+    const pending = c.refresh('old');
+    await profileStartedPromise;
+    expect(storage.loadRefreshToken()).toBe('new');
+
+    const revokePromise = c.revoke();
+    expect(auth.revoke).toHaveBeenCalledWith('new');
+    rejectProfile(new Error('profile failed'));
+    await pending;
+    await revokePromise;
+
+    expect(auth.revoke).toHaveBeenCalledTimes(2);
+    expect(auth.revoke).toHaveBeenNthCalledWith(1, 'new');
+    expect(auth.revoke).toHaveBeenNthCalledWith(2, 'new');
+    expect(c.snapshot).toEqual({ phase: 'SIGNED_OUT', profile: null, tokens: null });
+    expect(storage.loadRefreshToken()).toBeNull();
+  });
+
   it('concurrent refresh calls share one in-flight token rotation', async () => {
     const storage = new MemoryStorage();
     const auth = makeAuth();
