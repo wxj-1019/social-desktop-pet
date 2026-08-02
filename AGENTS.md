@@ -33,6 +33,9 @@ ai-social-desktop-pet/
 | 改登录/刷新/设备撤销（9.8 撤销双保险）          | `apps/server/src/auth/*`（jwt + session）                    | 9.8                      |
 | 改在线状态/收件箱投递/心跳                      | `apps/server/src/realtime/ws.ts`                             | 9.2 / 9.4                |
 | 改桌宠窗口/穿透/托盘/更新                       | `apps/desktop/electron/main/*`                               | 8.1–8.7                  |
+| 改星屿外观/动作/交互（SVG 角色、动画、气泡）    | `apps/desktop/src/pet/*`（star-isle-visual.tsx 等）          | 星屿设计稿               |
+| 改状态审批/动作映射（CHATTING/touch/idle 等）   | `packages/pet-state/src/*`（index.ts + visual-mapping.ts）   | 7.1                      |
+| 改双窗口/拖动/托盘（pet+panel 窗、拖拽持久化）  | `apps/desktop/electron/main/*`（window/drag/tray/position）  | 8.1–8.7 / 星屿设计稿     |
 | 改桌宠状态机逻辑（转换/动作审批/白名单）        | `packages/pet-state/src/index.ts`（纯逻辑，可单测）          | 7.1                      |
 | 改桌宠动画/渲染/气泡                            | `apps/desktop/src/pet/*`（状态机经 usePetStateMachine 接入） | 7.1–7.3                  |
 | 加渲染页（聊天/好友/记忆中心）                  | `apps/desktop/src/app/*`                                     | 6.x                      |

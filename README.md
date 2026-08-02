@@ -60,6 +60,18 @@ pnpm package:win       # 打包 Windows 安装包（NSIS per-user，13.1）
 
 运行时见 [`packages/ai-graph/src/runtime/`](packages/ai-graph/src/runtime/)，核心图定义见 [`chat-flow.ts`](packages/ai-graph/src/graphs/chat-flow.ts)。
 
+## 首只真实桌宠：星屿
+
+> 2026-08-03 已落地并 e2e 验证（star-isle.spec.ts 7 例全绿；全部 17 例 e2e 通过）。
+
+- **React SVG 原创角色**：星尾狐猫"星屿"由原生 React SVG 绘制（`apps/desktop/src/pet/star-isle-visual.tsx`），非贴图、非 Live2D
+- **启动即见**：无需登录即可显示、拖动、摸头（touch 动作）、本地模式聊天（气泡回复）
+- **双击打开面板**：双击星屿身体打开面板窗（登录页/聊天/好友页）
+- **穿透恢复**：手动开启整窗穿透后，只能通过托盘菜单恢复（`toggle-pass-through`；8.4 不可恢复事故为 0）
+- **不使用 PetDex/Live2D 资产**：仅借鉴其交互思路（透明浮窗/拖动/气泡），角色、代码、素材全部原创（见设计稿星屿章节边界）
+- **平台**：Windows 10/11 优先（CI 已加 `star-isle-windows` job 真机验证）；macOS 待后续
+- 拖动位置持久化：重启后按保存的位置还原（`position-store`）
+
 ## 项目结构
 
 见 [AGENTS.md](AGENTS.md) 的"功能落点速查"表——每个功能该改哪个包一目了然。

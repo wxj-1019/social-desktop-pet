@@ -283,3 +283,23 @@
 - CPU P50 = 0%（门槛 ≤2% ✅），P95 = 0.94–1.25%
 
 **修正**：resource-bench.mjs 启动方式 bug（node 跑 Electron 入口必崩 → 改 electron.exe）+ PowerShell 采样鲁棒性（单进程 JSON 归一化、忽略 stderr 杂音）。
+
+## 星屿验收记录（2026-08-03）
+
+> 首只真实桌宠"星屿"（React SVG 星尾狐猫）窗口链路验收。e2e 自动化（`star-isle.spec.ts` 7 例）在本机 RDP 环境全绿，不依赖后端（纯本地模式）。原清单未完成项保持未勾选，以下只填已验证事实。
+
+### 已验证（自动化 + 本机实测）
+
+- ✅ **e2e 17/17（自动化）**：smoke(4) + login(2) + chat(1) + deep-link(2) + ws-realtime(1) + **star-isle(7)**；star-isle 覆盖冷启动可见/摸头/双击面板/拖动持久化/托盘恢复/本地聊天/面板关闭不影响宠物/reduced-motion
+- ✅ **像素可见性**：280×320 透明窗 alpha>16 像素计数阈值 8000，本机实测约 5 万——角色真实渲染（非空窗/白屏/降级）
+- ✅ **拖动持久化（重启恢复）**：拖拽移动 → restart() 后按持久化 anchor 还原（±1px 内）
+- ✅ **托盘恢复**：toggle-pass-through / hide / show 全链路（8.4 不可恢复事故为 0）
+- ✅ **本地聊天**：面板本地模式输入 → 宠物气泡回复（chat→CHATTING→IDLE 由 Main PetRuntimeController 驱动）
+- ✅ **崩溃恢复**：render-process-gone → 自动重建桌宠窗（仅一次，30s 稳定窗口）
+
+### 待真机验证（不得勾选）
+
+- ⏳ **200% DPI 真机**：高 DPI 缩放下像素清晰度/命中区偏移——待真机验证
+- ⏳ **8 小时长测**：内存/CPU 趋势（`pnpm bench:resources --duration 28800`）——待真机验证
+- ⏳ **真实安装包**：`pnpm package:win` 产物在干净 Windows 10/11 真机安装、托盘图标、自启——待真机验证
+- ⏳ 其余原清单未完成项（多显示器/混接 DPI/睡眠唤醒/alpha 探测自动切回等）保持未勾选——待真机验证

@@ -42,3 +42,20 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2
       - run: pnpm --filter @pet/desktop build
       - run: xvfb-run -a npx playwright test --config e2e/playwright.config.ts
+
+  # Task 13：Windows 真机目标平台验证星屿（SVG 桌宠，不依赖后端，无 xvfb 问题）
+  star-isle-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @pet/desktop typecheck
+      - run: pnpm --filter @pet/desktop build
+      - run: pnpm exec playwright test --config e2e/playwright.config.ts star-isle.spec.ts
