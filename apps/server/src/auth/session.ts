@@ -35,7 +35,11 @@ export interface SessionStore {
   save(session: RefreshSession): Promise<void>;
   /** 按 token 哈希取会话；不存在返回 null */
   load(tokenHash: string): Promise<RefreshSession | null>;
-  /** 撤销设备下全部会话（9.8 激活新设备/登出） */
+  /** 精确撤销单个 refresh token */
+  revokeToken(tokenHash: string): Promise<void>;
+  /** 原子消费旧 token 并插入下一代 token；竞争失败返回 false */
+  rotateToken(tokenHash: string, nextSession: RefreshSession, now: number): Promise<boolean>;
+  /** 撤销设备下全部会话（9.8 激活新设备） */
   revokeDevice(userId: string, deviceId: string): Promise<void>;
   /** 设置 active_display_device_id（9.8 单活跃设备） */
   setActiveDisplayDevice(userId: string, deviceId: string): Promise<void>;
@@ -52,18 +56,23 @@ export class SessionManager {
     private readonly now: () => number = () => Date.now(),
   ) {}
 
-  /** 登录成功：签发 refresh token 并记账（每个 token 只存哈希） */
-  async createRefreshToken(userId: string, deviceId: string): Promise<string> {
-    const token = randomBytes(48).toString('base64url');
+  private createRefreshSession(userId: string, deviceId: string, now: number) {
+    const refreshToken = randomBytes(48).toString('base64url');
     const session: RefreshSession = {
-      tokenHash: hashRefreshToken(token),
+      tokenHash: hashRefreshToken(refreshToken),
       userId,
       deviceId,
-      expiresAt: this.now() + this.refreshTtlMs,
+      expiresAt: now + this.refreshTtlMs,
       revokedAt: null,
     };
-    await this.store.save(session);
-    return token;
+    return { refreshToken, session };
+  }
+
+  /** 登录成功：签发 refresh token 并记账（每个 token 只存哈希） */
+  async createRefreshToken(userId: string, deviceId: string): Promise<string> {
+    const created = this.createRefreshSession(userId, deviceId, this.now());
+    await this.store.save(created.session);
+    return created.refreshToken;
   }
 
   /**
@@ -71,22 +80,33 @@ export class SessionManager {
    * @returns 新的 refresh token；无效/过期/已撤销抛错
    */
   async rotate(token: string): Promise<{ refreshToken: string; userId: string; deviceId: string }> {
-    const session = await this.store.load(hashRefreshToken(token));
+    const tokenHash = hashRefreshToken(token);
+    const session = await this.store.load(tokenHash);
     if (!session) throw new SessionRotationError('invalid', 'invalid refresh token');
     if (session.revokedAt !== null) {
       throw new SessionRotationError('revoked', 'refresh token revoked');
     }
-    if (this.now() > session.expiresAt) {
+    const now = this.now();
+    if (now >= session.expiresAt) {
       throw new SessionRotationError('expired', 'refresh token expired');
     }
 
-    // 轮换：旧 token 立即撤销（防重放）
-    await this.store.revokeDevice(session.userId, session.deviceId);
-    const next = await this.createRefreshToken(session.userId, session.deviceId);
-    return { refreshToken: next, userId: session.userId, deviceId: session.deviceId };
+    const next = this.createRefreshSession(session.userId, session.deviceId, now);
+    const rotated = await this.store.rotateToken(tokenHash, next.session, now);
+    if (!rotated) throw new SessionRotationError('revoked', 'refresh token revoked');
+    return {
+      refreshToken: next.refreshToken,
+      userId: session.userId,
+      deviceId: session.deviceId,
+    };
   }
 
-  /** 登出/撤销设备（9.8：active_display_device_id 由调用方决定是否清空） */
+  /** 精确撤销 refresh token；未知 token 仍幂等成功。 */
+  async revokeToken(refreshToken: string): Promise<void> {
+    await this.store.revokeToken(hashRefreshToken(refreshToken));
+  }
+
+  /** 撤销设备下全部会话（9.8：切换活跃设备时使用） */
   async revokeDevice(userId: string, deviceId: string): Promise<void> {
     await this.store.revokeDevice(userId, deviceId);
   }

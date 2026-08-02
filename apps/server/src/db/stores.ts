@@ -56,6 +56,53 @@ export class PgSessionStore implements SessionStore {
     };
   }
 
+  async revokeToken(tokenHash: string): Promise<void> {
+    await this.pool.query('update refresh_sessions set revoked_at = now() where token_hash = $1', [
+      tokenHash,
+    ]);
+  }
+
+  async rotateToken(tokenHash: string, nextSession: RefreshSession, now: number): Promise<boolean> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        rlsClaimsJson(nextSession.userId),
+      ]);
+      await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [tokenHash]);
+      const consumed = await client.query(
+        `update refresh_sessions
+         set revoked_at = to_timestamp($2 / 1000.0)
+         where token_hash = $1 and revoked_at is null
+           and expires_at > to_timestamp($2 / 1000.0)
+         returning token_hash`,
+        [tokenHash, now],
+      );
+      if ((consumed.rowCount ?? 0) === 0) {
+        await client.query('commit');
+        return false;
+      }
+      await client.query(
+        `insert into refresh_sessions (token_hash, user_id, device_id, expires_at, revoked_at)
+         values ($1, $2, $3, to_timestamp($4 / 1000.0), $5)`,
+        [
+          nextSession.tokenHash,
+          nextSession.userId,
+          nextSession.deviceId,
+          nextSession.expiresAt,
+          nextSession.revokedAt,
+        ],
+      );
+      await client.query('commit');
+      return true;
+    } catch (e) {
+      await client.query('rollback');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
   async revokeDevice(userId: string, deviceId: string): Promise<void> {
     await this.pool.query(
       'update refresh_sessions set revoked_at = now() where user_id = $1 and device_id = $2',

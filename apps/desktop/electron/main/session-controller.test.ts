@@ -125,6 +125,35 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     expect(storage.loadRefreshToken()).toBeNull();
   });
 
+  it('a delayed old revoke cannot invalidate a newly activated session', async () => {
+    const storage = new MemoryStorage();
+    const auth = makeAuth();
+    let resolveRevoke!: () => void;
+    auth.revoke = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRevoke = resolve;
+        }),
+    );
+    const c = new SessionController(storage, auth);
+    await c.activate(makeTokens(), profile);
+
+    await c.revoke();
+    const newTokens = {
+      accessToken: 'access-new',
+      refreshToken: 'refresh-new',
+      accessExpiresAt: Date.now() + 15 * 60_000,
+    };
+    const newProfile = { userId: 'u2', deviceId: 'dev-2', nickname: 'Bob' };
+    await c.activate(newTokens, newProfile);
+    resolveRevoke();
+    await Promise.resolve();
+
+    expect(auth.revoke).toHaveBeenCalledWith('refresh-1');
+    expect(c.snapshot).toEqual({ phase: 'ACTIVE', profile: newProfile, tokens: newTokens });
+    expect(storage.loadRefreshToken()).toBe('refresh-new');
+  });
+
   it('revoke() immediately signs out while restore refresh is pending', async () => {
     const storage = new MemoryStorage();
     storage.saveRefreshToken('refresh-1');

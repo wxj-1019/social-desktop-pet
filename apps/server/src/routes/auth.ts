@@ -8,7 +8,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 
 import type { JwtService } from '../auth/jwt.js';
-import { hashRefreshToken, SessionRotationError } from '../auth/session.js';
+import { SessionRotationError } from '../auth/session.js';
 import type { SessionManager, SessionStore } from '../auth/session.js';
 
 export interface AuthDeps {
@@ -92,10 +92,7 @@ export function createAuthRouter(deps: AuthDeps): Hono {
 
   app.post('/revoke', async (c) => {
     const { refreshToken } = await c.req.json();
-    const session = await deps.store.load(hashRefreshToken(String(refreshToken)));
-    if (session) {
-      await deps.sessions.revokeDevice(session.userId, session.deviceId);
-    }
+    await deps.sessions.revokeToken(String(refreshToken));
     return c.json({ ok: true });
   });
 

@@ -10,12 +10,28 @@ import {
 /** 内存版 SessionStore（测试用） */
 class MemoryStore implements SessionStore {
   sessions = new Map<string, RefreshSession>();
+  rotateCalls: Array<{ tokenHash: string; nextSession: RefreshSession; now: number }> = [];
+  saveCalls = 0;
 
   async save(session: RefreshSession): Promise<void> {
+    this.saveCalls += 1;
     this.sessions.set(session.tokenHash, session);
   }
   async load(tokenHash: string): Promise<RefreshSession | null> {
-    return this.sessions.get(tokenHash) ?? null;
+    const session = this.sessions.get(tokenHash);
+    return session ? { ...session } : null;
+  }
+  async revokeToken(tokenHash: string): Promise<void> {
+    const session = this.sessions.get(tokenHash);
+    if (session) session.revokedAt = Date.now();
+  }
+  async rotateToken(tokenHash: string, nextSession: RefreshSession, now: number): Promise<boolean> {
+    this.rotateCalls.push({ tokenHash, nextSession, now });
+    const current = this.sessions.get(tokenHash);
+    if (!current || current.revokedAt !== null || current.expiresAt <= now) return false;
+    current.revokedAt = now;
+    this.sessions.set(nextSession.tokenHash, nextSession);
+    return true;
   }
   async revokeDevice(userId: string, deviceId: string): Promise<void> {
     for (const s of this.sessions.values()) {
@@ -56,7 +72,7 @@ describe('SessionManager（自建 Auth refresh token 生命周期，9.8）', () 
     const now = 1_000_000;
     const m = new SessionManager(store, 30 * 24 * 60 * 60_000, () => now);
     const token = await m.createRefreshToken('u1', 'dev-1');
-    store.sessions.get(hashRefreshToken(token))!.expiresAt = now - 1; // 过期
+    store.sessions.get(hashRefreshToken(token))!.expiresAt = now; // 边界时刻也已过期
     await expect(m.rotate(token)).rejects.toMatchObject({
       code: 'expired',
       message: 'refresh token expired',
@@ -65,6 +81,36 @@ describe('SessionManager（自建 Auth refresh token 生命周期，9.8）', () 
       code: 'invalid',
       message: 'invalid refresh token',
     });
+  });
+
+  it('revokeToken() only revokes the exact refresh token', async () => {
+    const store = new MemoryStore();
+    const m = new SessionManager(store);
+    const oldToken = await m.createRefreshToken('u1', 'dev-1');
+    const newToken = await m.createRefreshToken('u1', 'dev-1');
+
+    await m.revokeToken(oldToken);
+
+    expect(store.sessions.get(hashRefreshToken(oldToken))?.revokedAt).not.toBeNull();
+    expect(store.sessions.get(hashRefreshToken(newToken))?.revokedAt).toBeNull();
+  });
+
+  it('only one concurrent rotation can consume the same refresh token', async () => {
+    const store = new MemoryStore();
+    const m = new SessionManager(store);
+    const token = await m.createRefreshToken('u1', 'dev-1');
+
+    const results = await Promise.allSettled([m.rotate(token), m.rotate(token)]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find((result) => result.status === 'rejected');
+    expect(rejected).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'revoked', message: 'refresh token revoked' },
+    });
+    expect(store.rotateCalls).toHaveLength(2);
+    expect(store.saveCalls).toBe(1);
+    expect(store.sessions.size).toBe(2);
   });
 
   it('revokeDevice() kills all sessions of that device (9.8 停用旧设备)', async () => {

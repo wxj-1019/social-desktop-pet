@@ -7,7 +7,12 @@ import {
   type SessionStorage,
   type SessionTokens,
 } from './session-controller.js';
-import { createAuthApi, createSessionHandlers } from './session-service.js';
+import {
+  createAuthApi,
+  createSessionHandlers,
+  loginWithBackend,
+  registerWithBackend,
+} from './session-service.js';
 
 class MemoryStorage implements SessionStorage {
   private token: string | null = null;
@@ -89,6 +94,108 @@ describe('session service', () => {
     expect(refresh).toHaveBeenCalledWith(undefined);
   });
 
+  it('loginWithBackend() uses a 15 second timeout and validates tokens', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ accessToken: 'access-1', refreshToken: 'refresh-1', userId: 'u1' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    const signal = AbortSignal.abort();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(signal);
+
+    await expect(
+      loginWithBackend('https://pet.example', 'alice@example.com', 'password1', 'dev-1'),
+    ).resolves.toMatchObject({ accessToken: 'access-1', refreshToken: 'refresh-1' });
+    expect(AbortSignal.timeout).toHaveBeenCalledWith(15_000);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://pet.example/auth/login',
+      expect.objectContaining({ signal }),
+    );
+  });
+
+  it('registerWithBackend() applies a 15 second timeout to register and login', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ userId: 'u1' }), {
+          status: 201,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ accessToken: 'access-1', refreshToken: 'refresh-1', userId: 'u1' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    const signal = AbortSignal.abort();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(signal);
+
+    await registerWithBackend(
+      'https://pet.example',
+      'alice@example.com',
+      'password1',
+      'dev-1',
+      'Alice',
+    );
+
+    expect(AbortSignal.timeout).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://pet.example/auth/register',
+      expect.objectContaining({ signal }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://pet.example/auth/login',
+      expect.objectContaining({ signal }),
+    );
+  });
+
+  it.each([
+    ['login', () => loginWithBackend('https://pet.example', 'a@b.com', 'password1', 'dev-1')],
+    [
+      'register',
+      () => registerWithBackend('https://pet.example', 'a@b.com', 'password1', 'dev-1', 'Alice'),
+    ],
+  ])('%s maps AbortError to a stable unavailable error', async (_name, request) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Promise.reject(new DOMException('platform abort', 'AbortError'))),
+    );
+
+    await expect(request()).rejects.toMatchObject({
+      message: expect.stringMatching(/服务暂时不可用/),
+    });
+  });
+
+  it.each([
+    ['malformed JSON', '{'],
+    ['missing field', JSON.stringify({ accessToken: 'access-1', userId: 'u1' })],
+    [
+      'wrong field type',
+      JSON.stringify({ accessToken: 1, refreshToken: 'refresh-1', userId: 'u1' }),
+    ],
+  ])('login rejects %s without activating the session', async (_name, body) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+    const storage = new MemoryStorage();
+    const session = new SessionController(storage, makeAuth());
+    const handlers = createSessionHandlers(session);
+
+    await expect(
+      handlers.login({ email: 'alice@example.com', password: 'password1', deviceId: 'dev-1' }),
+    ).rejects.toMatchObject({ message: '登录响应无效' });
+    expect(session.snapshot.phase).toBe('SIGNED_OUT');
+    expect(storage.loadRefreshToken()).toBeNull();
+  });
+
   it('loadProfile() loads the authenticated device profile', async () => {
     const fetchMock = vi.fn(
       async () =>
@@ -136,6 +243,21 @@ describe('session service', () => {
       body: JSON.stringify({ refreshToken: 'refresh-1' }),
       signal,
     });
+  });
+
+  it.each([
+    ['malformed JSON', '{'],
+    ['missing field', JSON.stringify({ accessToken: 'access-2' })],
+    ['wrong field type', JSON.stringify({ accessToken: 2, refreshToken: 'refresh-2' })],
+  ])('refreshAccessToken() rejects %s with a stable transient error', async (_name, body) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    await expect(
+      createAuthApi('https://pet.example').refreshAccessToken('refresh-1'),
+    ).rejects.toMatchObject({ message: 'refresh 响应无效', invalidToken: false });
   });
 
   it.each([401, 403])('refreshAccessToken() marks HTTP %s as an invalid token', async (status) => {

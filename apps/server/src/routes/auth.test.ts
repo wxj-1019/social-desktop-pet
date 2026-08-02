@@ -12,8 +12,20 @@ import { createAuthRouter, type AuthDeps } from './auth.js';
 
 class MemoryStore implements SessionStore {
   async save(_session: RefreshSession): Promise<void> {}
+  revokedTokenHashes: string[] = [];
+
   async load(_tokenHash: string): Promise<RefreshSession | null> {
     return null;
+  }
+  async revokeToken(tokenHash: string): Promise<void> {
+    this.revokedTokenHashes.push(tokenHash);
+  }
+  async rotateToken(
+    _tokenHash: string,
+    _nextSession: RefreshSession,
+    _now: number,
+  ): Promise<boolean> {
+    return false;
   }
   async revokeDevice(_userId: string, _deviceId: string): Promise<void> {}
   async setActiveDisplayDevice(_userId: string, _deviceId: string): Promise<void> {}
@@ -42,7 +54,25 @@ async function requestRefresh(deps: AuthDeps): Promise<Response> {
   });
 }
 
+async function requestRevoke(deps: AuthDeps, refreshToken = 'refresh-1'): Promise<Response> {
+  return createAuthRouter(deps).request('/revoke', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
+  });
+}
+
 describe('auth refresh route', () => {
+  it('revoke route revokes only the exact refresh token', async () => {
+    const deps = makeDeps();
+    const revokeToken = vi.spyOn(deps.sessions, 'revokeToken').mockResolvedValue(undefined);
+
+    const response = await requestRevoke(deps, 'old-refresh');
+
+    expect(response.status).toBe(200);
+    expect(revokeToken).toHaveBeenCalledWith('old-refresh');
+  });
+
   it.each(['invalid', 'revoked', 'expired'] as const)(
     'maps %s rotation errors to a stable 401 response',
     async (code) => {

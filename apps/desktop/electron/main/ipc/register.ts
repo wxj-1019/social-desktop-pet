@@ -6,9 +6,15 @@
  * 2. 输入用 @pet/protocol 的 zod schema 校验
  */
 import { BrowserWindow, ipcMain, screen } from 'electron';
+import type { ZodType } from 'zod';
 
 import { IPC_ALLOWLIST } from '../security.js';
-import { apiBaseUrl, type SessionServiceHandlers } from '../session-service.js';
+import {
+  apiBaseUrl,
+  SessionLoginPayloadSchema,
+  SessionRegisterPayloadSchema,
+  type SessionServiceHandlers,
+} from '../session-service.js';
 
 const ALLOWED = new Set<string>(IPC_ALLOWLIST);
 
@@ -29,6 +35,11 @@ export function registerIpcHandler(
 
 /** 注册 session IPC（async invoke 模式；通道必须在 allowlist 内） */
 function registerSessionIpc(handlers: SessionServiceHandlers): void {
+  const parsePayload = <T>(schema: ZodType<T>, payload: unknown, message: string): T => {
+    const parsed = schema.safeParse(payload);
+    if (!parsed.success) throw new TypeError(message);
+    return parsed.data;
+  };
   const register = (channel: string, fn: (payload: unknown) => Promise<unknown>) => {
     if (!ALLOWED.has(channel)) throw new Error(`[IPC] 通道 "${channel}" 不在 allowlist 中`);
     ipcMain.handle(channel, async (_event, payload: unknown) => {
@@ -41,10 +52,10 @@ function registerSessionIpc(handlers: SessionServiceHandlers): void {
   };
   register('session:init', () => handlers.init());
   register('session:login', (p) =>
-    handlers.login(p as { email: string; password: string; deviceId: string }),
+    handlers.login(parsePayload(SessionLoginPayloadSchema, p, '登录参数无效')),
   );
   register('session:register', (p) =>
-    handlers.register(p as { email: string; password: string; deviceId: string; nickname: string }),
+    handlers.register(parsePayload(SessionRegisterPayloadSchema, p, '注册参数无效')),
   );
   register('session:refresh', () => handlers.refresh());
   register('session:revoke', () => handlers.revoke());

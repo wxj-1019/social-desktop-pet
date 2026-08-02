@@ -23,7 +23,14 @@ export function apiBaseUrl(): string {
 
 const SESSION_REQUEST_TIMEOUT_MS = 15_000;
 
-export type SessionServiceErrorCode = 'profile_unavailable' | 'profile_invalid' | 'profile_http';
+export type SessionServiceErrorCode =
+  | 'profile_unavailable'
+  | 'profile_invalid'
+  | 'profile_http'
+  | 'login_unavailable'
+  | 'login_invalid'
+  | 'register_unavailable'
+  | 'register_invalid';
 
 export class SessionServiceError extends Error {
   constructor(
@@ -36,6 +43,20 @@ export class SessionServiceError extends Error {
 }
 
 const errorBodySchema = z.object({ error: z.string() });
+const sessionTokensBodySchema = z.object({
+  accessToken: z.string().min(1),
+  refreshToken: z.string().min(1),
+});
+const loginBodySchema = sessionTokensBodySchema.extend({ userId: z.string().min(1) });
+const registerBodySchema = z.object({ userId: z.string().min(1) });
+export const SessionLoginPayloadSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  deviceId: z.string().uuid(),
+});
+export const SessionRegisterPayloadSchema = SessionLoginPayloadSchema.extend({
+  nickname: z.string().min(1).max(64),
+});
 const profileBodySchema = z.object({
   userId: z.string().min(1),
   nickname: z.string(),
@@ -70,10 +91,14 @@ export function createAuthApi(baseUrl = apiBaseUrl()): SessionAuthApi {
         const message = await stableResponseError(res, `refresh 失败 (${res.status})`);
         throw new SessionRefreshError(message, res.status === 401 || res.status === 403);
       }
-      const body = (await res.json()) as { accessToken: string; refreshToken: string };
+      const body: unknown = await res.json().catch(() => null);
+      const parsed = sessionTokensBodySchema.safeParse(body);
+      if (!parsed.success) {
+        throw new SessionRefreshError('refresh 响应无效', false);
+      }
       return {
-        accessToken: body.accessToken,
-        refreshToken: body.refreshToken,
+        accessToken: parsed.data.accessToken,
+        refreshToken: parsed.data.refreshToken,
         accessExpiresAt: Date.now() + 15 * 60_000,
       };
     },
@@ -120,24 +145,29 @@ export async function loginWithBackend(
   deviceId: string,
   nickname?: string,
 ): Promise<{ accessToken: string; refreshToken: string; profile: SessionProfile }> {
-  const res = await fetch(`${baseUrl}/auth/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password, deviceId, platform: 'windows', nickname }),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? `登录失败 (${res.status})`);
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password, deviceId, platform: 'windows', nickname }),
+      signal: AbortSignal.timeout(SESSION_REQUEST_TIMEOUT_MS),
+    });
+  } catch {
+    throw new SessionServiceError('login_unavailable', '登录服务暂时不可用');
   }
-  const body = (await res.json()) as {
-    accessToken: string;
-    refreshToken: string;
-    userId: string;
-  };
+  if (!res.ok) {
+    throw new SessionServiceError(
+      'login_invalid',
+      await stableResponseError(res, `登录失败 (${res.status})`),
+    );
+  }
+  const parsed = loginBodySchema.safeParse(await res.json().catch(() => null));
+  if (!parsed.success) throw new SessionServiceError('login_invalid', '登录响应无效');
   return {
-    accessToken: body.accessToken,
-    refreshToken: body.refreshToken,
-    profile: { userId: body.userId, deviceId, nickname },
+    accessToken: parsed.data.accessToken,
+    refreshToken: parsed.data.refreshToken,
+    profile: { userId: parsed.data.userId, deviceId, nickname },
   };
 }
 
@@ -149,16 +179,25 @@ export async function registerWithBackend(
   deviceId: string,
   nickname: string,
 ): Promise<{ accessToken: string; refreshToken: string; profile: SessionProfile }> {
-  const res = await fetch(`${baseUrl}/auth/register`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password, deviceId, platform: 'windows', nickname }),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? `注册失败 (${res.status})`);
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/auth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password, deviceId, platform: 'windows', nickname }),
+      signal: AbortSignal.timeout(SESSION_REQUEST_TIMEOUT_MS),
+    });
+  } catch {
+    throw new SessionServiceError('register_unavailable', '注册服务暂时不可用');
   }
-  // 注册成功 → 直接登录拿令牌
+  if (!res.ok) {
+    throw new SessionServiceError(
+      'register_invalid',
+      await stableResponseError(res, `注册失败 (${res.status})`),
+    );
+  }
+  const parsed = registerBodySchema.safeParse(await res.json().catch(() => null));
+  if (!parsed.success) throw new SessionServiceError('register_invalid', '注册响应无效');
   return loginWithBackend(baseUrl, email, password, deviceId, nickname);
 }
 
