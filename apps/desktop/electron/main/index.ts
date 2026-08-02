@@ -79,8 +79,27 @@ const startup = new StartupController({
 const startupArgs = parseStartupArgs(process.argv);
 
 void app.whenReady().then(async () => {
-  // 主窗先行（桌宠核心；即便会话恢复失败也保证窗口出现）
-  const win = createPetWindow({
+  // 9.8 / 8.3：先创建会话并启动唯一恢复操作，IPC 必须在 renderer 加载前可用。
+  const secureStorage = new SecureStorageController({ dir: app.getPath('userData') });
+  const createdSession = new SessionController(
+    {
+      loadRefreshToken: () => secureStorage.getToken(),
+      saveRefreshToken: (token) => secureStorage.setToken(token),
+      deleteRefreshToken: () => secureStorage.deleteToken(),
+    },
+    createAuthApi(),
+  );
+  session = createdSession;
+  const restorePromise = createdSession.restore();
+  let win: BrowserWindow | null = null;
+
+  // 8.3 IPC allowlist 在窗口加载前生效；session:init 等待上面的唯一 restorePromise。
+  registerIpcAllowlist(
+    () => win,
+    createSessionHandlers(createdSession, () => void deepLink?.restorePending(), restorePromise),
+  );
+
+  const createdWindow = createPetWindow({
     savedPosition,
     // 8.5：位置变化 → 持久化
     onPositionChanged: (pos) => persistPosition(pos),
@@ -88,24 +107,14 @@ void app.whenReady().then(async () => {
     urlSuffix: startupArgs.poc ? '?poc' : '',
     startHidden: startupArgs.minimized,
   });
+  win = createdWindow;
 
   // 8.2 启动序列：单点失败不阻塞后续（降级友好）
   const failures = await startup.bootstrap([
     {
       name: 'session-restore',
       run: async () => {
-        // 9.8 / 8.3：会话（令牌经 safeStorage 加密存储；Auth API 直连自建后端，D-13）
-        const secureStorage = new SecureStorageController({ dir: app.getPath('userData') });
-        // SecureStorageController（get/set/deleteToken）适配 SessionStorage 接口
-        session = new SessionController(
-          {
-            loadRefreshToken: () => secureStorage.getToken(),
-            saveRefreshToken: (token) => secureStorage.setToken(token),
-            deleteRefreshToken: () => secureStorage.deleteToken(),
-          },
-          createAuthApi(),
-        );
-        await session.restore();
+        await restorePromise;
       },
     },
     {
@@ -116,11 +125,11 @@ void app.whenReady().then(async () => {
           isSignedIn: () => session?.snapshot.phase === 'ACTIVE',
           applyInvite: async (payload) => {
             // 已登录 → 转发渲染进程执行邀请流程；Alpha 阶段仅透传原始 token
-            win.webContents.send('deeplink:payload', payload.rawToken);
+            createdWindow.webContents.send('deeplink:payload', payload.rawToken);
           },
           requestSignIn: async () => {
             // 未登录 → Alpha 阶段透传，登录 UI 就绪后打开登录窗
-            win.webContents.send('deeplink:payload', 'NEED_SIGN_IN');
+            createdWindow.webContents.send('deeplink:payload', 'NEED_SIGN_IN');
           },
         });
         await deepLink.restorePending();
@@ -149,20 +158,14 @@ void app.whenReady().then(async () => {
   }
 
   // 8.2 托盘
-  tray = new TrayController(() => win, {
-    onTogglePassThrough: (on) => setPassThrough(win, on),
+  tray = new TrayController(() => createdWindow, {
+    onTogglePassThrough: (on) => setPassThrough(createdWindow, on),
     onToggleDnd: () => {
       /* 第 3 周接 PetStateMachine QUIET 状态 */
     },
     onQuit: () => app.quit(),
   });
   tray.create();
-
-  // 8.3 IPC allowlist 生效（session 通道：登录完成 → 恢复 pending 邀请，6.3）
-  registerIpcAllowlist(
-    () => win,
-    createSessionHandlers(session!, () => void deepLink?.restorePending()),
-  );
 
   // Windows：注册 pet:// 为默认协议（用户点击链接拉起应用）
   if (process.platform === 'win32') {

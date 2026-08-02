@@ -6,11 +6,14 @@
  *   （SecureStorageController safeStorage 加密存储，绝不出主进程）。
  * - IPC：session:init / session:login / session:refresh / session:revoke
  */
-import type {
-  SessionAuthApi,
-  SessionController,
-  SessionProfile,
-  SessionState,
+import { z } from 'zod';
+
+import {
+  SessionRefreshError,
+  type SessionAuthApi,
+  type SessionController,
+  type SessionProfile,
+  type SessionState,
 } from './session-controller.js';
 
 /** 自建后端地址（D-13）：生产指向 HTTPS 域名；本机默认 127.0.0.1:8787 */
@@ -18,18 +21,41 @@ export function apiBaseUrl(): string {
   return process.env['PET_API_BASE'] ?? 'http://127.0.0.1:8787';
 }
 
+const SESSION_REQUEST_TIMEOUT_MS = 15_000;
+const errorBodySchema = z.object({ error: z.string() });
+const profileBodySchema = z.object({
+  userId: z.string().min(1),
+  nickname: z.string(),
+  device: z.object({ deviceId: z.string().min(1) }),
+});
+
+async function stableResponseError(res: Response, fallback: string): Promise<string> {
+  const parsed = errorBodySchema.safeParse(await res.json().catch(() => null));
+  return parsed.success ? parsed.data.error : fallback;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 /** 把 SessionController 的 stub AuthApi 替换为真实后端调用 */
 export function createAuthApi(baseUrl = apiBaseUrl()): SessionAuthApi {
   return {
     async refreshAccessToken(refreshToken: string) {
-      const res = await fetch(`${baseUrl}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      });
+      let res: Response;
+      try {
+        res = await fetch(`${baseUrl}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+          signal: AbortSignal.timeout(SESSION_REQUEST_TIMEOUT_MS),
+        });
+      } catch (error) {
+        throw new SessionRefreshError(errorMessage(error, 'refresh 请求失败'), false);
+      }
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error ?? `refresh 失败 (${res.status})`);
+        const message = await stableResponseError(res, `refresh 失败 (${res.status})`);
+        throw new SessionRefreshError(message, res.status === 401 || res.status === 403);
       }
       const body = (await res.json()) as { accessToken: string; refreshToken: string };
       return {
@@ -41,23 +67,17 @@ export function createAuthApi(baseUrl = apiBaseUrl()): SessionAuthApi {
     async loadProfile(accessToken: string) {
       const res = await fetch(`${baseUrl}/me`, {
         headers: { authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(SESSION_REQUEST_TIMEOUT_MS),
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error ?? `资料加载失败 (${res.status})`);
+        throw new Error(await stableResponseError(res, `资料加载失败 (${res.status})`));
       }
-      const body = (await res.json()) as {
-        userId: string;
-        nickname?: string;
-        device?: { deviceId?: string };
-      };
-      if (!body.userId || !body.device?.deviceId) {
-        throw new Error('资料加载失败 (响应缺少用户或设备信息)');
-      }
+      const parsed = profileBodySchema.safeParse(await res.json().catch(() => null));
+      if (!parsed.success) throw new Error('资料响应无效');
       return {
-        userId: body.userId,
-        deviceId: body.device.deviceId,
-        ...(body.nickname === undefined ? {} : { nickname: body.nickname }),
+        userId: parsed.data.userId,
+        nickname: parsed.data.nickname,
+        deviceId: parsed.data.device.deviceId,
       };
     },
     async revoke(refreshToken: string) {
@@ -137,12 +157,19 @@ function toIpcResult(snapshot: SessionState): SessionIpcResult {
 }
 
 /** IPC handler 集合（由 register.ts 调用） */
-export function createSessionHandlers(session: SessionController, onActivated?: () => void) {
+export function createSessionHandlers(
+  session: SessionController,
+  onActivated?: () => void,
+  restorePromise: Promise<SessionState> = Promise.resolve(session.snapshot),
+) {
   const baseUrl = apiBaseUrl();
 
   return {
-    /** 启动恢复：Main bootstrap 已完成 restore，这里只读取当前快照 */
-    init: async (): Promise<SessionIpcResult> => toIpcResult(session.snapshot),
+    /** 等待 Main 启动的唯一 restore，再读取当前快照；不重复触发恢复 */
+    init: async (): Promise<SessionIpcResult> => {
+      await restorePromise;
+      return toIpcResult(session.snapshot);
+    },
     /** 登录（已有账号）：refresh token 经 activate 存入 safeStorage（8.3） */
     login: async (payload: {
       email: string;

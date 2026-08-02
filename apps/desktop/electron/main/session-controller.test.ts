@@ -93,6 +93,88 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     expect(c.snapshot.profile).toEqual({ userId: 'u1', deviceId: 'dev-1', nickname: 'Alice' });
   });
 
+  it('revoke() invalidates an in-flight refresh result', async () => {
+    const storage = new MemoryStorage();
+    const auth = makeAuth();
+    let resolveRefresh!: (tokens: SessionTokens) => void;
+    auth.refreshAccessToken = vi.fn(
+      () =>
+        new Promise<SessionTokens>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    const c = new SessionController(storage, auth);
+    await c.activate(makeTokens(), profile);
+
+    const refreshPromise = c.refresh('refresh-1');
+    await c.revoke();
+    resolveRefresh({ ...makeTokens(), accessToken: 'access-old', refreshToken: 'refresh-2' });
+    await refreshPromise;
+
+    expect(c.snapshot).toEqual({ phase: 'SIGNED_OUT', profile: null, tokens: null });
+    expect(storage.loadRefreshToken()).toBeNull();
+  });
+
+  it('activate() invalidates an in-flight refresh from the previous account', async () => {
+    const storage = new MemoryStorage();
+    const auth = makeAuth();
+    let resolveRefresh!: (tokens: SessionTokens) => void;
+    auth.refreshAccessToken = vi.fn(
+      () =>
+        new Promise<SessionTokens>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    const c = new SessionController(storage, auth);
+    await c.activate(makeTokens(), profile);
+
+    const refreshPromise = c.refresh('refresh-1');
+    const newProfile = { userId: 'u2', deviceId: 'dev-2', nickname: 'Bob' };
+    const newTokens = {
+      accessToken: 'access-new',
+      refreshToken: 'refresh-new',
+      accessExpiresAt: Date.now() + 15 * 60_000,
+    };
+    await c.activate(newTokens, newProfile);
+    resolveRefresh({ ...makeTokens(), accessToken: 'access-old', refreshToken: 'refresh-2' });
+    await refreshPromise;
+
+    expect(c.snapshot).toEqual({ phase: 'ACTIVE', profile: newProfile, tokens: newTokens });
+    expect(storage.loadRefreshToken()).toBe('refresh-new');
+  });
+
+  it('single-flight only shares the same generation and refresh token', async () => {
+    const storage = new MemoryStorage();
+    const auth = makeAuth();
+    const pending = new Map<string, (tokens: SessionTokens) => void>();
+    auth.refreshAccessToken = vi.fn(
+      (refreshToken) =>
+        new Promise<SessionTokens>((resolve) => {
+          pending.set(refreshToken, resolve);
+        }),
+    );
+    const c = new SessionController(storage, auth);
+
+    const first = c.refresh('refresh-1');
+    const same = c.refresh('refresh-1');
+    const different = c.refresh('refresh-other');
+    expect(auth.refreshAccessToken).toHaveBeenCalledTimes(2);
+
+    pending.get('refresh-1')?.({ ...makeTokens(), refreshToken: 'refresh-2' });
+    pending.get('refresh-other')?.({
+      ...makeTokens(),
+      accessToken: 'access-other',
+      refreshToken: 'refresh-other-2',
+    });
+    const [firstState, sameState, differentState] = await Promise.all([first, same, different]);
+
+    expect(firstState).toEqual(sameState);
+    expect(differentState.phase).toBe('ACTIVE');
+    expect(differentState.tokens?.accessToken).toBe('access-other');
+    expect(c.snapshot).toEqual(differentState);
+    expect(storage.loadRefreshToken()).toBe('refresh-other-2');
+  });
+
   it('activate() saves refresh token to secure storage (8.3)', async () => {
     const storage = new MemoryStorage();
     const c = new SessionController(storage, makeAuth());
@@ -102,12 +184,12 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     expect(c.snapshot.tokens?.accessToken).toBe('access-1');
   });
 
-  it('refresh() failure transitions to EXPIRED', async () => {
+  it('invalid refresh rotation clears storage and transitions to EXPIRED', async () => {
     const storage = new MemoryStorage();
     storage.saveRefreshToken('stale');
     const auth = makeAuth();
     auth.refreshAccessToken = vi.fn(async () => {
-      throw new Error('401 invalid_grant');
+      throw Object.assign(new Error('401 invalid_grant'), { invalidToken: true });
     });
     const c = new SessionController(storage, auth);
     await c.restore();
@@ -116,6 +198,48 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     expect(c.snapshot.profile).toBeNull();
     expect(c.snapshot.tokens).toBeNull();
     expect(c.snapshot.error).toContain('401');
+  });
+
+  it('transient refresh failure preserves the stored token and allows retry', async () => {
+    const storage = new MemoryStorage();
+    storage.saveRefreshToken('refresh-1');
+    const auth = makeAuth();
+    auth.refreshAccessToken = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('网络超时'), { invalidToken: false }))
+      .mockResolvedValueOnce({
+        accessToken: 'access-2',
+        refreshToken: 'refresh-2',
+        accessExpiresAt: Date.now() + 15 * 60_000,
+      });
+    const c = new SessionController(storage, auth);
+
+    await c.restore();
+    expect(storage.loadRefreshToken()).toBe('refresh-1');
+    expect(c.snapshot.phase).toBe('ERROR');
+    expect(c.snapshot.error).toBe('网络超时');
+
+    await c.refresh('refresh-1');
+    expect(c.snapshot.phase).toBe('ACTIVE');
+    expect(storage.loadRefreshToken()).toBe('refresh-2');
+  });
+
+  it('profile failure preserves newly rotated tokens and storage', async () => {
+    const storage = new MemoryStorage();
+    storage.saveRefreshToken('refresh-1');
+    const auth = makeAuth();
+    auth.loadProfile = vi.fn(async () => {
+      throw new Error('资料响应无效');
+    });
+    const c = new SessionController(storage, auth);
+
+    await c.restore();
+
+    expect(storage.loadRefreshToken()).toBe('refresh-2');
+    expect(c.snapshot.phase).toBe('ERROR');
+    expect(c.snapshot.tokens?.accessToken).toBe('access-2');
+    expect(c.snapshot.tokens?.refreshToken).toBe('refresh-2');
+    expect(c.snapshot.error).toBe('资料响应无效');
   });
 
   it('access token validity window (short TTL per 9.8)', async () => {

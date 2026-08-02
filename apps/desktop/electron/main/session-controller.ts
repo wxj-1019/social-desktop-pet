@@ -53,6 +53,17 @@ export interface SessionAuthApi {
   revoke(refreshToken: string): Promise<void>;
 }
 
+/** refresh rotation 的可判别错误：仅 invalidToken=true 时清除安全存储。 */
+export class SessionRefreshError extends Error {
+  constructor(
+    message: string,
+    readonly invalidToken: boolean,
+  ) {
+    super(message);
+    this.name = 'SessionRefreshError';
+  }
+}
+
 /** 创建初始状态 */
 export function initialSession(): SessionState {
   return { phase: 'SIGNED_OUT', profile: null, tokens: null };
@@ -63,7 +74,13 @@ export function initialSession(): SessionState {
  */
 export class SessionController {
   private state: SessionState = initialSession();
-  private refreshInFlight: Promise<SessionState> | null = null;
+  private generation = 0;
+  private refreshInFlight: {
+    generation: number;
+    refreshToken: string;
+    operationId: symbol;
+    promise: Promise<SessionState>;
+  } | null = null;
   /** 9.8 撤销滞后窗口：Auth 撤销后 access token 过期前仍有效，需应用层校验 */
   private revokedAt: number | null = null;
 
@@ -90,35 +107,81 @@ export class SessionController {
 
   /** 登录成功后进入 ACTIVE（保存 refresh token） */
   async activate(tokens: SessionTokens, profile: SessionProfile): Promise<SessionState> {
+    this.generation += 1;
+    this.revokedAt = null;
     this.storage.saveRefreshToken(tokens.refreshToken);
     this.state = { phase: 'ACTIVE', profile, tokens };
     return this.state;
   }
 
-  /** access token 过期前自动刷新；并发调用共享同一次轮换请求 */
+  /** access token 过期前自动刷新；仅相同代际和 refresh token 共享请求 */
   async refresh(refreshToken: string): Promise<SessionState> {
-    if (this.refreshInFlight) return this.refreshInFlight;
+    const generation = this.generation;
+    if (
+      this.refreshInFlight?.generation === generation &&
+      this.refreshInFlight.refreshToken === refreshToken
+    ) {
+      return this.refreshInFlight.promise;
+    }
 
+    const operationId = Symbol('session-refresh');
     this.state = { ...this.state, phase: 'REFRESHING' };
-    this.refreshInFlight = this.performRefresh(refreshToken).finally(() => {
-      this.refreshInFlight = null;
+    const promise = this.performRefresh(generation, refreshToken, operationId).finally(() => {
+      if (this.refreshInFlight?.operationId === operationId) this.refreshInFlight = null;
     });
-    return this.refreshInFlight;
+    this.refreshInFlight = { generation, refreshToken, operationId, promise };
+    return promise;
   }
 
-  private async performRefresh(refreshToken: string): Promise<SessionState> {
+  private isCurrentRefresh(generation: number, refreshToken: string, operationId: symbol): boolean {
+    return (
+      this.generation === generation &&
+      this.refreshInFlight?.generation === generation &&
+      this.refreshInFlight.refreshToken === refreshToken &&
+      this.refreshInFlight.operationId === operationId
+    );
+  }
+
+  private async performRefresh(
+    generation: number,
+    refreshToken: string,
+    operationId: symbol,
+  ): Promise<SessionState> {
+    let tokens: SessionTokens;
     try {
-      const tokens = await this.auth.refreshAccessToken(refreshToken);
+      tokens = await this.auth.refreshAccessToken(refreshToken);
+    } catch (e) {
+      if (!this.isCurrentRefresh(generation, refreshToken, operationId)) return this.state;
+
+      const error = e instanceof Error ? e.message : String(e);
+      const invalidToken =
+        typeof e === 'object' && e !== null && 'invalidToken' in e && e.invalidToken === true;
+      if (invalidToken) {
+        this.storage.deleteRefreshToken();
+        this.state = { phase: 'EXPIRED', profile: null, tokens: null, error };
+      } else {
+        this.state = { ...this.state, phase: 'ERROR', error };
+      }
+      return this.state;
+    }
+
+    if (!this.isCurrentRefresh(generation, refreshToken, operationId)) return this.state;
+    this.storage.saveRefreshToken(tokens.refreshToken);
+    this.state = { phase: 'REFRESHING', profile: this.state.profile, tokens };
+
+    try {
       const profile = await this.auth.loadProfile(tokens.accessToken);
-      this.storage.saveRefreshToken(tokens.refreshToken);
+      if (!this.isCurrentRefresh(generation, refreshToken, operationId)) return this.state;
+
       this.state = { phase: 'ACTIVE', profile, tokens };
       return this.state;
     } catch (e) {
-      this.storage.deleteRefreshToken();
+      if (!this.isCurrentRefresh(generation, refreshToken, operationId)) return this.state;
+
       this.state = {
-        phase: 'EXPIRED',
-        profile: null,
-        tokens: null,
+        phase: 'ERROR',
+        profile: this.state.profile,
+        tokens,
         error: e instanceof Error ? e.message : String(e),
       };
       return this.state;
@@ -134,6 +197,7 @@ export class SessionController {
 
   /** 9.8：撤销（Auth 撤销 refresh token）—— 但 access token 过期前仍有效 */
   async revoke(): Promise<void> {
+    this.generation += 1;
     const refresh = this.state.tokens?.refreshToken;
     if (refresh) {
       try {
