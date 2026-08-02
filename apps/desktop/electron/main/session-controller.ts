@@ -105,6 +105,8 @@ export class SessionController {
   async restore(): Promise<SessionState> {
     const refresh = this.storage.loadRefreshToken();
     if (!refresh) {
+      this.advanceGeneration();
+      this.revokedAt = null;
       this.state = initialSession();
       return this.state;
     }

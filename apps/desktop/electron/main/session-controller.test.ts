@@ -66,6 +66,38 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     expect(c.hasValidAccessToken()).toBe(true);
   });
 
+  it('restore() invalidates a pending refresh when storage no longer has a token', async () => {
+    const storage = new MemoryStorage();
+    storage.saveRefreshToken('refresh-old');
+    const auth = makeAuth();
+    let resolveRefresh!: (tokens: SessionTokens) => void;
+    auth.refreshAccessToken = vi.fn(
+      () =>
+        new Promise<SessionTokens>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    const c = new SessionController(storage, auth);
+
+    const pending = c.restore();
+    expect(auth.refreshAccessToken).toHaveBeenCalledWith('refresh-old');
+
+    storage.deleteRefreshToken();
+    const restored = await c.restore();
+    expect(restored).toEqual({ phase: 'SIGNED_OUT', profile: null, tokens: null });
+    expect(c.snapshot).toEqual(restored);
+
+    resolveRefresh({
+      accessToken: 'access-old',
+      refreshToken: 'refresh-new',
+      accessExpiresAt: Date.now() + 15 * 60_000,
+    });
+    await pending;
+
+    expect(c.snapshot).toEqual({ phase: 'SIGNED_OUT', profile: null, tokens: null });
+    expect(storage.loadRefreshToken()).toBeNull();
+  });
+
   it('concurrent refresh calls share one in-flight token rotation', async () => {
     const storage = new MemoryStorage();
     const auth = makeAuth();
