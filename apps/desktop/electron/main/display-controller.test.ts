@@ -7,6 +7,7 @@ import {
   DEFAULT_PET_SCALE,
   MIN_PET_SCALE,
   MAX_PET_SCALE,
+  PetPositionSchema,
   type DisplayInfo,
   type PetPosition,
 } from './display-controller.js';
@@ -105,5 +106,38 @@ describe('DisplayController (8.5 多屏持久化)', () => {
     const abs = toAbsolute(dualDisplays[1]!, saved);
     const back = toAnchor(dualDisplays[1]!, abs);
     expect(back).toEqual({ anchorX: 123, anchorY: 456 });
+  });
+});
+
+describe('PetPositionSchema (持久化校验)', () => {
+  const valid: PetPosition = {
+    displayId: 'primary',
+    anchorX: 0.5,
+    anchorY: 0.25,
+    scale: 1,
+    savedAt: 100,
+  };
+
+  it('parses a valid persisted position', () => {
+    expect(PetPositionSchema.parse(valid)).toEqual(valid);
+  });
+
+  it('rejects out-of-range anchors', () => {
+    expect(() => PetPositionSchema.parse({ ...valid, anchorX: 1.5 })).toThrow();
+    expect(() => PetPositionSchema.parse({ ...valid, anchorY: -0.1 })).toThrow();
+  });
+
+  it('rejects out-of-range scale', () => {
+    expect(() => PetPositionSchema.parse({ ...valid, scale: 0 })).toThrow();
+    expect(() => PetPositionSchema.parse({ ...valid, scale: 3 })).toThrow();
+  });
+
+  it('rejects non-finite savedAt', () => {
+    expect(() => PetPositionSchema.parse({ ...valid, savedAt: NaN })).toThrow();
+    expect(() => PetPositionSchema.parse({ ...valid, savedAt: Infinity })).toThrow();
+  });
+
+  it('rejects extra fields (strict)', () => {
+    expect(() => PetPositionSchema.parse({ ...valid, extra: true })).toThrow();
   });
 });

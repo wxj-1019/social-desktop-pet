@@ -7,6 +7,8 @@
  * 本文件为纯逻辑（可单测），Electron screen 依赖由 main 注入。
  */
 
+import { z } from 'zod';
+
 export interface DisplayInfo {
   id: string;
   /** 显示器工作区（相对虚拟桌面坐标，可为负） */
@@ -27,6 +29,20 @@ export interface PetPosition {
 export const DEFAULT_PET_SCALE = 1;
 export const MIN_PET_SCALE = 0.5;
 export const MAX_PET_SCALE = 2;
+
+/**
+ * 持久化 PetPosition 的校验 schema（与上方 PetPosition 类型结构兼容）。
+ * anchor/scale 限制在合理范围，savedAt 必须有限；.strict() 拒绝未知字段。
+ */
+export const PetPositionSchema = z
+  .object({
+    displayId: z.string(),
+    anchorX: z.number().min(0).max(1),
+    anchorY: z.number().min(0).max(1),
+    scale: z.number().min(MIN_PET_SCALE).max(MAX_PET_SCALE),
+    savedAt: z.number().finite(),
+  })
+  .strict();
 
 /**
  * 计算宠物在虚拟桌面坐标系中的绝对位置。
