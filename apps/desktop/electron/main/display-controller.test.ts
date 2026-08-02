@@ -4,6 +4,8 @@ import {
   resolvePetPosition,
   toAbsolute,
   toAnchor,
+  clampPetWindowToDisplays,
+  anchorPanelToPet,
   DEFAULT_PET_SCALE,
   MIN_PET_SCALE,
   MAX_PET_SCALE,
@@ -140,5 +142,90 @@ describe('PetPositionSchema (持久化校验)', () => {
 
   it('rejects extra fields (strict)', () => {
     expect(() => PetPositionSchema.parse({ ...valid, extra: true })).toThrow();
+  });
+});
+
+describe('clampPetWindowToDisplays (拖动夹取)', () => {
+  const petSize = { width: 280, height: 320 };
+
+  it('keeps an already visible position unchanged', () => {
+    expect(clampPetWindowToDisplays({ x: 500, y: 300 }, dualDisplays, petSize)).toEqual({
+      x: 500,
+      y: 300,
+    });
+  });
+
+  it('clamps the right edge so at least 1/4 of the window stays visible', () => {
+    // 主屏 1000px 宽，宠物窗口最多只能露出 70px（280*0.25），所以 x 最大 1000-70
+    expect(clampPetWindowToDisplays({ x: 950, y: 300 }, dualDisplays, petSize)).toEqual({
+      x: 930,
+      y: 300,
+    });
+  });
+
+  it('clamps off-screen top edge', () => {
+    expect(clampPetWindowToDisplays({ x: 500, y: -300 }, dualDisplays, petSize)).toEqual({
+      x: 500,
+      y: -240,
+    });
+  });
+
+  it('preserves negative coordinates on the left secondary display', () => {
+    // 目标位于左侧副屏内（x ∈ [-1280,0)），右边界被夹到 -70
+    expect(clampPetWindowToDisplays({ x: -50, y: 400 }, dualDisplays, petSize)).toEqual({
+      x: -70,
+      y: 400,
+    });
+  });
+
+  it('falls back to the primary display when the target is on no display', () => {
+    // y=900 超出所有显示器 → 回主屏并夹进可见区域
+    expect(clampPetWindowToDisplays({ x: 500, y: 900 }, dualDisplays, petSize)).toEqual({
+      x: 500,
+      y: 720,
+    });
+  });
+
+  it('returns the target unchanged when there are no displays', () => {
+    expect(clampPetWindowToDisplays({ x: 100, y: 200 }, [], petSize)).toEqual({ x: 100, y: 200 });
+  });
+});
+
+describe('anchorPanelToPet (面板锚定)', () => {
+  const panel = { width: 360, height: 480 };
+  const workArea = { x: 0, y: 0, width: 1000, height: 800 };
+  const pet = { x: 100, y: 100, width: 280, height: 320 };
+
+  it('anchors to the right side of the pet when it fits', () => {
+    expect(anchorPanelToPet(pet, panel, workArea)).toEqual({ x: 380, y: 100 });
+  });
+
+  it('falls back to the left side when the right side does not fit', () => {
+    const rightEdgePet = { ...pet, x: 700 };
+    expect(anchorPanelToPet(rightEdgePet, panel, workArea)).toEqual({ x: 340, y: 100 });
+  });
+
+  it('clamps into the work area when neither side fits (partial visibility)', () => {
+    const narrow = { x: 0, y: 0, width: 400, height: 800 };
+    const petAtLeft = { x: 50, y: 100, width: 280, height: 320 };
+    expect(anchorPanelToPet(petAtLeft, panel, narrow)).toEqual({ x: 310, y: 100 });
+  });
+
+  it('works on a negative-coordinate display', () => {
+    const negWorkArea = { x: -1280, y: 0, width: 1280, height: 800 };
+    const negPet = { x: -1200, y: 100, width: 280, height: 320 };
+    // 右侧：-1200+280=-920，-920+360=-560 仍在工作区内 → 放右侧
+    expect(anchorPanelToPet(negPet, panel, negWorkArea)).toEqual({ x: -920, y: 100 });
+  });
+
+  it('returns integer coordinates even when clamping yields fractions', () => {
+    const fractionalPanel = { width: 361, height: 480 };
+    const narrow = { x: 0, y: 0, width: 401, height: 800 };
+    const petAtLeft = { x: 50, y: 100, width: 280, height: 320 };
+    const result = anchorPanelToPet(petAtLeft, fractionalPanel, narrow);
+    expect(Number.isInteger(result.x)).toBe(true);
+    expect(Number.isInteger(result.y)).toBe(true);
+    expect(result.x).toBe(311); // Math.round(401 - 361*0.25) = Math.round(310.75)
+    expect(result.y).toBe(100);
   });
 });

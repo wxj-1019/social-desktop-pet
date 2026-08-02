@@ -16,6 +16,14 @@ export interface DisplayInfo {
   scaleFactor: number;
 }
 
+/** 轻量显示器形态（DisplayInfo 的宽松版本，供拖动等不关心缩放因子的场景） */
+export interface DisplayLike {
+  id: string;
+  /** 显示器工作区（相对虚拟桌面坐标，可为负） */
+  workArea: { x: number; y: number; width: number; height: number };
+  scaleFactor?: number;
+}
+
 /** 持久化的宠物位置（相对锚点 = 相对所属显示器工作区的偏移） */
 export interface PetPosition {
   displayId: string;
@@ -109,4 +117,78 @@ export function toAnchor(
     anchorX: abs.x - display.workArea.x,
     anchorY: abs.y - display.workArea.y,
   };
+}
+
+/**
+ * 拖动时把目标位置夹进可见区域（与 resolvePetPosition 规则一致）：
+ * 目标左上角所在显示器内夹取（至少露出窗口 1/4）；找不到所在显示器则回主屏（第一个）。
+ * 保留负坐标（支持左侧副屏）；无显示器时原样返回。
+ */
+export function clampPetWindowToDisplays(
+  target: { x: number; y: number },
+  displays: DisplayLike[],
+  petSize: { width: number; height: number },
+): { x: number; y: number } {
+  const current =
+    displays.find(
+      (d) =>
+        target.x >= d.workArea.x &&
+        target.x < d.workArea.x + d.workArea.width &&
+        target.y >= d.workArea.y &&
+        target.y < d.workArea.y + d.workArea.height,
+    ) ?? displays[0];
+  if (!current) return { x: target.x, y: target.y };
+
+  const visibleW = petSize.width * 0.25;
+  const visibleH = petSize.height * 0.25;
+  return {
+    x: clamp(
+      target.x,
+      current.workArea.x - petSize.width + visibleW,
+      current.workArea.x + current.workArea.width - visibleW,
+    ),
+    y: clamp(
+      target.y,
+      current.workArea.y - petSize.height + visibleH,
+      current.workArea.y + current.workArea.height - visibleH,
+    ),
+  };
+}
+
+/**
+ * 把面板锚定到宠物窗口旁边：优先宠物右侧；放不下则左侧；两侧都放不下则夹进工作区
+ * （至少部分可见）。y 与宠物顶部对齐。返回整数坐标。
+ */
+export function anchorPanelToPet(
+  pet: { x: number; y: number; width: number; height: number },
+  panel: { width: number; height: number },
+  workArea: { x: number; y: number; width: number; height: number },
+): { x: number; y: number } {
+  const rightX = pet.x + pet.width;
+
+  // 1. 优先右侧
+  if (rightX + panel.width <= workArea.x + workArea.width) {
+    return { x: Math.round(rightX), y: Math.round(pet.y) };
+  }
+
+  // 2. 放不下则左侧
+  const leftX = pet.x - panel.width;
+  if (leftX >= workArea.x) {
+    return { x: Math.round(leftX), y: Math.round(pet.y) };
+  }
+
+  // 3. 两侧都放不下 → 夹进工作区（保留至少 1/4 可见）
+  const visibleW = panel.width * 0.25;
+  const visibleH = panel.height * 0.25;
+  const x = clamp(
+    rightX,
+    workArea.x - panel.width + visibleW,
+    workArea.x + workArea.width - visibleW,
+  );
+  const y = clamp(
+    pet.y,
+    workArea.y - panel.height + visibleH,
+    workArea.y + workArea.height - visibleH,
+  );
+  return { x: Math.round(x), y: Math.round(y) };
 }
