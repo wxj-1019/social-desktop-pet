@@ -1,7 +1,7 @@
 /**
  * 好友页 —— 6.3 邀请 + 9.4 送礼 + 拜访 + 9.5 事件流（MVP 极简版）。
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, apiBase, getAccessToken, type Friend, type SyncEvent } from '../lib/api/client.js';
 import { RealtimeClient, toWsUrl } from '../lib/realtime.js';
@@ -13,12 +13,36 @@ interface FriendsPageProps {
 /** 已处理过的深链 payload（模块级 Set：同一 token 只接受一次；跨组件重挂载仍去重） */
 const seenDeepLinkPayloads = new Set<string>();
 
+/** 已消费过的送礼事件 id（模块级 Set：跨组件重挂载不重复触发桌宠反应） */
+const seenGiftEventIds = new Set<string>();
+
+/** 手工断言 gift.snack_sent payload（unknown → 三个字段必须为 string；非法跳过） */
+function parseGiftPayload(
+  payload: unknown,
+): { giftId: string; snackId: string; fromUserId: string } | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const p = payload as Record<string, unknown>;
+  if (
+    typeof p.giftId !== 'string' ||
+    typeof p.snackId !== 'string' ||
+    typeof p.fromUserId !== 'string'
+  ) {
+    return null;
+  }
+  return { giftId: p.giftId, snackId: p.snackId, fromUserId: p.fromUserId };
+}
+
 export function FriendsPage({ userId }: FriendsPageProps) {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [events, setEvents] = useState<SyncEvent[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [lastSeq, setLastSeq] = useState(0);
+  const friendsRef = useRef<Friend[]>([]);
+
+  useEffect(() => {
+    friendsRef.current = friends;
+  }, [friends]);
 
   const refreshFriends = useCallback(async () => {
     try {
@@ -64,6 +88,27 @@ export function FriendsPage({ userId }: FriendsPageProps) {
     client.connect();
     return () => client.close();
   }, [pullSync]);
+
+  // 9.4 送礼事件 → 主进程桌宠社交反应（好友送礼 → 星屿开心/吃点心）。
+  // 消费点唯一：events 状态统一处理（初始 pullSync、WS 触发、30s 轮询都汇入这里），
+  // 模块级 Set 按 eventId 去重，跨组件重挂载不重复触发；window.pet 缺失时静默降级。
+  useEffect(() => {
+    for (const entry of events) {
+      if (entry.event.type !== 'gift.snack_sent') continue;
+      if (seenGiftEventIds.has(entry.event.eventId)) continue;
+      seenGiftEventIds.add(entry.event.eventId);
+      const payload = parseGiftPayload(entry.event.payload);
+      if (!payload) continue; // 非法 payload 跳过
+      const from = friendsRef.current.find((f) => f.userId === payload.fromUserId);
+      window.pet?.petRuntime?.socialEvent({
+        type: 'gift.snack_sent',
+        giftId: payload.giftId,
+        snackId: payload.snackId,
+        fromUserId: payload.fromUserId,
+        ...(from ? { fromNickname: from.nickname } : {}),
+      });
+    }
+  }, [events]);
 
   // 6.3 深链：接受邀请（登录完成后由主进程恢复转发）
   // C1：除推送订阅外，挂载时主动拉取主进程待投递 payload（deeplink:consume-pending）——

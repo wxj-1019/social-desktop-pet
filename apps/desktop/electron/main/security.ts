@@ -48,6 +48,7 @@ export const IPC_ALLOWLIST = [
   'pet:interaction', // 桌面触摸/点击交互
   'pet:request-action', // 动作请求（状态机审批）
   'pet:chat-event', // 聊天事件
+  'pet:social-event', // 社交事件（好友送礼等）
   'pet:drag-start', // 拖动会话（8.5）
   'pet:drag-move',
   'pet:drag-end',

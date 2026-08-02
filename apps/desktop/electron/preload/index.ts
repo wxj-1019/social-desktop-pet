@@ -13,6 +13,7 @@ import type {
   PetInteraction,
   PetProfile,
   PetRuntimeSnapshot,
+  PetSocialEvent,
   PetVisualCommand,
 } from '@pet/protocol';
 import { contextBridge, ipcRenderer } from 'electron';
@@ -77,6 +78,7 @@ const api = {
     requestAction: (request: PetActionRequest) =>
       ipcRenderer.invoke('pet:request-action', request) as Promise<PetActionDecision>,
     chatEvent: (event: PetChatEvent) => ipcRenderer.send('pet:chat-event', event),
+    socialEvent: (event: PetSocialEvent) => ipcRenderer.send('pet:social-event', event),
     dragStart: (point: PetDragPoint) => ipcRenderer.send('pet:drag-start', point),
     dragMove: (point: PetDragPoint) => ipcRenderer.send('pet:drag-move', point),
     dragEnd: () => ipcRenderer.send('pet:drag-end'),

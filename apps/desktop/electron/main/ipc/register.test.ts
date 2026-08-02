@@ -445,6 +445,78 @@ describe('pet runtime 通道（Task 7）', () => {
   });
 });
 
+describe('pet:social-event（好友送礼 → 桌宠反应）', () => {
+  it('panel 发送合法礼物事件 → happy 表情 + happy 动作 + 气泡', () => {
+    const { panel, visuals, runtime, deps } = makeDeps();
+    registerIpcAllowlist(deps);
+    runtime.start(); // 进入 IDLE，cheer 才在白名单
+    const handler = electronMocks.onHandlers.get('pet:social-event');
+
+    expect(() =>
+      handler?.(eventFrom(panel), {
+        type: 'gift.snack_sent',
+        giftId: 'gift-1',
+        snackId: 'snack_cookie',
+        fromUserId: 'user-1',
+        fromNickname: 'Alice',
+      }),
+    ).not.toThrow();
+    expect(visuals).toContainEqual({ type: 'expression', expression: 'happy' });
+    expect(visuals).toContainEqual({ type: 'motion', motion: 'happy', intensity: 1 });
+    expect(visuals).toContainEqual({ type: 'bubble', text: 'Alice 送来了小饼干！' });
+    runtime.stop();
+  });
+
+  it('pet 窗口也可发送礼物事件（无昵称回退"好友"）', () => {
+    const { pet, visuals, runtime, deps } = makeDeps();
+    registerIpcAllowlist(deps);
+    runtime.start();
+    const handler = electronMocks.onHandlers.get('pet:social-event');
+
+    expect(() =>
+      handler?.(eventFrom(pet), {
+        type: 'gift.snack_sent',
+        giftId: 'gift-2',
+        snackId: 'snack_candy',
+        fromUserId: 'user-2',
+      }),
+    ).not.toThrow();
+    expect(visuals).toContainEqual({ type: 'bubble', text: '好友 送来了糖果！' });
+    runtime.stop();
+  });
+
+  it('拒绝多余字段的礼物事件', () => {
+    const { panel, deps } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.onHandlers.get('pet:social-event');
+
+    expect(() =>
+      handler?.(eventFrom(panel), {
+        type: 'gift.snack_sent',
+        giftId: 'gift-3',
+        snackId: 'snack_cookie',
+        fromUserId: 'user-3',
+        toUserId: 'user-4',
+      }),
+    ).toThrow(IpcPayloadError);
+  });
+
+  it('拒绝未知 type 的社交事件', () => {
+    const { panel, deps } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.onHandlers.get('pet:social-event');
+
+    expect(() =>
+      handler?.(eventFrom(panel), {
+        type: 'gift.visit',
+        giftId: 'gift-4',
+        snackId: 'snack_cookie',
+        fromUserId: 'user-3',
+      }),
+    ).toThrow(IpcPayloadError);
+  });
+});
+
 describe('pet drag 通道（Task 7）', () => {
   it('pet:drag-start + pet:drag-move moves the pet window by the pointer offset', () => {
     const { pet, deps } = makeDeps();

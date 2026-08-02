@@ -214,4 +214,154 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
 
     expect(snapshots.length + visuals.length).toBe(baseline);
   });
+
+  it('IDLE 收到礼物：happy 表情 + happy 动作 + 气泡（含昵称）', () => {
+    vi.useFakeTimers();
+    const visuals: PetVisualCommand[] = [];
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+
+    runtime.handleSocialEvent({
+      type: 'gift.snack_sent',
+      giftId: 'gift-1',
+      snackId: 'snack_cookie',
+      fromUserId: 'user-1',
+      fromNickname: 'Alice',
+    });
+    expect(visuals).toContainEqual({ type: 'expression', expression: 'happy' });
+    expect(visuals).toContainEqual({ type: 'motion', motion: 'happy', intensity: 1 });
+    expect(visuals).toContainEqual({ type: 'bubble', text: 'Alice 送来了小饼干！' });
+
+    runtime.stop();
+  });
+
+  it('QUIET / HIDDEN 忽略礼物（无任何视觉指令）', () => {
+    vi.useFakeTimers();
+    const visuals: PetVisualCommand[] = [];
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+
+    runtime.setDnd(true);
+    expect(runtime.snapshot.state).toBe('QUIET');
+    const quietBefore = visuals.length;
+    runtime.handleSocialEvent({
+      type: 'gift.snack_sent',
+      giftId: 'gift-q',
+      snackId: 'snack_candy',
+      fromUserId: 'user-1',
+    });
+    expect(visuals.length).toBe(quietBefore);
+
+    runtime.setDnd(false);
+    runtime.setHidden(true);
+    expect(runtime.snapshot.state).toBe('HIDDEN');
+    const hiddenBefore = visuals.length;
+    runtime.handleSocialEvent({
+      type: 'gift.snack_sent',
+      giftId: 'gift-h',
+      snackId: 'snack_tea',
+      fromUserId: 'user-1',
+    });
+    expect(visuals.length).toBe(hiddenBefore);
+
+    runtime.stop();
+  });
+
+  it('CHATTING 中收到礼物：仍弹气泡 + 表情，无动作（cheer 不在白名单，非 cooldown 不补偿）', () => {
+    vi.useFakeTimers();
+    const visuals: PetVisualCommand[] = [];
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+    runtime.handleChat({ phase: 'start', source: 'local_chat', text: 'hi' });
+    expect(runtime.snapshot.state).toBe('CHATTING');
+
+    const motionsBefore = visuals.filter(
+      (c) => c.type === 'motion' && (c.motion === 'happy' || c.motion === 'wave'),
+    ).length;
+    runtime.handleSocialEvent({
+      type: 'gift.snack_sent',
+      giftId: 'gift-c',
+      snackId: 'snack_cookie',
+      fromUserId: 'user-1',
+    });
+    expect(visuals).toContainEqual({ type: 'expression', expression: 'happy' });
+    expect(visuals).toContainEqual({ type: 'bubble', text: '好友 送来了小饼干！' });
+    expect(
+      visuals.filter((c) => c.type === 'motion' && (c.motion === 'happy' || c.motion === 'wave')),
+    ).toHaveLength(motionsBefore);
+
+    runtime.stop();
+  });
+
+  it('无昵称气泡回退"好友"，未知点心回退"点心"', () => {
+    vi.useFakeTimers();
+    const visuals: PetVisualCommand[] = [];
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+
+    runtime.handleSocialEvent({
+      type: 'gift.snack_sent',
+      giftId: 'gift-4',
+      snackId: 'snack_tea',
+      fromUserId: 'user-1',
+    });
+    expect(visuals).toContainEqual({ type: 'bubble', text: '好友 送来了茶点！' });
+
+    runtime.handleSocialEvent({
+      type: 'gift.snack_sent',
+      giftId: 'gift-5',
+      snackId: 'snack_mystery',
+      fromUserId: 'user-1',
+    });
+    expect(visuals).toContainEqual({ type: 'bubble', text: '好友 送来了点心！' });
+
+    runtime.stop();
+  });
+
+  it('cheer 冷却中改播 wave 补偿动作', () => {
+    vi.useFakeTimers();
+    const visuals: PetVisualCommand[] = [];
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+
+    runtime.handleSocialEvent({
+      type: 'gift.snack_sent',
+      giftId: 'gift-a',
+      snackId: 'snack_cookie',
+      fromUserId: 'user-1',
+    });
+    // 立即第二次送礼：cheer 10s 冷却 → 尝试 wave 补偿（wave 冷却未用）
+    runtime.handleSocialEvent({
+      type: 'gift.snack_sent',
+      giftId: 'gift-b',
+      snackId: 'snack_candy',
+      fromUserId: 'user-1',
+    });
+    expect(visuals).toContainEqual({ type: 'motion', motion: 'wave', intensity: 1 });
+
+    runtime.stop();
+  });
+
+  it('stopped 后收到礼物无任何副作用', () => {
+    vi.useFakeTimers();
+    const visuals: PetVisualCommand[] = [];
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+    runtime.stop();
+
+    const baseline = visuals.length + snapshots.length;
+    runtime.handleSocialEvent({
+      type: 'gift.snack_sent',
+      giftId: 'gift-s',
+      snackId: 'snack_cookie',
+      fromUserId: 'user-1',
+    });
+    expect(visuals.length + snapshots.length).toBe(baseline);
+  });
 });

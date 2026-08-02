@@ -16,6 +16,7 @@ import {
   PetDragPointSchema,
   PetInteractionSchema,
   PetProfileSchema,
+  PetSocialEventSchema,
 } from '@pet/protocol';
 import type { PanelOpen, PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
 import { ipcMain, screen } from 'electron';
@@ -189,6 +190,9 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
   );
   registerOn(deps, 'pet:chat-event', ['pet', 'panel'], (_win, payload) =>
     runtime.handleChat(parseIpcPayload(PetChatEventSchema, payload)),
+  );
+  registerOn(deps, 'pet:social-event', ['pet', 'panel'], (_win, payload) =>
+    runtime.handleSocialEvent(parseIpcPayload(PetSocialEventSchema, payload)),
   );
   registerOn(deps, 'pet:set-dnd', 'pet', (_win, payload) => {
     const { enabled } = parseIpcPayload(BooleanSettingSchema, payload);

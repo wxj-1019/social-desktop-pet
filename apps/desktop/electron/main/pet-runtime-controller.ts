@@ -24,6 +24,7 @@ import type {
   PetChatEvent,
   PetInteraction,
   PetRuntimeSnapshot,
+  PetSocialEvent,
   PetState,
   PetVisualCommand,
 } from '@pet/protocol';
@@ -32,6 +33,25 @@ import type {
 const TICK_MS = 5_000;
 /** 启动伸懒腰动画结束后回到 idle 的延时 */
 const BOOT_STRETCH_MS = 1_200;
+
+/** 点心名称映射（送礼气泡显示文案；未知 id 回退"点心"） */
+export function snackLabel(snackId: string): string {
+  switch (snackId) {
+    case 'snack_cookie':
+      return '小饼干';
+    case 'snack_candy':
+      return '糖果';
+    case 'snack_tea':
+      return '茶点';
+    default:
+      return '点心';
+  }
+}
+
+/** 送礼气泡文案（无昵称回退"好友"） */
+export function giftBubbleText(event: Pick<PetSocialEvent, 'snackId' | 'fromNickname'>): string {
+  return `${event.fromNickname ?? '好友'} 送来了${snackLabel(event.snackId)}！`;
+}
 
 export interface PetRuntimeOptions {
   /** 运行时快照广播（渲染层展示状态） */
@@ -161,6 +181,34 @@ export class PetRuntimeController {
       case 'error':
         this.handleChatError(event);
         return;
+    }
+  }
+
+  /**
+   * 社交事件（好友送礼）：开心表情（情绪不经动作审批）+ cheer 动作（冷却时 wave 补偿）+ 送礼气泡。
+   * 勿扰/隐藏（QUIET/HIDDEN）整体忽略——勿扰时不应弹送礼气泡。
+   */
+  handleSocialEvent(event: PetSocialEvent): void {
+    if (this.stopped) return;
+    if (this.machine.current === 'QUIET' || this.machine.current === 'HIDDEN') return;
+
+    // 表情是情绪，不经动作审批（9.4 收到礼物的第一反应）
+    this.emitVisual({ type: 'expression', expression: 'happy' });
+
+    const decision = this.machine.requestAction({ intent: 'cheer', source: 'system' });
+    if (decision.approved) {
+      this.emitVisual({ type: 'motion', motion: 'happy', intensity: 1 });
+    } else if (decision.reason === 'cooldown') {
+      // 冷却补偿：cheer 被冷却挡住时尝试 wave（节奏内仍有庆祝动作）
+      const fallback = this.machine.requestAction({ intent: 'wave', source: 'system' });
+      if (fallback.approved) {
+        this.emitVisual({ type: 'motion', motion: 'wave', intensity: 1 });
+      }
+    }
+    // 其余拒绝（dnd/not_allowed/offline）：仅气泡，不动作
+
+    if (this.isBubbleAllowed()) {
+      this.emitVisual({ type: 'bubble', text: giftBubbleText(event) });
     }
   }
 
