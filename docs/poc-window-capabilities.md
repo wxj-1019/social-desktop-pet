@@ -290,7 +290,7 @@
 
 ### 已验证（自动化 + 本机实测）
 
-- ✅ **e2e 17/17（自动化）**：smoke(4) + login(2) + chat(1) + deep-link(2) + ws-realtime(1) + **star-isle(7)**；star-isle 覆盖冷启动可见/摸头/双击面板/拖动持久化/托盘恢复/本地聊天/面板关闭不影响宠物/reduced-motion
+- ✅ **e2e 17/17（自动化）**：smoke(4) + login(2) + chat(1) + deep-link(2) + ws-realtime(1) + **star-isle(7)**（deep-link 2 例为 fresh 账号流程验证，不依赖本地库残留好友）；star-isle 覆盖冷启动可见/摸头/双击面板/拖动持久化/托盘恢复/本地聊天/面板关闭不影响宠物/reduced-motion
 - ✅ **像素可见性**：280×320 透明窗 alpha>16 像素计数阈值 8000，本机实测约 5 万——角色真实渲染（非空窗/白屏/降级）
 - ✅ **拖动持久化（重启恢复）**：拖拽移动 → restart() 后按持久化 anchor 还原（±1px 内）
 - ✅ **托盘恢复**：toggle-pass-through / hide / show 全链路（8.4 不可恢复事故为 0）

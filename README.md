@@ -62,7 +62,7 @@ pnpm package:win       # 打包 Windows 安装包（NSIS per-user，13.1）
 
 ## 首只真实桌宠：星屿
 
-> 2026-08-03 已落地并 e2e 验证（star-isle.spec.ts 7 例全绿；全部 17 例 e2e 通过）。
+> 2026-08-03 已落地并 e2e 验证（star-isle.spec.ts 7 例全绿；全部 17 例 e2e 通过，deep-link 2 例为 fresh 账号流程验证）。
 
 - **React SVG 原创角色**：星尾狐猫"星屿"由原生 React SVG 绘制（`apps/desktop/src/pet/star-isle-visual.tsx`），非贴图、非 Live2D
 - **启动即见**：无需登录即可显示、拖动、摸头（touch 动作）、本地模式聊天（气泡回复）
