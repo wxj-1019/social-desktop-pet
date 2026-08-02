@@ -93,7 +93,6 @@ export class SessionController {
   constructor(
     private readonly storage: SessionStorage,
     private readonly auth: SessionAuthApi,
-    private readonly accessTtlMs = 15 * 60_000, // 9.8：TTL 短，缩小撤销滞后窗口
     private readonly now: () => number = () => Date.now(),
   ) {}
 
@@ -126,6 +125,9 @@ export class SessionController {
   refresh(refreshToken?: string): Promise<SessionState> {
     const token =
       refreshToken ?? this.state.tokens?.refreshToken ?? this.storage.loadRefreshToken() ?? '';
+    // 空 token：没有可刷新的会话（如 SIGNED_OUT 且安全存储为空），直接返回当前状态，
+    // 不发 rotation、不进入 EXPIRED。
+    if (token === '') return Promise.resolve(this.state);
     const generation = this.generation;
     const key = this.refreshKey(generation, token);
     this.currentRefreshKey = key;
@@ -197,7 +199,19 @@ export class SessionController {
       this.revokeStaleRefreshToken(tokens.refreshToken);
       return this.state;
     }
-    this.storage.saveRefreshToken(tokens.refreshToken);
+    try {
+      this.storage.saveRefreshToken(tokens.refreshToken);
+    } catch (e) {
+      // 安全存储失败（如 DPAPI）视为 transient：保留内存 tokens、不清除存储，
+      // 进入 ERROR 允许重试，而不是卡在 REFRESHING 或进入 EXPIRED。
+      this.state = {
+        phase: 'ERROR',
+        profile: this.state.profile,
+        tokens,
+        error: e instanceof Error ? e.message : String(e),
+      };
+      return this.state;
+    }
     this.state = { phase: 'REFRESHING', profile: this.state.profile, tokens };
 
     try {

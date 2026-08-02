@@ -467,6 +467,30 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     expect(storage.loadRefreshToken()).toBe('refresh-2');
   });
 
+  it('refresh() returns SIGNED_OUT without touching auth when no token source exists', async () => {
+    const storage = new MemoryStorage();
+    const auth = makeAuth();
+    const c = new SessionController(storage, auth);
+
+    const state = await c.refresh();
+    expect(state).toEqual({ phase: 'SIGNED_OUT', profile: null, tokens: null });
+    expect(c.snapshot).toEqual(state);
+    expect(c.snapshot.phase).toBe('SIGNED_OUT');
+    expect(auth.refreshAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('refresh("") short-circuits without touching auth even when a token is stored', async () => {
+    const storage = new MemoryStorage();
+    storage.saveRefreshToken('refresh-1');
+    const auth = makeAuth();
+    const c = new SessionController(storage, auth);
+
+    const state = await c.refresh('');
+    expect(state).toEqual({ phase: 'SIGNED_OUT', profile: null, tokens: null });
+    expect(c.snapshot.phase).toBe('SIGNED_OUT');
+    expect(auth.refreshAccessToken).not.toHaveBeenCalled();
+  });
+
   it('profile failure preserves newly rotated tokens and storage', async () => {
     const storage = new MemoryStorage();
     storage.saveRefreshToken('refresh-1');
@@ -485,9 +509,29 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     expect(c.snapshot.error).toBe('资料响应无效');
   });
 
+  it('storage failure while rotating tokens is transient: ERROR keeps tokens, no EXPIRED', async () => {
+    const storage = new MemoryStorage();
+    storage.saveRefreshToken('refresh-1');
+    const auth = makeAuth();
+    const c = new SessionController(storage, auth);
+    const save = vi.spyOn(storage, 'saveRefreshToken');
+    save.mockImplementation(() => {
+      throw new Error('DPAPI 加密失败');
+    });
+
+    await c.restore();
+
+    expect(save).toHaveBeenCalledWith('refresh-2');
+    expect(c.snapshot.phase).toBe('ERROR');
+    expect(c.snapshot.error).toBe('DPAPI 加密失败');
+    expect(c.snapshot.tokens?.accessToken).toBe('access-2');
+    expect(c.snapshot.tokens?.refreshToken).toBe('refresh-2');
+    expect(storage.loadRefreshToken()).toBe('refresh-1'); // 不删除存储
+  });
+
   it('access token validity window (short TTL per 9.8)', async () => {
     const now = 1_000_000;
-    const c = new SessionController(new MemoryStorage(), makeAuth(), 15 * 60_000, () => now);
+    const c = new SessionController(new MemoryStorage(), makeAuth(), () => now);
     await c.activate(makeTokens(now + 1), profile);
     expect(c.hasValidAccessToken()).toBe(true);
     // 过期后失效
@@ -499,7 +543,7 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     const storage = new MemoryStorage();
     const auth = makeAuth();
     const now = 1_000_000;
-    const c = new SessionController(storage, auth, 15 * 60_000, () => now);
+    const c = new SessionController(storage, auth, () => now);
     await c.activate(makeTokens(now + 60_000), profile);
     expect(c.hasValidAccessToken()).toBe(true);
     await c.revoke();

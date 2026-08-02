@@ -23,6 +23,9 @@ export function apiBaseUrl(): string {
 
 const SESSION_REQUEST_TIMEOUT_MS = 15_000;
 
+/** access token TTL（9.8：短 TTL，缩小撤销滞后窗口） */
+const ACCESS_TTL_MS = 15 * 60_000;
+
 export type SessionServiceErrorCode =
   | 'profile_unavailable'
   | 'profile_invalid'
@@ -99,7 +102,7 @@ export function createAuthApi(baseUrl = apiBaseUrl()): SessionAuthApi {
       return {
         accessToken: parsed.data.accessToken,
         refreshToken: parsed.data.refreshToken,
-        accessExpiresAt: Date.now() + 15 * 60_000,
+        accessExpiresAt: Date.now() + ACCESS_TTL_MS,
       };
     },
     async loadProfile(accessToken: string) {
@@ -245,7 +248,7 @@ export function createSessionHandlers(
         deviceId,
       );
       await session.activate(
-        { accessToken, refreshToken, accessExpiresAt: Date.now() + 15 * 60_000 },
+        { accessToken, refreshToken, accessExpiresAt: Date.now() + ACCESS_TTL_MS },
         profile,
       );
       onActivated?.(); // 登录完成 → 恢复 pending 深链邀请（6.3）
@@ -266,7 +269,7 @@ export function createSessionHandlers(
         payload.nickname,
       );
       await session.activate(
-        { accessToken, refreshToken, accessExpiresAt: Date.now() + 15 * 60_000 },
+        { accessToken, refreshToken, accessExpiresAt: Date.now() + ACCESS_TTL_MS },
         profile,
       );
       onActivated?.(); // 注册即登录 → 同样恢复 pending 邀请
