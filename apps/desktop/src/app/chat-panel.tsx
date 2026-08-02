@@ -1,17 +1,25 @@
 /**
  * 聊天面板（云端）—— 10.1 chat-flow SSE 流式对话。
  * 登录后可用；本地模式走 local-chat（规则引擎）。
- * 联动：对话期间桌宠进入 CHATTING（口型动作），结束回 IDLE（7.1 状态机）。
+ *
+ * Task 11（本地/云端聊天驱动星屿动作）：
+ * - 云端消息经 window.pet.petRuntime.chatEvent 推送：
+ *   start（cloud_ai）→ update（100ms 节流，累计文本 slice(-160)）→ done（完整 ModelOutput）
+ * - done 帧带完整 ModelOutput，气泡追加完整对话文本
+ * - 云失败 / 网络异常 → 本地兜底（local_chat done + 非阻塞提示），不递归重试云
+ * - window.pet 缺失（纯 web）→ 跳过 chatEvent，聊天降级本地仍可用
+ * - 不再直接调用 renderer 状态机（删除 usePetStateMachine）
  *
  * 健壮性（2026-08-02 修复）：
  * - 消息带 id：onToken 按 id 定位占位，防历史异步加载与发送竞态导致 token 拼错
  * - 历史加载完成前禁用发送（加载失败也放开）
  * - 网络/模型异常 try/catch 兜底，streaming 永不卡死
  */
+import type { ModelOutput } from '@pet/protocol';
 import { useEffect, useRef, useState } from 'react';
 
 import { api } from '../lib/api/client.js';
-import type { PetStateController } from '../pet/use-pet-state-machine.js';
+import { localReply } from '../lib/local-mode.js';
 
 interface ChatEntry {
   id: string;
@@ -19,11 +27,10 @@ interface ChatEntry {
   text: string;
 }
 
-interface ChatPanelProps {
-  pet: PetStateController;
-}
+/** update chatEvent 节流窗口（100ms） */
+const UPDATE_THROTTLE_MS = 100;
 
-export function ChatPanel({ pet }: ChatPanelProps) {
+export function ChatPanel() {
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -73,34 +80,72 @@ export function ChatPanel({ pet }: ChatPanelProps) {
       { id: crypto.randomUUID(), role: 'user', text },
       { id: petId, role: 'pet', text: '' },
     ]);
-    pet.transition('CHATTING', 'chat_start');
+
+    // Task 11：云端聊天开始 → Main petRuntime 进入说话状态
+    window.pet?.petRuntime?.chatEvent({ phase: 'start', source: 'cloud_ai', text });
+
+    let cumulative = '';
+    let lastUpdate = Number.NEGATIVE_INFINITY;
+    /** 累计 token 并按 100ms 节流推送 update chatEvent */
+    const pushUpdate = (token: string) => {
+      cumulative += token;
+      const now = Date.now();
+      if (now - lastUpdate >= UPDATE_THROTTLE_MS) {
+        lastUpdate = now;
+        window.pet?.petRuntime?.chatEvent({
+          phase: 'update',
+          source: 'cloud_ai',
+          text: cumulative.slice(-160),
+        });
+      }
+    };
+
+    /** 云失败/异常 → 本地兜底：本地回复气泡 + local_chat done 事件（不递归重试云） */
+    const fallbackToLocal = () => {
+      const reply = localReply(text);
+      setEntries((prev) =>
+        prev.map((entry) => (entry.id === petId ? { ...entry, text: reply } : entry)),
+      );
+      window.pet?.petRuntime?.chatEvent({
+        phase: 'done',
+        source: 'local_chat',
+        output: { dialogue: reply, emotion: 'warm', actionIntent: 'nod', intensity: 1 },
+      });
+      setError('云端暂不可用，已切换本地回应');
+      setStreaming(false);
+    };
 
     try {
       await api.chatStream(
         text,
         {
-          onToken: (t) => {
+          onToken: (token) => {
+            pushUpdate(token);
             setEntries((prev) =>
-              prev.map((e) => (e.id === petId ? { ...e, text: e.text + t } : e)),
+              prev.map((entry) =>
+                entry.id === petId ? { ...entry, text: entry.text + token } : entry,
+              ),
             );
           },
-          onDone: () => {
+          onDone: (output: ModelOutput) => {
+            // 气泡展示完整对话文本（token 流可能被截断/遗漏，以 done 帧为准）
+            setEntries((prev) =>
+              prev.map((entry) =>
+                entry.id === petId ? { ...entry, text: output.dialogue } : entry,
+              ),
+            );
+            window.pet?.petRuntime?.chatEvent({ phase: 'done', source: 'cloud_ai', output });
             setStreaming(false);
-            pet.transition('IDLE', 'chat_end');
           },
-          onError: (m) => {
-            setError(m);
-            setStreaming(false);
-            pet.transition('IDLE', 'chat_error');
+          onError: () => {
+            fallbackToLocal();
           },
         },
         'local-thread',
       );
-    } catch (e) {
-      // 网络异常（如模型供应商超时）不能卡死 UI——恢复输入与桌宠状态
-      setError((e as Error).message);
-      setStreaming(false);
-      pet.transition('IDLE', 'chat_error');
+    } catch {
+      // 网络异常（如模型供应商超时）不能卡死 UI——本地兜底
+      fallbackToLocal();
     }
   }
 

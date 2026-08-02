@@ -1,6 +1,10 @@
 /**
  * 本地模式聊天（第 3–6 周 Alpha 本地降级）—— 规则引擎，不依赖后端。
  * 第 7–10 周 AI 接入后，本地模式仍作为断网兜底保留。
+ *
+ * Task 11：本地回复经 window.pet.petRuntime.chatEvent 推送
+ * （start → done，source: local_chat）；动作由 Main petRuntime 驱动，
+ * 不再在 renderer 用 setTimeout 模拟 CHATTING。window.pet 缺失时跳过事件。
  */
 import { useEffect, useRef, useState } from 'react';
 
@@ -10,14 +14,12 @@ import {
   localReply,
   type ChatMessage,
 } from '../lib/local-mode.js';
-import type { PetStateController } from '../pet/use-pet-state-machine.js';
 
 interface LocalChatProps {
   onLoginClick: () => void;
-  pet: PetStateController;
 }
 
-export function LocalChat({ onLoginClick, pet }: LocalChatProps) {
+export function LocalChat({ onLoginClick }: LocalChatProps) {
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -36,17 +38,18 @@ export function LocalChat({ onLoginClick, pet }: LocalChatProps) {
     e.preventDefault();
     const text = input.trim();
     if (!text) return;
+    const reply = localReply(text);
     const userMsg: ChatMessage = { role: 'user', text, at: new Date().toISOString() };
-    const petMsg: ChatMessage = {
-      role: 'pet',
-      text: localReply(text),
-      at: new Date().toISOString(),
-    };
+    const petMsg: ChatMessage = { role: 'pet', text: reply, at: new Date().toISOString() };
     setHistory((prev) => appendLocalMessage(appendLocalMessage(prev, userMsg), petMsg));
     setInput('');
-    // 联动：短暂 CHATTING 后回 IDLE（本地规则回复瞬时完成）
-    pet.transition('CHATTING', 'local_chat');
-    setTimeout(() => pet.transition('IDLE', 'local_chat_end'), 1_500);
+    // 本地回复 → Main petRuntime（start/done；CHATTING→IDLE 由 Main 状态机处理）
+    window.pet?.petRuntime?.chatEvent({ phase: 'start', source: 'local_chat', text });
+    window.pet?.petRuntime?.chatEvent({
+      phase: 'done',
+      source: 'local_chat',
+      output: { dialogue: reply, emotion: 'warm', actionIntent: 'nod', intensity: 1 },
+    });
   }
 
   return (

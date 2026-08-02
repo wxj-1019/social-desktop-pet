@@ -6,6 +6,9 @@
  * - refresh token：只存在于主进程 safeStorage（经 window.pet.session 刷新）
  * - 401 → 调 session.refresh() → 重试一次；失败则登出回登录页
  */
+import type { ModelOutput } from '@pet/protocol';
+import { ModelOutputSchema } from '@pet/protocol';
+
 import { parseSseChunks } from './sse.js';
 export interface MeResult {
   userId: string;
@@ -170,12 +173,14 @@ export const api = {
       hasMore: boolean;
     };
   },
-  /** 10.1 chat-flow SSE 流式聊天（fetch + ReadableStream；不用 EventSource 以携带 Authorization） */
+  /** 10.1 chat-flow SSE 流式聊天（fetch + ReadableStream；不用 EventSource 以携带 Authorization）
+   *  done 帧：完整 ModelOutput（dialogue/emotion/actionIntent/intensity），
+   *  safeParse 失败 → onError('模型回复格式无效')，不调 onDone。 */
   async chatStream(
     message: string,
     handlers: {
       onToken: (text: string) => void;
-      onDone: (final: { dialogue: string }) => void;
+      onDone: (output: ModelOutput) => void;
       onError?: (message: string) => void;
     },
     threadId?: string,
@@ -209,7 +214,12 @@ export const api = {
           if (frame.event === 'token' && typeof data.text === 'string') {
             handlers.onToken(data.text);
           } else if (frame.event === 'done') {
-            handlers.onDone({ dialogue: String(data.dialogue ?? '') });
+            const parsed = ModelOutputSchema.safeParse(data);
+            if (!parsed.success) {
+              handlers.onError?.('模型回复格式无效');
+            } else {
+              handlers.onDone(parsed.data);
+            }
           } else if (frame.event === 'error') {
             handlers.onError?.(String(data.error ?? '未知错误'));
           }
