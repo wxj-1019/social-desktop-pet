@@ -43,7 +43,7 @@ export function usePetStateMachine(options?: {
     state,
     requestAction: (intent) => {
       const sm = smRef.current!;
-      const decision = sm.requestAction({ intent });
+      const decision = sm.requestAction({ intent, source: 'system' });
       if (decision.approved) setState(sm.current);
       return decision.approved;
     },

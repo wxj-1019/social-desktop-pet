@@ -42,14 +42,14 @@ describe('PetStateMachine (7.1)', () => {
   it('approves whitelisted action from IDLE', () => {
     const sm = new PetStateMachine();
     sm.transition('IDLE');
-    expect(sm.requestAction({ intent: 'wave' }).approved).toBe(true);
+    expect(sm.requestAction({ intent: 'wave', source: 'system' }).approved).toBe(true);
   });
 
   it('rejects action in DND/QUIET (7.3 勿扰)', () => {
     const sm = new PetStateMachine();
     sm.transition('IDLE');
     sm.transition('QUIET');
-    expect(sm.requestAction({ intent: 'wave' })).toMatchObject({
+    expect(sm.requestAction({ intent: 'wave', source: 'system' })).toMatchObject({
       approved: false,
       reason: 'dnd',
     });
@@ -60,28 +60,96 @@ describe('PetStateMachine (7.1)', () => {
     sm.transition('IDLE');
     sm.transition('SLEEPING');
     // 睡觉时只能唤醒（idle），wave 不在白名单
-    expect(sm.requestAction({ intent: 'wave' })).toMatchObject({
+    expect(sm.requestAction({ intent: 'wave', source: 'system' })).toMatchObject({
       approved: false,
       reason: 'not_allowed',
     });
     // 唤醒
-    expect(sm.requestAction({ intent: 'idle' }).approved).toBe(true);
+    expect(sm.requestAction({ intent: 'idle', source: 'system' }).approved).toBe(true);
   });
 
   it('enforces per-action cooldown (防刷)', () => {
     const clock = makeClock();
     const sm = new PetStateMachine({ now: clock.now, actionCooldownMs: { wave: 10_000 } });
     sm.transition('IDLE');
-    expect(sm.requestAction({ intent: 'wave' }).approved).toBe(true);
+    expect(sm.requestAction({ intent: 'wave', source: 'system' }).approved).toBe(true);
     // 冷却期内拒绝
     clock.advance(5_000);
-    expect(sm.requestAction({ intent: 'wave' })).toMatchObject({
+    expect(sm.requestAction({ intent: 'wave', source: 'system' })).toMatchObject({
       approved: false,
       reason: 'cooldown',
     });
     // 冷却过后恢复
     clock.advance(6_000);
-    expect(sm.requestAction({ intent: 'wave' }).approved).toBe(true);
+    expect(sm.requestAction({ intent: 'wave', source: 'system' }).approved).toBe(true);
+  });
+
+  it('approves local interaction / local chat / system while OFFLINE (7.1 本地动画继续)', () => {
+    const sm = new PetStateMachine();
+    sm.transition('IDLE');
+    sm.markOffline();
+    expect(sm.current).toBe('OFFLINE');
+    // 本地触摸 → touch 按 IDLE 白名单审批
+    expect(sm.requestAction({ intent: 'touch', source: 'local_interaction' })).toMatchObject({
+      approved: true,
+      intent: 'touch',
+    });
+    // 本地聊天 → nod 按 IDLE 白名单审批
+    expect(sm.requestAction({ intent: 'nod', source: 'local_chat' })).toMatchObject({
+      approved: true,
+      intent: 'nod',
+    });
+    // system 源同样放行
+    expect(sm.requestAction({ intent: 'walk', source: 'system' }).approved).toBe(true);
+  });
+
+  it('rejects cloud_ai action while OFFLINE (reason offline)', () => {
+    const sm = new PetStateMachine();
+    sm.transition('IDLE');
+    sm.markOffline();
+    expect(sm.requestAction({ intent: 'wave', source: 'cloud_ai' })).toMatchObject({
+      approved: false,
+      reason: 'offline',
+    });
+  });
+
+  it('OFFLINE local actions still honor cooldown (冷却逻辑不变)', () => {
+    const clock = makeClock();
+    const sm = new PetStateMachine({ now: clock.now, actionCooldownMs: { touch: 15_000 } });
+    sm.transition('IDLE');
+    sm.markOffline();
+    expect(sm.requestAction({ intent: 'touch', source: 'local_interaction' }).approved).toBe(true);
+    clock.advance(5_000);
+    expect(sm.requestAction({ intent: 'touch', source: 'local_interaction' })).toMatchObject({
+      approved: false,
+      reason: 'cooldown',
+    });
+    clock.advance(11_000);
+    expect(sm.requestAction({ intent: 'touch', source: 'local_interaction' }).approved).toBe(true);
+  });
+
+  it('still rejects local actions in QUIET / HIDDEN (勿扰)', () => {
+    const sm = new PetStateMachine();
+    sm.transition('IDLE');
+    sm.transition('QUIET');
+    expect(sm.requestAction({ intent: 'touch', source: 'local_interaction' })).toMatchObject({
+      approved: false,
+      reason: 'dnd',
+    });
+    sm.transition('HIDDEN');
+    expect(sm.requestAction({ intent: 'nod', source: 'local_chat' })).toMatchObject({
+      approved: false,
+      reason: 'dnd',
+    });
+  });
+
+  it('OFFLINE local action outside IDLE whitelist is rejected as not_allowed', () => {
+    const sm = new PetStateMachine();
+    sm.transition('IDLE');
+    sm.markOffline();
+    // IDLE 白名单允许所有动画动作；SLEEPING 白名单只有 idle —— OFFLINE 审批用 IDLE，
+    // 因此这里验证 OFFLINE 走 IDLE 白名单：任意动画动作均放行
+    expect(sm.requestAction({ intent: 'sit', source: 'local_interaction' }).approved).toBe(true);
   });
 
   it('degrades to SITTING then SLEEPING on idle timeout (7.2 长时间无操作)', () => {

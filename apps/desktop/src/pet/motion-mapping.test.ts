@@ -1,58 +1,49 @@
+import {
+  actionIntentToMotion as stateActionIntentToMotion,
+  emotionToExpression as stateEmotionToExpression,
+  EXPRESSIONS as StateEXPRESSIONS,
+  MOTIONS as StateMOTIONS,
+  normalizeIntensity as stateNormalizeIntensity,
+  shouldInterrupt as stateShouldInterrupt,
+  stateToExpression as stateStateToExpression,
+  stateToMotion as stateStateToMotion,
+} from '@pet/pet-state';
 import { describe, expect, it } from 'vitest';
 
 import { isModelReady, parseModelManifest } from './model-loader.js';
 import {
-  MOTION_PRIORITY,
+  actionIntentToMotion,
+  emotionToExpression,
+  EXPRESSIONS,
+  MOTIONS,
+  normalizeIntensity,
   shouldInterrupt,
   stateToExpression,
   stateToMotion,
 } from './motion-mapping.js';
 
-describe('stateToMotion（7.1 → 7.2 动作映射）', () => {
-  it('maps every pet state to a manifest motion', () => {
-    const cases: Array<[Parameters<typeof stateToMotion>[0], string]> = [
-      ['STARTING', 'idle'],
-      ['IDLE', 'idle'],
-      ['WALKING', 'walk'],
-      ['SITTING', 'sit'],
-      ['SLEEPING', 'sleep'],
-      ['CHATTING', 'talk'],
-      ['HOSTING', 'wave'],
-      ['VISITING', 'wave'],
-      ['QUIET', 'idle'],
-      ['HIDDEN', 'idle'],
-      ['OFFLINE', 'idle'],
-    ];
-    for (const [state, motion] of cases) {
-      expect(stateToMotion(state)).toBe(motion);
-    }
+describe('motion-mapping（re-export 兼容层）', () => {
+  it('re-exports MOTIONS / EXPRESSIONS identical to @pet/pet-state', () => {
+    expect(MOTIONS).toEqual(StateMOTIONS);
+    expect(EXPRESSIONS).toEqual(StateEXPRESSIONS);
   });
 
-  it('chatting maps to talk (口型动作)', () => {
+  it('re-exports mapping functions identical to @pet/pet-state (同一引用)', () => {
+    expect(stateToMotion).toBe(stateStateToMotion);
+    expect(stateToExpression).toBe(stateStateToExpression);
+    expect(shouldInterrupt).toBe(stateShouldInterrupt);
+    expect(actionIntentToMotion).toBe(stateActionIntentToMotion);
+    expect(emotionToExpression).toBe(stateEmotionToExpression);
+    expect(normalizeIntensity).toBe(stateNormalizeIntensity);
+  });
+
+  it('re-exported functions still behave as expected (smoke)', () => {
     expect(stateToMotion('CHATTING')).toBe('talk');
-  });
-});
-
-describe('stateToExpression', () => {
-  it('warm by default, neutral when sleeping/offline', () => {
-    expect(stateToExpression('IDLE')).toBe('warm');
-    expect(stateToExpression('SLEEPING')).toBe('neutral');
     expect(stateToExpression('OFFLINE')).toBe('neutral');
-  });
-});
-
-describe('shouldInterrupt（7.2 防抖动）', () => {
-  it('sleep is not interrupted by idle/walk (优先级)', () => {
-    expect(shouldInterrupt('sleep', 'idle')).toBe(false);
-    expect(shouldInterrupt('sleep', 'walk')).toBe(false);
     expect(shouldInterrupt('idle', 'sleep')).toBe(true);
-    expect(shouldInterrupt('wave', 'touch')).toBe(true); // 4 > 3
-  });
-
-  it('priorities are total for all motions', () => {
-    for (const m of Object.keys(MOTION_PRIORITY)) {
-      expect(typeof MOTION_PRIORITY[m as keyof typeof MOTION_PRIORITY]).toBe('number');
-    }
+    expect(actionIntentToMotion('cheer')).toBe('happy');
+    expect(emotionToExpression('apologetic')).toBe('sad');
+    expect(normalizeIntensity(5)).toBe(3);
   });
 });
 

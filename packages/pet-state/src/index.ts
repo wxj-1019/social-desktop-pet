@@ -15,10 +15,11 @@
  * 本地状态机根据当前状态、勿扰、冷却时间和动作白名单决定是否执行。
  * 确定性状态机拥有最终执行权（0.2-6）。
  */
-import type { ActionIntent, PetState } from '@pet/protocol';
+import type { ActionIntent, ActionSource, PetActionDecision, PetState } from '@pet/protocol';
 
 export { PetStateSchema } from '@pet/protocol';
-export type { PetState, ActionIntent } from '@pet/protocol';
+export type { PetState, ActionIntent, ActionSource, PetActionDecision } from '@pet/protocol';
+export * from './visual-mapping.js';
 
 /** 每个动作的默认冷却（毫秒）—— 防刷与节奏控制 */
 export const DEFAULT_ACTION_COOLDOWN_MS: Record<ActionIntent, number> = {
@@ -36,7 +37,8 @@ export const DEFAULT_ACTION_COOLDOWN_MS: Record<ActionIntent, number> = {
 
 /**
  * 动作白名单：当前状态下允许执行的动作。
- * 勿扰（QUIET/HIDDEN/OFFLINE）下拒绝一切动画动作（7.3：不弹气泡、不播放声音、降低帧率）。
+ * 勿扰（QUIET/HIDDEN）下拒绝一切动画动作（7.3：不弹气泡、不播放声音、降低帧率）。
+ * OFFLINE 下仅拒绝 cloud_ai 动作，本地动作按 IDLE 白名单审批（7.1 本地动画继续）。
  */
 export const ACTION_WHITELIST: Record<PetState, ReadonlySet<ActionIntent>> = {
   STARTING: new Set(['idle']),
@@ -107,16 +109,17 @@ export interface PetStateMachineOptions {
 
 export interface ActionRequest {
   intent: ActionIntent;
+  /**
+   * 动作来源（跨进程契约，@pet/protocol）：
+   * cloud_ai 在 OFFLINE 下拒绝；本地触摸/本地聊天/system 动画继续（7.1）。
+   */
+  source: ActionSource;
   /** 动作触发原因（调试/审计） */
   reason?: string;
 }
 
-export interface ActionDecision {
-  approved: boolean;
-  intent: ActionIntent;
-  /** 拒绝原因（供日志与降级） */
-  reason?: 'dnd' | 'cooldown' | 'not_allowed' | 'offline';
-}
+/** 审批结果 —— 复用 @pet/protocol 的 PetActionDecision 跨进程契约 */
+export type ActionDecision = PetActionDecision;
 
 export class PetStateMachine {
   private state: PetState = 'STARTING';
@@ -161,15 +164,20 @@ export class PetStateMachine {
 
   /** 7.1 动作审批：AI 提出 actionIntent，状态机决定是否执行 */
   requestAction(req: ActionRequest): ActionDecision {
-    // 1. 勿扰 / 隐藏 / 离线：拒绝一切动画动作（7.3）
-    if (this.state === 'QUIET' || this.state === 'HIDDEN' || this.state === 'OFFLINE') {
+    // 1. 勿扰 / 隐藏：拒绝一切动画动作（7.3）
+    if (this.state === 'QUIET' || this.state === 'HIDDEN') {
       return { approved: false, intent: req.intent, reason: 'dnd' };
     }
-    // 2. 白名单
-    if (!ACTION_WHITELIST[this.state].has(req.intent)) {
+    // 2. OFFLINE：仅拒绝云端 AI 动作；本地触摸/本地聊天/system 动画继续（7.1）
+    if (this.state === 'OFFLINE' && req.source === 'cloud_ai') {
+      return { approved: false, intent: req.intent, reason: 'offline' };
+    }
+    // 3. 白名单（OFFLINE 时本地动作按 IDLE 白名单审批）
+    const allowedState: PetState = this.state === 'OFFLINE' ? 'IDLE' : this.state;
+    if (!ACTION_WHITELIST[allowedState].has(req.intent)) {
       return { approved: false, intent: req.intent, reason: 'not_allowed' };
     }
-    // 3. 冷却
+    // 4. 冷却
     const cooldown = this.cooldown[req.intent];
     if (cooldown > 0) {
       const last = this.lastActionAt.get(req.intent);
