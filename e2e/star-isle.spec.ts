@@ -4,9 +4,9 @@
  * 不依赖后端：全程本地模式（会话恢复失败 → 登录页 → 先逛逛（本地模式））。
  * 串行（workers=1，Electron 单实例锁）；共享一个 app 实例（restart 场景除外）。
  *
- * 像素阈值依据（PIXEL_THRESHOLD）：桌宠窗 280×320 CSS px、透明背景。
- * 角色 SVG（280×320 viewBox，xMidYMax meet）铺满窗口，主体（头/身/尾/耳）约占
- * 窗口面积 60%+。实测（本机 RDP 环境）冷启动可见像素约 5 万（alpha>16 计数）；
+ * 像素阈值依据（PIXEL_THRESHOLD）：桌宠窗 240×260 CSS px、透明背景。
+ * 角色 SVG（320×380 viewBox，xMidYMax meet）约占窗口高度 70%，主体（头/身/尾/耳）
+ * 约占窗口面积 50%+。实测（本机 RDP 环境）冷启动可见像素约 4 万（alpha>16 计数）；
  * 取安全下限 8000（约实测值 1/6），仅用来证明"角色真实画出来了"而非空窗/白屏/
  * 渲染错误降级——阈值远低于角色实际像素量，DPR/字号差异不会误杀。
  */
@@ -50,15 +50,14 @@ test('交互：摸头触发 touch 动作；双击身体打开聊天面板', asyn
   // 先等启动动画结束（happy → idle），保证后续断言不被 boot 动画覆盖
   await expect(isle).toHaveAttribute('data-motion', 'idle', { timeout: 15_000 });
 
-  // 命中区是 SVG <g>（无自身盒模型），直接用 viewBox 坐标点击主视觉：
-  // 头中心 (140,158)、身体中心 (140,240)（viewBox 280×320 与窗口等大，1:1）
-  // 摸头（data-hit=head）→ head_touch → 动作 touch
-  await isle.click({ position: { x: 140, y: 158 } });
+  // 命中区使用组内透明 rect（有盒模型，可点击；不依赖 viewBox 与窗口的换算）
+  // 摸头（data-hit=head）→ head_touch → 动作 touch（force：头部呼吸动画中 rect 有 ±2px 位移）
+  await isle.locator('[data-hit="head"] [data-hit-rect]').click({ force: true });
   await expect(isle).toHaveAttribute('data-motion', 'touch', { timeout: 5_000 });
 
   // 与摸头点击隔开（双击判定窗 320ms），再双击身体 → 打开聊天面板
   await pet.waitForTimeout(500);
-  await isle.dblclick({ position: { x: 140, y: 240 } });
+  await isle.locator('[data-hit="body"] [data-hit-rect]').dblclick({ force: true });
 
   // 面板窗（surface=panel，懒创建）出现且落在登录页（无后端）
   const panel = await app.panelWindow();
@@ -69,12 +68,12 @@ test('拖动：拖拽后窗口移动，restart() 后位置持久化还原', asyn
   const pet = await app.petWindow();
   const before = (await app.windowState('pet')) as PetWindowState;
 
-  // 身体中心（viewBox (140,240)）按下并拖动（位移 ≥6px 才启动拖动；取 60/40 确保触发）
+  // 从身体命中区中心按下并拖动（位移 ≥6px 才启动拖动；取 60/40 确保触发）
   const isle = pet.getByRole('img', { name: '星尾狐猫星屿' });
-  const svgBox = await isle.boundingBox();
-  if (!svgBox) throw new Error('找不到星屿主视觉');
-  const fromX = svgBox.x + 140;
-  const fromY = svgBox.y + 240;
+  const bodyRect = await isle.locator('[data-hit="body"] [data-hit-rect]').boundingBox();
+  if (!bodyRect) throw new Error('找不到星屿身体命中区');
+  const fromX = bodyRect.x + bodyRect.width / 2;
+  const fromY = bodyRect.y + bodyRect.height / 2;
   await pet.mouse.move(fromX, fromY);
   await pet.mouse.down();
   await pet.mouse.move(fromX + 60, fromY + 40, { steps: 5 });

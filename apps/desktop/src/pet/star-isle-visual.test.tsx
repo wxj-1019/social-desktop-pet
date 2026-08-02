@@ -27,9 +27,33 @@ describe('StarIsleVisual（原创分层 SVG 星屿）', () => {
 
   it('uses the fixed viewBox, role and aria-label', () => {
     const html = renderToStaticMarkup(<StarIsleVisual state={DEFAULT_VISUAL_STATE} />);
-    expect(html).toContain('viewBox="0 0 280 320"');
+    expect(html).toContain('viewBox="0 0 320 380"');
     expect(html).toContain('role="img"');
     expect(html).toContain('aria-label="星尾狐猫星屿"');
+  });
+
+  it('keeps ears inside the head group so head animations carry them', () => {
+    const html = renderToStaticMarkup(<StarIsleVisual state={DEFAULT_VISUAL_STATE} />);
+    const headOpen = html.indexOf('data-part="head"');
+    const earLeft = html.indexOf('data-part="ear-left"');
+    const earRight = html.indexOf('data-part="ear-right"');
+    // head 组必须先于耳朵出现，且其闭合 </g> 在耳朵之后 → 耳朵是 head 的子组
+    expect(headOpen).toBeGreaterThan(-1);
+    expect(earLeft).toBeGreaterThan(headOpen);
+    expect(earRight).toBeGreaterThan(headOpen);
+    expect(html.slice(headOpen).indexOf('</g>')).toBeGreaterThan(
+      html.slice(earLeft).indexOf('</g>'),
+    );
+  });
+
+  it('exposes transparent hit rects for head/body/tail interaction', () => {
+    const html = renderToStaticMarkup(<StarIsleVisual state={DEFAULT_VISUAL_STATE} />);
+    for (const part of ['head', 'body', 'tail']) {
+      expect(html).toContain(`<g data-part="${part}" data-hit="${part}"`);
+      expect(html).toMatch(
+        new RegExp(`data-part="${part}"[^>]*>[\\s\\S]*?<rect[^>]*data-hit-rect`),
+      );
+    }
   });
 
   it('reflects motion and expression on the root svg', () => {

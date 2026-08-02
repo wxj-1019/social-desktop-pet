@@ -312,6 +312,20 @@ body,
   transform-origin: center;
 }
 
+/* 透明命中区：接收指针事件但不参与视觉（fill 由 SVG 属性透明） */
+.star-isle [data-hit-rect] {
+  fill: transparent;
+  pointer-events: all;
+}
+
+/* 表情切换（睁/闭眼、张嘴）使用透明度过渡，避免硬切跳变 */
+.star-isle__eye-open,
+.star-isle__eye-closed,
+.star-isle__mouth,
+.star-isle__mouth-open {
+  transition: opacity 0.22s ease;
+}
+
 /* 尾巴摆动绕根部旋转（覆盖上面的默认居中原点） */
 .star-isle .star-isle__tail {
   transform-origin: 22% 92%;
@@ -352,7 +366,10 @@ body,
   transform: scaleY(0.08);
 }
 
-/* 说话嘴型（data-motion / data-speaking 均可触发） */
+/* 说话嘴型（data-motion / data-speaking 均可触发）；平时张嘴隐藏，避免双嘴叠加 */
+.star-isle__mouth-open {
+  opacity: 0;
+}
 [data-motion='talk'] .star-isle__mouth-open,
 [data-speaking='true'] .star-isle__mouth-open {
   animation: star-isle-talk 0.45s ease-in-out infinite;
@@ -386,19 +403,20 @@ body,
   animation: star-isle-blink 4.2s ease-in-out infinite;
 }
 
-/* 表情：happy/sad/shy 显示闭眼弧线（sad 向下翻转）；surprised 瞳孔放大 */
+/* 表情：happy/sad/shy 显示闭眼弧线（sad 向下翻转）；surprised 瞳孔放大。
+   睁/闭眼用 opacity 过渡（transition 见上），不再 display 硬切 */
 .star-isle__eye-closed {
-  display: none;
+  opacity: 0;
 }
 [data-expression='happy'] .star-isle__eye-open,
 [data-expression='sad'] .star-isle__eye-open,
 [data-expression='shy'] .star-isle__eye-open {
-  display: none;
+  opacity: 0;
 }
 [data-expression='happy'] .star-isle__eye-closed,
 [data-expression='sad'] .star-isle__eye-closed,
 [data-expression='shy'] .star-isle__eye-closed {
-  display: block;
+  opacity: 1;
 }
 [data-expression='sad'] .star-isle__eye-closed {
   transform: scaleY(-1);

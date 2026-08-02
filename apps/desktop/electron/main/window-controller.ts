@@ -24,7 +24,8 @@ import {
 } from './display-controller.js';
 import { SECURE_WEB_PREFS } from './security.js';
 
-export const PET_WINDOW_SIZE = { width: 280, height: 320 };
+/** 宠物窗：240×260 —— 桌面常驻小巧，角色占窗口高度约 70%（viewBox 320×380） */
+export const PET_WINDOW_SIZE = { width: 240, height: 260 };
 export const PANEL_WINDOW_SIZE = { width: 360, height: 480 };
 
 /** 测试注入端口：生产默认由 BrowserWindow + screen 实现 */

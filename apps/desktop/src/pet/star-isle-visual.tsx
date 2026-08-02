@@ -34,7 +34,7 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
   return (
     <svg
       className="star-isle"
-      viewBox="0 0 280 320"
+      viewBox="0 0 320 380"
       preserveAspectRatio="xMidYMax meet"
       role="img"
       aria-label="星尾狐猫星屿"
@@ -66,34 +66,8 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
             fill={COLORS.star}
           />
         </g>
-      </g>
-
-      {/* 蓝紫大耳 + 浅色内耳 */}
-      <g data-part="ear-left" className="star-isle__ear star-isle__ear-left">
-        <path
-          d="M 98 110 C 92 70 102 38 116 32 C 132 42 142 66 146 100 C 128 114 108 118 98 110 Z"
-          fill={COLORS.outerEar}
-          stroke={STROKE.color}
-          strokeWidth={STROKE.width}
-          strokeLinejoin="round"
-        />
-        <path
-          d="M 106 96 C 104 72 110 50 118 46 C 128 54 134 72 137 92 C 124 102 112 104 106 96 Z"
-          fill={COLORS.innerEar}
-        />
-      </g>
-      <g data-part="ear-right" className="star-isle__ear star-isle__ear-right">
-        <path
-          d="M 182 110 C 188 70 178 38 164 32 C 148 42 138 66 134 100 C 152 114 172 118 182 110 Z"
-          fill={COLORS.outerEar}
-          stroke={STROKE.color}
-          strokeWidth={STROKE.width}
-          strokeLinejoin="round"
-        />
-        <path
-          d="M 174 96 C 176 72 170 50 162 46 C 152 54 146 72 143 92 C 156 102 168 104 174 96 Z"
-          fill={COLORS.innerEar}
-        />
+        {/* 透明命中区（有盒模型，供点击/双击；不参与视觉） */}
+        <rect data-hit-rect x="22" y="100" width="88" height="160" rx="20" />
       </g>
 
       {/* 圆润身体 + 后足 */}
@@ -110,7 +84,7 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
         <ellipse cx="140" cy="252" rx="32" ry="24" fill="#e4edfc" />
         <ellipse
           cx="98"
-          cy="280"
+          cy="284"
           rx="16"
           ry="11"
           fill={COLORS.fur}
@@ -119,17 +93,46 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
         />
         <ellipse
           cx="182"
-          cy="280"
+          cy="284"
           rx="16"
           ry="11"
           fill={COLORS.fur}
           stroke={STROKE.color}
           strokeWidth={STROKE.width}
         />
+        {/* 透明命中区（身体 + 前肢范围） */}
+        <rect data-hit-rect x="86" y="194" width="108" height="97" rx="24" />
       </g>
 
-      {/* 头：浅蓝圆润头 + 额间刘海 + 光冠 + 五官 */}
+      {/* 头：浅蓝圆润头 + 双耳（在头部组内，随头部动画联动）+ 额间刘海 + 光冠 + 五官 */}
       <g data-part="head" data-hit="head" className="star-isle__head">
+        {/* 蓝紫大耳 + 浅色内耳（头子组：低头/呼吸/惊讶时跟随头部） */}
+        <g data-part="ear-left" className="star-isle__ear star-isle__ear-left">
+          <path
+            d="M 98 110 C 92 70 102 38 116 32 C 132 42 142 66 146 100 C 128 114 108 118 98 110 Z"
+            fill={COLORS.outerEar}
+            stroke={STROKE.color}
+            strokeWidth={STROKE.width}
+            strokeLinejoin="round"
+          />
+          <path
+            d="M 106 96 C 104 72 110 50 118 46 C 128 54 134 72 137 92 C 124 102 112 104 106 96 Z"
+            fill={COLORS.innerEar}
+          />
+        </g>
+        <g data-part="ear-right" className="star-isle__ear star-isle__ear-right">
+          <path
+            d="M 182 110 C 188 70 178 38 164 32 C 148 42 138 66 134 100 C 152 114 172 118 182 110 Z"
+            fill={COLORS.outerEar}
+            stroke={STROKE.color}
+            strokeWidth={STROKE.width}
+            strokeLinejoin="round"
+          />
+          <path
+            d="M 174 96 C 176 72 170 50 162 46 C 152 54 146 72 143 92 C 156 102 168 104 174 96 Z"
+            fill={COLORS.innerEar}
+          />
+        </g>
         <ellipse
           cx="140"
           cy="158"
@@ -241,13 +244,15 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
           ry="4"
           fill={COLORS.mouth}
         />
+        {/* 透明命中区（头部范围，含耳朵根部） */}
+        <rect data-hit-rect x="72" y="96" width="136" height="124" rx="32" />
       </g>
 
-      {/* 前肢 */}
+      {/* 前肢（与后足同一地平线 cy=284） */}
       <g data-part="paw-left" className="star-isle__paw star-isle__paw-left">
         <ellipse
           cx="115"
-          cy="286"
+          cy="284"
           rx="17"
           ry="13"
           fill={COLORS.fur}
@@ -258,7 +263,7 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
       <g data-part="paw-right" className="star-isle__paw star-isle__paw-right">
         <ellipse
           cx="165"
-          cy="286"
+          cy="284"
           rx="17"
           ry="13"
           fill={COLORS.fur}

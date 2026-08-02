@@ -131,8 +131,8 @@ describe('createPetWindow (宠物窗)', () => {
     const opts = created[0]!.options;
     expect(opts.width).toBe(PET_WINDOW_SIZE.width);
     expect(opts.height).toBe(PET_WINDOW_SIZE.height);
-    expect(opts.width).toBe(280);
-    expect(opts.height).toBe(320);
+    expect(opts.width).toBe(240);
+    expect(opts.height).toBe(260);
     expect(opts.resizable).toBe(false);
     expect(opts.frame).toBe(false);
     expect(opts.transparent).toBe(true);
@@ -146,8 +146,8 @@ describe('createPetWindow (宠物窗)', () => {
     const { runtime, created } = makeRuntime(dualDisplays);
     createPetWindow({ runtime });
     const opts = created[0]!.options;
-    expect(opts.x).toBe((1000 - 280) / 2);
-    expect(opts.y).toBe(800 - 320 - 8);
+    expect(opts.x).toBe((1000 - PET_WINDOW_SIZE.width) / 2);
+    expect(opts.y).toBe(800 - PET_WINDOW_SIZE.height - 8);
   });
 
   it('shows on ready-to-show unless startHidden', () => {
