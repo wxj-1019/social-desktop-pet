@@ -120,6 +120,20 @@ export const PetChatEventSchema = z.discriminatedUnion('phase', [
 ]);
 export type PetChatEvent = z.infer<typeof PetChatEventSchema>;
 
+/** 社交事件（好友送礼等；type 判别，各分支严格拒绝多余字段） */
+export const PetSocialEventSchema = z.discriminatedUnion('type', [
+  z
+    .object({
+      type: z.literal('gift.snack_sent'),
+      giftId: z.string(),
+      snackId: z.string(),
+      fromUserId: z.string(),
+      fromNickname: z.string().optional(),
+    })
+    .strict(),
+]);
+export type PetSocialEvent = z.infer<typeof PetSocialEventSchema>;
+
 /** 面板打开指令 */
 export const PanelOpenSchema = z
   .object({

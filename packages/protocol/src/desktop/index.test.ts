@@ -16,6 +16,7 @@ import {
   PetMotionSchema,
   PetProfileSchema,
   PetRuntimeSnapshotSchema,
+  PetSocialEventSchema,
   PetVisualCommandSchema,
   SessionLoginPayloadSchema,
   SessionRegisterPayloadSchema,
@@ -244,6 +245,69 @@ describe('protocol/desktop/chat events', () => {
   it('rejects error messages longer than 200 chars', () => {
     expect(() =>
       PetChatEventSchema.parse({ phase: 'error', source: 'local_chat', message: 'a'.repeat(201) }),
+    ).toThrow();
+  });
+});
+
+describe('protocol/desktop/social events', () => {
+  it('parses a valid gift.snack_sent event (with optional nickname)', () => {
+    const event = PetSocialEventSchema.parse({
+      type: 'gift.snack_sent',
+      giftId: 'gift-1',
+      snackId: 'snack_cookie',
+      fromUserId: 'user-1',
+      fromNickname: 'Alice',
+    });
+    expect(event).toMatchObject({
+      type: 'gift.snack_sent',
+      giftId: 'gift-1',
+      snackId: 'snack_cookie',
+      fromUserId: 'user-1',
+      fromNickname: 'Alice',
+    });
+  });
+
+  it('parses a gift event without a nickname', () => {
+    const event = PetSocialEventSchema.parse({
+      type: 'gift.snack_sent',
+      giftId: 'gift-2',
+      snackId: 'snack_candy',
+      fromUserId: 'user-2',
+    });
+    expect(event.fromNickname).toBeUndefined();
+  });
+
+  it('rejects an unknown event type', () => {
+    expect(() =>
+      PetSocialEventSchema.parse({
+        type: 'gift.visit',
+        giftId: 'gift-3',
+        snackId: 'snack_tea',
+        fromUserId: 'user-3',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects extra fields on the gift event', () => {
+    expect(() =>
+      PetSocialEventSchema.parse({
+        type: 'gift.snack_sent',
+        giftId: 'gift-4',
+        snackId: 'snack_cookie',
+        fromUserId: 'user-4',
+        toUserId: 'user-5',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects missing required fields', () => {
+    expect(() => PetSocialEventSchema.parse({ type: 'gift.snack_sent' })).toThrow();
+    expect(() =>
+      PetSocialEventSchema.parse({
+        type: 'gift.snack_sent',
+        giftId: 'gift-5',
+        snackId: 'snack_cookie',
+      }),
     ).toThrow();
   });
 });
