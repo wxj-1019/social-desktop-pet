@@ -6,7 +6,12 @@
  *   （SecureStorageController safeStorage 加密存储，绝不出主进程）。
  * - IPC：session:init / session:login / session:refresh / session:revoke
  */
-import type { SessionAuthApi, SessionController, SessionProfile } from './session-controller.js';
+import type {
+  SessionAuthApi,
+  SessionController,
+  SessionProfile,
+  SessionState,
+} from './session-controller.js';
 
 /** 自建后端地址（D-13）：生产指向 HTTPS 域名；本机默认 127.0.0.1:8787 */
 export function apiBaseUrl(): string {
@@ -31,6 +36,28 @@ export function createAuthApi(baseUrl = apiBaseUrl()): SessionAuthApi {
         accessToken: body.accessToken,
         refreshToken: body.refreshToken,
         accessExpiresAt: Date.now() + 15 * 60_000,
+      };
+    },
+    async loadProfile(accessToken: string) {
+      const res = await fetch(`${baseUrl}/me`, {
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `资料加载失败 (${res.status})`);
+      }
+      const body = (await res.json()) as {
+        userId: string;
+        nickname?: string;
+        device?: { deviceId?: string };
+      };
+      if (!body.userId || !body.device?.deviceId) {
+        throw new Error('资料加载失败 (响应缺少用户或设备信息)');
+      }
+      return {
+        userId: body.userId,
+        deviceId: body.device.deviceId,
+        ...(body.nickname === undefined ? {} : { nickname: body.nickname }),
       };
     },
     async revoke(refreshToken: string) {
@@ -94,27 +121,28 @@ export async function registerWithBackend(
 }
 
 export interface SessionIpcResult {
-  phase: string;
+  phase: SessionState['phase'];
   accessToken: string | null;
   profile: SessionProfile | null;
 }
 
 export type SessionServiceHandlers = ReturnType<typeof createSessionHandlers>;
 
+function toIpcResult(snapshot: SessionState): SessionIpcResult {
+  return {
+    phase: snapshot.phase,
+    accessToken: snapshot.tokens?.accessToken ?? null,
+    profile: snapshot.profile,
+  };
+}
+
 /** IPC handler 集合（由 register.ts 调用） */
 export function createSessionHandlers(session: SessionController, onActivated?: () => void) {
   const baseUrl = apiBaseUrl();
 
   return {
-    /** 启动恢复：读 safeStorage refresh token → 刷新 → ACTIVE 或 SIGNED_OUT */
-    init: async (): Promise<SessionIpcResult> => {
-      await session.restore();
-      return {
-        phase: session.snapshot.phase,
-        accessToken: session.snapshot.tokens?.accessToken ?? null,
-        profile: session.snapshot.profile,
-      };
-    },
+    /** 启动恢复：Main bootstrap 已完成 restore，这里只读取当前快照 */
+    init: async (): Promise<SessionIpcResult> => toIpcResult(session.snapshot),
     /** 登录（已有账号）：refresh token 经 activate 存入 safeStorage（8.3） */
     login: async (payload: {
       email: string;
@@ -159,16 +187,12 @@ export function createSessionHandlers(session: SessionController, onActivated?: 
     /** 刷新（业务 401 时调用） */
     refresh: async (): Promise<SessionIpcResult> => {
       await session.refresh(session.snapshot.tokens?.refreshToken ?? '');
-      return {
-        phase: session.snapshot.phase,
-        accessToken: session.snapshot.tokens?.accessToken ?? null,
-        profile: session.snapshot.profile,
-      };
+      return toIpcResult(session.snapshot);
     },
     /** 登出/撤销设备 */
-    revoke: async (): Promise<{ phase: string }> => {
+    revoke: async (): Promise<SessionIpcResult> => {
       await session.revoke();
-      return { phase: session.snapshot.phase };
+      return toIpcResult(session.snapshot);
     },
   };
 }

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildChatFlow, detectCrisis } from '@pet/ai-graph';
-import { initialChatFlowState } from '@pet/ai-graph';
+import { buildChatFlow, detectCrisis, initialChatFlowState } from '@pet/ai-graph';
 
 describe('detectCrisis（11.8 规则版预筛）', () => {
   it('high 命中：明确自伤表达', () => {

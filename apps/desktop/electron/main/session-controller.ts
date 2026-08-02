@@ -47,6 +47,8 @@ export interface SessionStorage {
 export interface SessionAuthApi {
   /** 刷新 access token；失败抛错 */
   refreshAccessToken(refreshToken: string): Promise<SessionTokens>;
+  /** 加载当前设备的用户资料；失败抛错 */
+  loadProfile(accessToken: string): Promise<SessionProfile>;
   /** 撤销会话（登出） */
   revoke(refreshToken: string): Promise<void>;
 }
@@ -61,6 +63,7 @@ export function initialSession(): SessionState {
  */
 export class SessionController {
   private state: SessionState = initialSession();
+  private refreshInFlight: Promise<SessionState> | null = null;
   /** 9.8 撤销滞后窗口：Auth 撤销后 access token 过期前仍有效，需应用层校验 */
   private revokedAt: number | null = null;
 
@@ -92,15 +95,32 @@ export class SessionController {
     return this.state;
   }
 
-  /** access token 过期前自动刷新 */
+  /** access token 过期前自动刷新；并发调用共享同一次轮换请求 */
   async refresh(refreshToken: string): Promise<SessionState> {
+    if (this.refreshInFlight) return this.refreshInFlight;
+
     this.state = { ...this.state, phase: 'REFRESHING' };
+    this.refreshInFlight = this.performRefresh(refreshToken).finally(() => {
+      this.refreshInFlight = null;
+    });
+    return this.refreshInFlight;
+  }
+
+  private async performRefresh(refreshToken: string): Promise<SessionState> {
     try {
       const tokens = await this.auth.refreshAccessToken(refreshToken);
-      this.state = { ...this.state, phase: 'ACTIVE', tokens };
+      const profile = await this.auth.loadProfile(tokens.accessToken);
+      this.storage.saveRefreshToken(tokens.refreshToken);
+      this.state = { phase: 'ACTIVE', profile, tokens };
       return this.state;
     } catch (e) {
-      this.state = { ...this.state, phase: 'EXPIRED', error: (e as Error).message };
+      this.storage.deleteRefreshToken();
+      this.state = {
+        phase: 'EXPIRED',
+        profile: null,
+        tokens: null,
+        error: e instanceof Error ? e.message : String(e),
+      };
       return this.state;
     }
   }

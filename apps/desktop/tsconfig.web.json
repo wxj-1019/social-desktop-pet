@@ -1,7 +1,7 @@
 {
   "extends": "@pet/tsconfig/web.json",
   "compilerOptions": {
-    "rootDir": "src",
+    "rootDir": ".",
     "outDir": "out/renderer",
     "composite": false,
     "noEmit": true,

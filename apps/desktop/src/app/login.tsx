@@ -49,13 +49,14 @@ export function LoginPage({ onAuthed, pendingInvite }: LoginProps) {
         setError(String(result.error));
         return;
       }
-      const r = result as {
-        phase: string;
-        accessToken: string | null;
-        profile: { userId: string; nickname: string } | null;
-      };
-      setAccessToken(r.accessToken);
-      onAuthed({ userId: r.profile?.userId ?? '', nickname: r.profile?.nickname ?? email });
+      if (!result.accessToken || !result.profile) {
+        throw new Error('登录响应缺少会话资料');
+      }
+      setAccessToken(result.accessToken);
+      onAuthed({
+        userId: result.profile.userId,
+        nickname: result.profile.nickname ?? email,
+      });
     } catch (e) {
       setError((e as Error).message);
     } finally {

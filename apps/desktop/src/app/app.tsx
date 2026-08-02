@@ -32,20 +32,17 @@ export function App() {
     void (async () => {
       try {
         await initApi();
-        const result = (await window.pet.session.init()) as
-          | {
-              phase: string;
-              accessToken: string | null;
-              profile: { userId: string; nickname: string } | null;
-            }
-          | { error?: string };
+        const result = await window.pet.session.init();
         if ('error' in result) {
           setPhase('signed_out');
           return;
         }
         setAccessToken(result.accessToken);
         if (result.phase === 'ACTIVE' && result.profile) {
-          setUser({ userId: result.profile.userId, nickname: result.profile.nickname });
+          setUser({
+            userId: result.profile.userId,
+            nickname: result.profile.nickname ?? '新朋友',
+          });
           setPhase('active');
         } else {
           setPhase('signed_out');

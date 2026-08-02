@@ -37,11 +37,14 @@ export function ChatPanel({ pet }: ChatPanelProps) {
       try {
         const msgs = await api.chatHistory();
         setEntries((prev) => [
-          ...msgs.map((m) => ({
-            id: crypto.randomUUID(),
-            role: m.role === 'user' ? 'user' : 'pet',
-            text: m.content,
-          })),
+          ...msgs.map(
+            (m) =>
+              ({
+                id: crypto.randomUUID(),
+                role: m.role === 'user' ? 'user' : 'pet',
+                text: m.content,
+              }) satisfies ChatEntry,
+          ),
           ...prev, // 若发送已抢先发生（历史加载慢），新消息保持在历史之后
         ]);
       } catch {

@@ -30,11 +30,12 @@ function makeTokens(expiresAt = Date.now() + 15 * 60_000): SessionTokens {
 
 function makeAuth(): SessionAuthApi {
   return {
-    refreshAccessToken: vi.fn(async (refresh: string) => ({
+    refreshAccessToken: vi.fn(async () => ({
       accessToken: 'access-2',
-      refreshToken: refresh,
+      refreshToken: 'refresh-2',
       accessExpiresAt: Date.now() + 15 * 60_000,
     })),
+    loadProfile: vi.fn(async () => ({ ...profile, nickname: 'Alice' })),
     revoke: vi.fn(async () => undefined),
   };
 }
@@ -60,7 +61,36 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     await c.restore();
     expect(c.snapshot.phase).toBe('ACTIVE');
     expect(auth.refreshAccessToken).toHaveBeenCalledWith('refresh-1');
+    expect(storage.loadRefreshToken()).toBe('refresh-2');
+    expect(c.snapshot.profile).toEqual({ userId: 'u1', deviceId: 'dev-1', nickname: 'Alice' });
     expect(c.hasValidAccessToken()).toBe(true);
+  });
+
+  it('concurrent refresh calls share one in-flight token rotation', async () => {
+    const storage = new MemoryStorage();
+    const auth = makeAuth();
+    let resolveRefresh!: (tokens: SessionTokens) => void;
+    auth.refreshAccessToken = vi.fn(
+      () =>
+        new Promise<SessionTokens>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    const c = new SessionController(storage, auth);
+
+    const first = c.refresh('refresh-1');
+    const second = c.refresh('refresh-1');
+    expect(auth.refreshAccessToken).toHaveBeenCalledTimes(1);
+
+    resolveRefresh({
+      accessToken: 'access-2',
+      refreshToken: 'refresh-2',
+      accessExpiresAt: Date.now() + 15 * 60_000,
+    });
+    const [firstState, secondState] = await Promise.all([first, second]);
+    expect(firstState).toEqual(secondState);
+    expect(firstState).toEqual(c.snapshot);
+    expect(c.snapshot.profile).toEqual({ userId: 'u1', deviceId: 'dev-1', nickname: 'Alice' });
   });
 
   it('activate() saves refresh token to secure storage (8.3)', async () => {
@@ -81,7 +111,10 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     });
     const c = new SessionController(storage, auth);
     await c.restore();
+    expect(storage.loadRefreshToken()).toBeNull();
     expect(c.snapshot.phase).toBe('EXPIRED');
+    expect(c.snapshot.profile).toBeNull();
+    expect(c.snapshot.tokens).toBeNull();
     expect(c.snapshot.error).toContain('401');
   });
 
