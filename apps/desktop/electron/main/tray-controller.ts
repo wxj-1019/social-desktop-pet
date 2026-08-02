@@ -128,6 +128,12 @@ export class TrayController {
     this.refresh();
   }
 
+  /** Main 同步外部勿扰状态（单一状态源入口 syncDnd 驱动），不触发 handler 避免循环 */
+  setDndForced(enabled: boolean): void {
+    this.dnd = enabled;
+    this.refresh();
+  }
+
   /** 唯一动作入口：菜单回调 / double-click 全部收敛到这里 */
   dispatch(action: TrayAction): void {
     switch (action) {

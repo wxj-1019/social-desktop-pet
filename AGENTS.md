@@ -21,26 +21,26 @@ ai-social-desktop-pet/
 
 ## 功能落点速查
 
-| 你要做的事                                      | 改这里                                                       | 设计稿章节               |
-| ----------------------------------------------- | ------------------------------------------------------------ | ------------------------ |
-| 加/改一个 AI 输出字段、事件类型、命令、记忆字段 | `packages/protocol/src/*`                                    | 9.3 / 10.2 / 10.5        |
-| 改 AI 流程的一个步骤（分类/检索/生成/审核）     | `packages/ai-graph/src/graphs/chat-flow-nodes.ts` 的对应节点 | 10.1                     |
-| 改路由策略（L0–L3/Safety）                      | `chat-flow.ts` 的条件边 + `packages/config/src/routing.ts`   | 10.3                     |
-| 改记忆抽取/去重/确认                            | `packages/ai-graph/src/graphs/memory-extract.ts`             | 10.6                     |
-| 改检索算法（hybrid/RRF/时间衰减）               | `chat-flow-nodes.ts` 的 `retrieveMemoryNode`                 | 10.7                     |
-| 加一张表 / 改 RLS / 索引                        | `apps/server/migrations/`（新 migration，0003 起自建兼容层） | 9.9 / 11.2               |
-| 加/改一个 HTTP 路由（礼物/拜访/邀请/sync/chat） | `apps/server/src/routes/*.ts`                                | 9.4 / 6.x                |
-| 改登录/刷新/设备撤销（9.8 撤销双保险）          | `apps/server/src/auth/*`（jwt + session）                    | 9.8                      |
-| 改在线状态/收件箱投递/心跳                      | `apps/server/src/realtime/ws.ts`                             | 9.2 / 9.4                |
-| 改桌宠窗口/穿透/托盘/更新                       | `apps/desktop/electron/main/*`                               | 8.1–8.7                  |
-| 改星屿外观/动作/交互（SVG 角色、动画、气泡）    | `apps/desktop/src/pet/*`（star-isle-visual.tsx 等）          | 星屿设计稿               |
-| 改状态审批/动作映射（CHATTING/touch/idle 等）   | `packages/pet-state/src/*`（index.ts + visual-mapping.ts）   | 7.1                      |
-| 改双窗口/拖动/托盘（pet+panel 窗、拖拽持久化）  | `apps/desktop/electron/main/*`（window/drag/tray/position）  | 8.1–8.7 / 星屿设计稿     |
-| 改桌宠状态机逻辑（转换/动作审批/白名单）        | `packages/pet-state/src/index.ts`（纯逻辑，可单测）          | 7.1                      |
-| 改桌宠动画/渲染/气泡                            | `apps/desktop/src/pet/*`（状态机经 usePetStateMachine 接入） | 7.1–7.3                  |
-| 加渲染页（聊天/好友/记忆中心）                  | `apps/desktop/src/app/*`                                     | 6.x                      |
-| 改限额/配额/保留期                              | `packages/config/src/limits.ts`                              | 6.5 / 10.9 / 11.4 / 12.7 |
-| 改 feature 开关                                 | `packages/config/src/feature-flags.ts`                       | P0 运维                  |
+| 你要做的事                                      | 改这里                                                                                                           | 设计稿章节               |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| 加/改一个 AI 输出字段、事件类型、命令、记忆字段 | `packages/protocol/src/*`                                                                                        | 9.3 / 10.2 / 10.5        |
+| 改 AI 流程的一个步骤（分类/检索/生成/审核）     | `packages/ai-graph/src/graphs/chat-flow-nodes.ts` 的对应节点                                                     | 10.1                     |
+| 改路由策略（L0–L3/Safety）                      | `chat-flow.ts` 的条件边 + `packages/config/src/routing.ts`                                                       | 10.3                     |
+| 改记忆抽取/去重/确认                            | `packages/ai-graph/src/graphs/memory-extract.ts`                                                                 | 10.6                     |
+| 改检索算法（hybrid/RRF/时间衰减）               | `chat-flow-nodes.ts` 的 `retrieveMemoryNode`                                                                     | 10.7                     |
+| 加一张表 / 改 RLS / 索引                        | `apps/server/migrations/`（新 migration，0003 起自建兼容层）                                                     | 9.9 / 11.2               |
+| 加/改一个 HTTP 路由（礼物/拜访/邀请/sync/chat） | `apps/server/src/routes/*.ts`                                                                                    | 9.4 / 6.x                |
+| 改登录/刷新/设备撤销（9.8 撤销双保险）          | `apps/server/src/auth/*`（jwt + session）                                                                        | 9.8                      |
+| 改在线状态/收件箱投递/心跳                      | `apps/server/src/realtime/ws.ts`                                                                                 | 9.2 / 9.4                |
+| 改桌宠窗口/穿透/托盘/更新                       | `apps/desktop/electron/main/*`                                                                                   | 8.1–8.7                  |
+| 改星屿外观/动作/交互（SVG 角色、动画、气泡）    | `apps/desktop/src/pet/*`（star-isle-visual.tsx 等）                                                              | 星屿设计稿               |
+| 改状态审批/动作映射（CHATTING/touch/idle 等）   | `packages/pet-state/src/*`（index.ts + visual-mapping.ts）                                                       | 7.1                      |
+| 改双窗口/拖动/托盘（pet+panel 窗、拖拽持久化）  | `apps/desktop/electron/main/*`（window/drag/tray/position）                                                      | 8.1–8.7 / 星屿设计稿     |
+| 改桌宠状态机逻辑（转换/动作审批/白名单）        | `packages/pet-state/src/index.ts`（纯逻辑，可单测）                                                              | 7.1                      |
+| 改桌宠动画/渲染/气泡                            | `apps/desktop/src/pet/*`（`pet-experience.tsx` 组合 `usePetRuntime`，状态机在 Main 侧 `pet-runtime-controller`） | 7.1–7.3                  |
+| 加渲染页（聊天/好友/记忆中心）                  | `apps/desktop/src/app/*`                                                                                         | 6.x                      |
+| 改限额/配额/保留期                              | `packages/config/src/limits.ts`                                                                                  | 6.5 / 10.9 / 11.4 / 12.7 |
+| 改 feature 开关                                 | `packages/config/src/feature-flags.ts`                                                                           | P0 运维                  |
 
 ## 关键约定（勿违反）
 

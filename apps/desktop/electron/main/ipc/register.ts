@@ -40,6 +40,8 @@ const ALLOWED = new Set<string>(IPC_ALLOWLIST);
 
 /** Task 7：registerIpcAllowlist 的依赖端口（窗口 + 运行时 + 拖动 + 档案 + 面板动作） */
 export interface PetIpcDependencies {
+  /** 应用版本（app.getVersion() 注入；app:version 返回） */
+  appVersion: string;
   /** 桌宠窗口（可空，未创建前拒绝调用） */
   getPetWindow: () => BrowserWindow | null;
   /** 面板窗口（可空） */
@@ -62,6 +64,8 @@ export interface PetIpcDependencies {
   showContextMenu: () => void;
   /** 整窗穿透切换（8.4） */
   setPassThrough: (enabled: boolean) => void;
+  /** 勿扰开关单一入口（Main 端 syncDnd：runtime + 档案持久化 + 托盘快照） */
+  setDnd: (enabled: boolean) => void;
   /** 会话 handler（Task 1；可选，缺省不注册会话通道） */
   sessionHandlers?: SessionServiceHandlers;
 }
@@ -158,7 +162,7 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
   const { runtime, drag, profile, getDisplays } = deps;
 
   // ---- 基础通道 ----
-  registerInvoke(deps, 'app:version', ['pet', 'panel'], (win) => win.webContents.getURL() ?? null);
+  registerInvoke(deps, 'app:version', ['pet', 'panel'], () => deps.appVersion);
   registerInvoke(deps, 'app:getApiBase', ['pet', 'panel'], () => apiBaseUrl());
 
   registerOn(deps, 'window:setIgnoreMouseEvents', 'pet', (win, payload) => {
@@ -188,8 +192,8 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
   );
   registerOn(deps, 'pet:set-dnd', 'pet', (_win, payload) => {
     const { enabled } = parseIpcPayload(BooleanSettingSchema, payload);
-    runtime.setDnd(enabled);
-    broadcastPetSnapshot(deps, runtime.snapshot); // 面板同步勿扰状态
+    // 单一状态源：Main 端 syncDnd 统一 runtime / 档案 / 托盘（快照广播由 runtime emit 驱动）
+    deps.setDnd(enabled);
   });
   registerOn(deps, 'pet:set-pass-through', 'pet', (_win, payload) => {
     const { enabled } = parseIpcPayload(BooleanSettingSchema, payload);

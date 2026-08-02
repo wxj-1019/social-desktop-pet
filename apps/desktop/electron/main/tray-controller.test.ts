@@ -303,6 +303,22 @@ describe('TrayController.snapshot / refresh / setPassThroughForced', () => {
     expect(harness.handlers.onSetPassThrough).not.toHaveBeenCalled();
     expect(item(harness, '鼠标穿透').label).toBe('鼠标穿透：开');
   });
+
+  it('setDndForced syncs the snapshot without calling handlers（单一状态源：外部入口直接驱动托盘展示）', () => {
+    const harness = makeHarness(true);
+    const controller = makeController(harness);
+    controller.create('/a.png');
+
+    controller.setDndForced(true);
+
+    expect(controller.snapshot.dnd).toBe(true);
+    expect(harness.handlers.onSetDnd).not.toHaveBeenCalled();
+    expect(item(harness, '勿扰').label).toBe('勿扰：开');
+
+    controller.setDndForced(false);
+    expect(controller.snapshot.dnd).toBe(false);
+    expect(item(harness, '勿扰').label).toBe('勿扰：关');
+  });
 });
 
 describe('TrayController.destroy', () => {

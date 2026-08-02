@@ -117,7 +117,10 @@ function makeDeps() {
   const consumeDeepLinkPayload = vi.fn<() => string | null>(() => null);
   const showContextMenu = vi.fn();
   const setPassThrough = vi.fn();
+  // 勿扰单一状态源：与 index.ts syncDnd 一致，先驱动 runtime（emitSnapshot 广播）
+  const setDnd = vi.fn((enabled: boolean) => runtime.setDnd(enabled));
   const deps: PetIpcDependencies = {
+    appVersion: '4.5.6-test',
     getPetWindow: () => asWindow(pet),
     getPanelWindow: () => asWindow(panel),
     runtime,
@@ -129,6 +132,7 @@ function makeDeps() {
     consumeDeepLinkPayload,
     showContextMenu,
     setPassThrough,
+    setDnd,
   };
   return {
     pet,
@@ -141,6 +145,7 @@ function makeDeps() {
     consumeDeepLinkPayload,
     showContextMenu,
     setPassThrough,
+    setDnd,
     deps,
     snapshots,
     visuals,
@@ -223,6 +228,17 @@ describe('session IPC payload validation（Task 1 基线）', () => {
     );
     expect(result).toMatchObject({ error: expect.any(String) });
     expect(handlers.init).not.toHaveBeenCalled();
+  });
+});
+
+describe('基础通道（Task 7）', () => {
+  it('app:version returns the injected app version, not the window URL', async () => {
+    const { pet, panel, deps } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.invokeHandlers.get('app:version');
+
+    await expect(handler?.(eventFrom(pet), undefined)).resolves.toBe('4.5.6-test');
+    await expect(handler?.(eventFrom(panel), undefined)).resolves.toBe('4.5.6-test');
   });
 });
 
@@ -401,16 +417,15 @@ describe('pet runtime 通道（Task 7）', () => {
     runtime.stop();
   });
 
-  it('pet:set-dnd flips the runtime flag and broadcasts a snapshot to the panel', () => {
-    const { pet, panel, runtime, deps } = makeDeps();
+  it('pet:set-dnd routes to the setDnd dependency（单一状态源）and flips the runtime flag', () => {
+    const { pet, runtime, deps, setDnd, snapshots } = makeDeps();
     registerIpcAllowlist(deps);
 
     electronMocks.onHandlers.get('pet:set-dnd')?.(eventFrom(pet), { enabled: true });
+    expect(setDnd).toHaveBeenCalledWith(true);
+    // syncDnd 驱动 runtime → emitSnapshot 广播（面板/桌宠快照同步路径）
     expect(runtime.snapshot.dnd).toBe(true);
-    expect(panel.webContents.send).toHaveBeenCalledWith(
-      'pet:runtime:snapshot',
-      expect.objectContaining({ dnd: true }),
-    );
+    expect(snapshots.at(-1)).toMatchObject({ dnd: true });
   });
 
   it('pet:set-pass-through forwards to the setPassThrough dependency', () => {

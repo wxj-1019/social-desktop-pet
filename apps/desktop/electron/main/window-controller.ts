@@ -1,7 +1,7 @@
 /**
  * WindowController —— 对应设计稿 8.2 / 8.4 / 8.5。
  * 拆分宠物窗与面板窗：
- * - createPetWindow：透明、无边框、不可缩放、置顶、可整窗穿透的桌宠窗（280×320）。
+ * - createPetWindow：透明、无边框、不可缩放、置顶、可整窗穿透的桌宠窗（240×260）。
  * - createPanelWindow：可聚焦的面板窗（360×480），默认隐藏，随宠物锚定显示。
  * - loadRendererSurface：pet/panel 共用同一渲染入口，靠 ?surface= 区分。
  *
@@ -116,7 +116,7 @@ export function loadRendererSurface(
 }
 
 /**
- * 创建桌宠窗：固定 280×320、不可缩放、透明无边框、置顶、跳过任务栏。
+ * 创建桌宠窗：固定 240×260、不可缩放、透明无边框、置顶、跳过任务栏。
  * moved → toAnchor 回调（8.5 位置持久化）；加载 surface=pet。
  */
 export function createPetWindow(options: WindowOptions = {}): BrowserWindow {

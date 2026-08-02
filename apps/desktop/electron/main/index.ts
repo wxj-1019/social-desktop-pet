@@ -9,6 +9,8 @@
  * - E2E 钩子：PET_E2E=1 + PET_E2E_USER_DATA_DIR → ready 前隔离 userData
  * - Session/DeepLink/Startup/Update 控制器沿用 Task 1/3，session restore 唯一一次
  */
+import { join } from 'node:path';
+
 import type { PanelOpen } from '@pet/protocol';
 import { app, BrowserWindow, screen } from 'electron';
 
@@ -17,6 +19,7 @@ import { toPersistedPosition } from './display-controller.js';
 import { broadcastPetSnapshot, registerIpcAllowlist, sendPetVisual } from './ipc/register.js';
 import type { PetIpcDependencies } from './ipc/register.js';
 import { deliverPanelMessage } from './panel-delivery.js';
+import { PendingInviteStore } from './pending-invite-store.js';
 import { PetDragController } from './pet-drag-controller.js';
 import { PetProfileStore } from './pet-profile-store.js';
 import { PetRuntimeController } from './pet-runtime-controller.js';
@@ -81,6 +84,11 @@ let rendererCrashAttempts = 0;
 let stabilityTimer: ReturnType<typeof setTimeout> | null = null;
 let runtimeStarted = false;
 
+/** 桌宠窗存活（未销毁）时返回，否则 null —— 崩溃重建边界：所有窗口操作先判存活 */
+function alivePetWindow(): BrowserWindow | null {
+  return petWindow && !petWindow.isDestroyed() ? petWindow : null;
+}
+
 // 8.2 StartupController：自启动开关（D30 留存指标依赖项）+ 启动参数
 const startup = new StartupController({
   setAutoLaunch: (enabled) => {
@@ -109,11 +117,14 @@ void app.whenReady().then(async () => {
   profileStore = new PetProfileStore(app.getPath('userData'));
   // 8.5：宠物位置持久化（userData/pet-position.json）
   positionStore = new PositionStore(app.getPath('userData'));
+  // 6.3：深链 pending 跨重启持久化（userData/pending-invite.json）
+  const pendingStore = new PendingInviteStore(join(app.getPath('userData'), 'pending-invite.json'));
   // Task 6：安全拖动控制器；拖动结束即持久化当前位置（可靠触发点——
   // 部分环境 setPosition 不触发 'moved' 事件，不能依赖窗口事件做唯一保存）
   const savePetPosition = (): void => {
-    if (!petWindow || !positionStore) return;
-    const [x = 0, y = 0] = petWindow.getPosition();
+    const win = alivePetWindow();
+    if (!win || !positionStore) return;
+    const [x = 0, y = 0] = win.getPosition();
     const displays = screen
       .getAllDisplays()
       .map((d) => ({ id: String(d.id), workArea: d.workArea, scaleFactor: d.scaleFactor }));
@@ -133,12 +144,27 @@ void app.whenReady().then(async () => {
     },
   });
   // 在线状态：本任务固定 online=true（运行时默认），Task 11 由聊天/网络状态驱动 setOnline
+  // 勿扰恢复：start() 前用持久化档案初始化（启动即进入 QUIET 模式）
+  runtime.setDnd(profileStore.load().dnd);
 
   // ---- 8.4 穿透（Main 端）：窗口 + 托盘 snapshot 同步 ----
   // 唯一穿透入口；tray 的 dispatch('show') 也会先经 onSetPassThrough(false) 回到这里。
   const setPassThroughFromMain = (enabled: boolean): void => {
-    if (petWindow) setPassThrough(petWindow, enabled);
+    const win = alivePetWindow();
+    if (win) setPassThrough(win, enabled);
     tray?.setPassThroughForced(enabled);
+  };
+
+  // ---- 勿扰（DND）：Main 唯一入口，统一 runtime / 档案 / 托盘快照 ----
+  // 托盘 toggle-dnd 与渲染进程 pet:set-dnd 都收敛到这里；托盘侧快照由
+  // setDndForced 强制同步（不触发 handler 避免循环），档案持久化供重启恢复。
+  const syncDnd = (enabled: boolean): void => {
+    runtime?.setDnd(enabled);
+    if (profileStore) {
+      const current = profileStore.load();
+      profileStore.save({ ...current, dnd: enabled });
+    }
+    tray?.setDndForced(enabled);
   };
 
   // ---- 8.2 面板：首次打开时懒创建，锚定到宠物旁 ----
@@ -147,12 +173,24 @@ void app.whenReady().then(async () => {
   // 待投递 payload 保留在缓冲里，供渲染进程挂载后主动拉取（deeplink:consume-pending），
   // 覆盖"推送早于组件挂载"的时序（登录完成瞬间 FriendsPage 尚未订阅）。
   let panelDeepLinkPayload: string | null = null;
+  let panelCrashed = false;
   const openPanel = (view: PanelOpen['view'], deeplinkPayload?: string): void => {
-    // 面板窗口若被硬关闭/渲染崩溃销毁，重建句柄（保证面板随时可重开）
-    if (!panelHandle || panelHandle.win.isDestroyed()) {
+    // 面板窗口被硬关闭销毁 / 渲染进程崩溃 → 重建句柄（保证面板随时可重开）
+    if (!panelHandle || panelHandle.win.isDestroyed() || panelCrashed) {
+      if (panelHandle && !panelHandle.win.isDestroyed()) {
+        // 渲染进程崩溃的旧窗口：放行关闭并销毁，避免泄漏
+        panelHandle.allowClose();
+        panelHandle.win.destroy();
+      }
       panelHandle = createPanelWindow();
+      panelCrashed = false;
+      // 面板渲染进程崩溃：标记损坏，下次 openPanel 重建（win 对象本身仍存活）
+      panelHandle.win.webContents.on('render-process-gone', () => {
+        panelCrashed = true;
+      });
     }
-    if (petWindow) panelHandle.showPanel(petWindow.getBounds());
+    const win = alivePetWindow();
+    if (win) panelHandle.showPanel(win.getBounds());
     if (deeplinkPayload !== undefined) panelDeepLinkPayload = deeplinkPayload;
     deliverPanelMessage(panelHandle.win, view, deeplinkPayload);
   };
@@ -173,10 +211,16 @@ void app.whenReady().then(async () => {
     });
     petWindow = win;
 
-    // 崩溃重建：quitting / 已重建过一次 → 跳过；否则 destroy 重建，30s 稳定后重置计数
+    // 崩溃重建：quitting → 跳过；二次崩溃 → 放弃重建并置空引用（托盘/面板操作
+    // 经 alivePetWindow 判空，不再触碰已销毁窗口）；首次崩溃 destroy 重建，
+    // 30s 稳定后重置计数。
     win.webContents.on('render-process-gone', () => {
       if (quitting) return;
-      if (rendererCrashAttempts >= 1) return;
+      drag?.cancel(); // 拖动中的崩溃：先解除拖动状态，避免残留引用
+      if (rendererCrashAttempts >= 1) {
+        petWindow = null;
+        return;
+      }
       rendererCrashAttempts += 1;
       if (stabilityTimer !== null) {
         clearTimeout(stabilityTimer);
@@ -208,6 +252,7 @@ void app.whenReady().then(async () => {
   // 8.3 IPC allowlist：在 createPetWindow 后、runtime.start 前注册。
   createAndWirePetWindow();
   ipcDeps = {
+    appVersion: app.getVersion(),
     getPetWindow: () => petWindow,
     getPanelWindow: () => panelHandle?.win ?? null,
     runtime: runtime!,
@@ -229,6 +274,7 @@ void app.whenReady().then(async () => {
       return payload;
     },
     setPassThrough: setPassThroughFromMain,
+    setDnd: syncDnd,
     sessionHandlers: createSessionHandlers(
       createdSession,
       () => void deepLink?.restorePending(),
@@ -249,17 +295,21 @@ void app.whenReady().then(async () => {
       name: 'deep-link-restore',
       run: async () => {
         // 6.3：Deep Link（pet://invite?token=...）→ 面板方向（登录 / 好友），不直接给 pet 发 payload
-        deepLink = new DeepLinkController({
-          isSignedIn: () => session?.snapshot.phase === 'ACTIVE',
-          applyInvite: async (payload) => {
-            // 已登录 → 打开好友面板执行邀请流程；邀请 token 投递到面板（C1）
-            openPanel('friends', payload.rawToken);
+        deepLink = new DeepLinkController(
+          {
+            isSignedIn: () => session?.snapshot.phase === 'ACTIVE',
+            applyInvite: async (payload) => {
+              // 已登录 → 打开好友面板执行邀请流程；邀请 token 投递到面板（C1）
+              openPanel('friends', payload.rawToken);
+            },
+            requestSignIn: async () => {
+              // 未登录 → 打开登录面板；登录后恢复邀请（6.3）
+              openPanel('login', 'NEED_SIGN_IN');
+            },
           },
-          requestSignIn: async () => {
-            // 未登录 → 打开登录面板；登录后恢复邀请（6.3）
-            openPanel('login', 'NEED_SIGN_IN');
-          },
-        });
+          // 6.3：pending 跨重启持久化（点链接后退出应用，下次启动登录完成仍可恢复邀请）
+          pendingStore,
+        );
         await deepLink.restorePending();
       },
     },
@@ -290,15 +340,16 @@ void app.whenReady().then(async () => {
     win: () => petWindow,
     handlers: {
       onOpenPanel: (view) => openPanel(view),
-      onSetDnd: (enabled) => runtime?.setDnd(enabled),
+      onSetDnd: (enabled) => syncDnd(enabled),
       onSetPassThrough: setPassThroughFromMain,
       onHide: () => {
-        petWindow?.hide();
+        alivePetWindow()?.hide();
         runtime?.setHidden(true);
       },
       onShow: () => {
-        petWindow?.show();
-        petWindow?.setIgnoreMouseEvents(false);
+        const win = alivePetWindow();
+        win?.show();
+        win?.setIgnoreMouseEvents(false);
         runtime?.setHidden(false);
       },
       onQuit: () => {
@@ -308,6 +359,8 @@ void app.whenReady().then(async () => {
     },
   });
   tray.create(trayIconPath());
+  // 托盘创建后同步持久化的勿扰状态（菜单勾选与 runtime/档案一致）
+  tray.setDndForced(profileStore.load().dnd);
 
   // Windows：注册 pet:// 为默认协议（用户点击链接拉起应用）
   if (process.platform === 'win32') {
@@ -315,10 +368,11 @@ void app.whenReady().then(async () => {
   }
 
   app.on('activate', () => {
-    // macOS 语义：窗口不存在则重建，存在则前台聚焦
-    if (petWindow) {
-      petWindow.show();
-      petWindow.focus();
+    // macOS 语义：窗口不存在/已销毁则重建，存在则前台聚焦
+    const win = alivePetWindow();
+    if (win) {
+      win.show();
+      win.focus();
     } else {
       createAndWirePetWindow();
     }
@@ -329,10 +383,11 @@ void app.whenReady().then(async () => {
 app.on('second-instance', (_event, argv) => {
   const url = argv.find((a) => a.startsWith('pet://'));
   if (url) void deepLink?.handle(url);
-  if (petWindow) {
-    if (petWindow.isMinimized()) petWindow.restore();
-    petWindow.show();
-    petWindow.focus();
+  const win = alivePetWindow();
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
   }
 });
 
@@ -384,8 +439,10 @@ if (process.env['PET_E2E'] === '1') {
         return true;
       },
       getTrayState: () => tray?.snapshot ?? { dnd: false, passThrough: false },
-      getPetWindowState: () =>
-        petWindow ? { bounds: petWindow.getBounds(), visible: petWindow.isVisible() } : null,
+      getPetWindowState: () => {
+        const win = alivePetWindow();
+        return win ? { bounds: win.getBounds(), visible: win.isVisible() } : null;
+      },
       getWindowState: (surface: 'pet' | 'panel') => {
         const match = BrowserWindow.getAllWindows().find((w) =>
           w.webContents.getURL().includes(`surface=${surface}`),
