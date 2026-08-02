@@ -46,11 +46,13 @@ export function buildApp(deps: AppDeps) {
   app.get('/healthz', (c) => c.json({ ok: true, onlineUsers: deps.realtime.onlineUsers }));
 
   if (deps.devReset) {
-    // e2e 自愈：清空配额计数（gift 每日 3 次会被反复 e2e 耗尽，12.7 成本保护）。
+    // e2e 自愈：清空配额计数与收件箱（gift 每日 3 次会被反复 e2e 耗尽，12.7 成本保护；
+    // user_inbox 残留会让历史事件在登录挂载时被重放，污染"送礼→星屿反应"断言）。
     // 端点仅本地开发开启——生产环境不设 PET_DEV_RESET，攻击面为零。
     app.post('/__dev/reset-test-data', async (c) => {
       await deps.pool.query('delete from gift_events');
       await deps.pool.query('delete from chat_usage');
+      await deps.pool.query('delete from user_inbox');
       return c.json({ ok: true });
     });
   }

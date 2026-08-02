@@ -153,7 +153,7 @@ export function FriendsPage({ userId }: FriendsPageProps) {
       const snackLabel: Record<string, string> = {
         snack_cookie: '小饼干 🍪',
         snack_candy: '糖果 🍬',
-        snack_tea: '茶 🍵',
+        snack_tea: '茶点 🍵',
       };
       const result = await api.sendGift(friend.userId, snackId, crypto.randomUUID());
       setNotice(
@@ -245,7 +245,7 @@ function FriendActions({
         <select value={snack} onChange={(e) => setSnack(e.target.value)} aria-label="点心类型">
           <option value="snack_cookie">🍪 饼干</option>
           <option value="snack_candy">🍬 糖果</option>
-          <option value="snack_tea">🍵 茶</option>
+          <option value="snack_tea">🍵 茶点</option>
         </select>
         <button onClick={() => void onGift(friend, snack)}>送</button>
         <select
