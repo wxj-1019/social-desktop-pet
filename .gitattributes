@@ -1,0 +1,9 @@
+# 统一行尾为 LF（覆盖 Windows core.autocrlf=true 的 CRLF 检出）；
+# format:check（prettier endOfLine: lf）在 autocrlf 本机也保持全绿。
+* text=auto eol=lf
+
+# 二进制资产保持原样（不做行尾转换 / diff 文本化）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
