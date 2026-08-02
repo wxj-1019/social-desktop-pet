@@ -229,7 +229,6 @@ describe('channel-to-surface binding（Task 7）', () => {
     registerIpcAllowlist(deps);
     const petOnly: Array<[string, unknown]> = [
       ['pet:interaction', { kind: 'head_touch' }],
-      ['pet:chat-event', { phase: 'start', source: 'local_chat', text: 'hi' }],
       ['pet:drag-start', { x: 10, y: 20 }],
       ['pet:drag-move', { x: 30, y: 40 }],
       ['pet:drag-end', undefined],
@@ -246,14 +245,32 @@ describe('channel-to-surface binding（Task 7）', () => {
   it('rejects panel-only on-channels when the pet window sends', () => {
     const { pet, deps } = makeDeps();
     registerIpcAllowlist(deps);
-    const panelOnly: Array<[string, unknown]> = [
-      ['panel:open', { view: 'chat' }],
-      ['panel:close', undefined],
-    ];
+    const panelOnly: Array<[string, unknown]> = [['panel:close', undefined]];
     for (const [channel, payload] of panelOnly) {
       const handler = electronMocks.onHandlers.get(channel);
       expect(() => handler?.(eventFrom(pet), payload), channel).toThrow(IpcSenderError);
     }
+  });
+
+  it('allows pet:chat-event from the panel window（本地模式聊天驱动桌宠）', () => {
+    const { panel, visuals, deps } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.onHandlers.get('pet:chat-event');
+
+    expect(() =>
+      handler?.(eventFrom(panel), { phase: 'start', source: 'local_chat', text: '你好' }),
+    ).not.toThrow();
+    // handleChatStart 一定广播 speaking 视觉指令（状态无关）
+    expect(visuals).toContainEqual({ type: 'speaking', active: true });
+  });
+
+  it('allows panel:open from the pet window（桌宠双击打开面板）', () => {
+    const { pet, deps } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.onHandlers.get('panel:open');
+
+    expect(() => handler?.(eventFrom(pet), { view: 'chat' })).not.toThrow();
+    expect(deps.openPanel).toHaveBeenCalledWith({ view: 'chat' });
   });
 
   it('rejects pet-only invoke channels when the panel window sends', async () => {

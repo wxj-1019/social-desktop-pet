@@ -181,7 +181,7 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
   registerOn(deps, 'pet:interaction', 'pet', (_win, payload) =>
     runtime.handleInteraction(parseIpcPayload(PetInteractionSchema, payload)),
   );
-  registerOn(deps, 'pet:chat-event', 'pet', (_win, payload) =>
+  registerOn(deps, 'pet:chat-event', ['pet', 'panel'], (_win, payload) =>
     runtime.handleChat(parseIpcPayload(PetChatEventSchema, payload)),
   );
   registerOn(deps, 'pet:set-dnd', 'pet', (_win, payload) => {
@@ -204,8 +204,8 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
   );
   registerOn(deps, 'pet:drag-end', 'pet', () => drag.end());
 
-  // ---- 面板（8.2）：仅 panel 窗可调用 ----
-  registerOn(deps, 'panel:open', 'panel', (_win, payload) =>
+  // ---- 面板（8.2）：面板窗调用；桌宠窗双击/动作也可打开（pet-experience 双击开聊天） ----
+  registerOn(deps, 'panel:open', ['pet', 'panel'], (_win, payload) =>
     deps.openPanel(parseIpcPayload(PanelOpenSchema, payload)),
   );
   registerOn(deps, 'panel:close', 'panel', () => deps.closePanel());

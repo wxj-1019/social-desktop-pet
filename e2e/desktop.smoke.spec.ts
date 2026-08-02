@@ -1,27 +1,19 @@
 /**
  * Electron 冒烟测试：应用能启动、窗口创建、renderer 加载、preload API 存在。
  * 覆盖 8.3 安全基线（nodeIntegration:false / contextIsolation:true）不回归。
+ *
+ * Task 12：窗口查找迁移到 helper（按 surface=pet 定位，不再假设 firstWindow）；
+ * "renderer 加载"断言落在宠物窗的星屿直连交互面（surface=pet → PetExperience）。
  */
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
-const APP_DIR = join(__dirname, '..', 'apps', 'desktop');
+import { launchPetApp } from './helpers/electron-app.js';
+import type { PetApp } from './helpers/electron-app.js';
 
-let app: ElectronApplication;
+let app: PetApp;
 
 test.beforeAll(async () => {
-  // 生产构建产物必须存在（CI 先 build；本地跑 e2e 前需 pnpm --filter @pet/desktop build）
-  const mainEntry = join(APP_DIR, 'out', 'main', 'index.js');
-  if (!existsSync(mainEntry)) {
-    throw new Error(`未找到 ${mainEntry} —— 请先运行 pnpm --filter @pet/desktop build`);
-  }
-  app = await electron.launch({
-    args: ['.'],
-    cwd: APP_DIR,
-  });
+  app = await launchPetApp();
 });
 
 test.afterAll(async () => {
@@ -29,31 +21,32 @@ test.afterAll(async () => {
 });
 
 test('app launches and pet window is created', async () => {
-  const firstWindow: Page = await app.firstWindow();
-  expect(firstWindow).toBeTruthy();
+  const pet = await app.petWindow();
+  expect(pet).toBeTruthy();
   // 窗口创建（透明度/置顶等 8.4 属性在 renderer 测试中进一步验证）
-  expect(app.windows().length).toBeGreaterThan(0);
+  expect(app.app.windows().length).toBeGreaterThan(0);
 });
 
-test('renderer loads the app shell', async () => {
-  const firstWindow: Page = await app.firstWindow();
-  await firstWindow.waitForLoadState('domcontentloaded');
-  await expect(firstWindow.locator('.pet-stage')).toBeVisible();
+test('pet renderer loads the Star Isle experience (surface=pet)', async () => {
+  const pet = await app.petWindow();
+  await pet.waitForLoadState('domcontentloaded');
+  await expect(pet.locator('.pet-experience')).toBeVisible();
+  await expect(pet.getByRole('img', { name: '星尾狐猫星屿' })).toBeVisible();
 });
 
 test('preload exposes the minimal versioned API (8.3)', async () => {
-  const firstWindow: Page = await app.firstWindow();
-  const api = await firstWindow.evaluate(() => {
-    const pet = (window as unknown as { pet?: Record<string, unknown> }).pet;
-    return pet ? { version: pet.version, platform: pet.platform } : null;
+  const pet = await app.petWindow();
+  const api = await pet.evaluate(() => {
+    const petApi = (window as unknown as { pet?: Record<string, unknown> }).pet;
+    return petApi ? { version: petApi.version, platform: petApi.platform } : null;
   });
   expect(api).not.toBeNull();
   expect(typeof api?.version).toBe('string');
 });
 
 test('contextIsolation is on (8.3 security baseline)', async () => {
-  const firstWindow: Page = await app.firstWindow();
-  const isolated = await firstWindow.evaluate(() => {
+  const pet = await app.petWindow();
+  const isolated = await pet.evaluate(() => {
     // contextIsolation: true 时，渲染进程拿不到 Node 全局
     // @ts-expect-error 故意探测
     return typeof window.require === 'undefined' && typeof window.process === 'undefined';

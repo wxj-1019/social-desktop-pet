@@ -5,17 +5,16 @@
  * 兜底轮询周期为 30s（friends.tsx），10s 内出现只能来自 WS 推送。
  *
  * 前置：后端已启动 + alice/bob 为好友（测试库）；后端不可达时整组跳过。
+ * Task 12：登录面在面板窗（surface=panel）经 helper.openPanel 进入，禁 firstWindow。
  */
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
-const APP_DIR = join(__dirname, '..', 'apps', 'desktop');
+import { launchPetApp } from './helpers/electron-app.js';
+import type { PetApp } from './helpers/electron-app.js';
+
 const API_BASE = process.env['PET_API_BASE'] ?? 'http://127.0.0.1:8787';
 
-let app: ElectronApplication;
+let app: PetApp;
 
 test.beforeAll(async () => {
   try {
@@ -26,11 +25,7 @@ test.beforeAll(async () => {
   }
   // 自愈：清空配额计数（gift 每日 3 次会被反复 e2e 耗尽；端点仅本地 PET_DEV_RESET 开启）
   await fetch(`${API_BASE}/__dev/reset-test-data`, { method: 'POST' }).catch(() => {});
-  const mainEntry = join(APP_DIR, 'out', 'main', 'index.js');
-  if (!existsSync(mainEntry)) {
-    throw new Error(`未找到 ${mainEntry} —— 请先运行 pnpm --filter @pet/desktop build`);
-  }
-  app = await electron.launch({ args: ['.'], cwd: APP_DIR });
+  app = await launchPetApp();
 });
 
 test.afterAll(async () => {
@@ -54,7 +49,7 @@ async function loginToken(email: string): Promise<{ token: string; userId: strin
 }
 
 test('alice 送礼 → bob 的 WS 实时收到事件（10s 内，非 30s 轮询）', async () => {
-  const page: Page = await app.firstWindow();
+  const page = await app.openPanel('chat');
   await page.waitForLoadState('domcontentloaded');
 
   // bob 登录（WS 连接建立）

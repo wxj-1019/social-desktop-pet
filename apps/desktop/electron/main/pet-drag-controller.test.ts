@@ -84,6 +84,24 @@ describe('PetDragController (安全拖动)', () => {
     expect(win.setPosition).not.toHaveBeenCalled();
   });
 
+  it('end() fires onDragEnd with the last pointer (persistence trigger)', () => {
+    const win = makeWin();
+    const onDragEnd = vi.fn();
+    const c = new PetDragController({ onDragEnd });
+    c.start(win, { x: 120, y: 70 });
+    c.move(win, { x: 220, y: 170 }, displays);
+    c.end();
+    expect(onDragEnd).toHaveBeenCalledTimes(1);
+    expect(onDragEnd).toHaveBeenCalledWith({ x: 220, y: 170 });
+  });
+
+  it('end() without a session does not fire onDragEnd', () => {
+    const onDragEnd = vi.fn();
+    const c = new PetDragController({ onDragEnd });
+    c.end();
+    expect(onDragEnd).not.toHaveBeenCalled();
+  });
+
   it('cancel() clears the session so further moves are ignored', () => {
     const win = makeWin();
     const c = new PetDragController();

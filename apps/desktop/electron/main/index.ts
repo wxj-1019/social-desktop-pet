@@ -10,10 +10,10 @@
  * - Session/DeepLink/Startup/Update 控制器沿用 Task 1/3，session restore 唯一一次
  */
 import type { PanelOpen } from '@pet/protocol';
-import { app, screen } from 'electron';
-import type { BrowserWindow } from 'electron';
+import { app, BrowserWindow, screen } from 'electron';
 
 import { DeepLinkController } from './deep-link-controller.js';
+import { toPersistedPosition } from './display-controller.js';
 import { broadcastPetSnapshot, registerIpcAllowlist, sendPetVisual } from './ipc/register.js';
 import type { PetIpcDependencies } from './ipc/register.js';
 import { PetDragController } from './pet-drag-controller.js';
@@ -24,7 +24,7 @@ import { SecureStorageController } from './secure-storage-controller.js';
 import { SessionController } from './session-controller.js';
 import { createAuthApi, createSessionHandlers } from './session-service.js';
 import { StartupController, parseStartupArgs } from './startup-controller.js';
-import { TrayController, trayIconPath } from './tray-controller.js';
+import { TrayController, trayIconPath, type TrayAction } from './tray-controller.js';
 import { UpdateController } from './update-controller.js';
 import { createUpdateApi } from './update-source.js';
 import { createPanelWindow, createPetWindow, setPassThrough } from './window-controller.js';
@@ -108,8 +108,18 @@ void app.whenReady().then(async () => {
   profileStore = new PetProfileStore(app.getPath('userData'));
   // 8.5：宠物位置持久化（userData/pet-position.json）
   positionStore = new PositionStore(app.getPath('userData'));
-  // Task 6：安全拖动控制器
-  drag = new PetDragController();
+  // Task 6：安全拖动控制器；拖动结束即持久化当前位置（可靠触发点——
+  // 部分环境 setPosition 不触发 'moved' 事件，不能依赖窗口事件做唯一保存）
+  const savePetPosition = (): void => {
+    if (!petWindow || !positionStore) return;
+    const [x = 0, y = 0] = petWindow.getPosition();
+    const displays = screen
+      .getAllDisplays()
+      .map((d) => ({ id: String(d.id), workArea: d.workArea, scaleFactor: d.scaleFactor }));
+    const persisted = toPersistedPosition(displays, { x, y });
+    if (persisted) positionStore.save(persisted);
+  };
+  drag = new PetDragController({ onDragEnd: () => savePetPosition() });
 
   // Task 5/10：桌宠唯一运行时；snapshot/visual 推送经 IPC deps 广播
   //（ipcDeps 在 createPetWindow 后组装，运行时 start 前的早发 snapshot 被忽略）
@@ -132,7 +142,8 @@ void app.whenReady().then(async () => {
 
   // ---- 8.2 面板：首次打开时懒创建，锚定到宠物旁 ----
   const openPanel = (view: PanelOpen['view']): void => {
-    if (!panelHandle) {
+    // 面板窗口若被硬关闭/渲染崩溃销毁，重建句柄（保证面板随时可重开）
+    if (!panelHandle || panelHandle.win.isDestroyed()) {
       panelHandle = createPanelWindow();
     }
     if (petWindow) panelHandle.showPanel(petWindow.getBounds());
@@ -334,3 +345,40 @@ app.on('before-quit', () => {
 app.on('window-all-closed', () => {
   // 8.2：托盘常驻，不走 quit（用户从托盘"完全退出"才退出）
 });
+
+// ---- Task 12：E2E hook（仅 PET_E2E=1 时暴露；Main 进程直接调用，不经 IPC）----
+// 供 e2e/helpers/electron-app.ts 经 app.evaluate 驱动托盘动作 / 读托盘快照 /
+// 读窗口状态（bounds/visible）。生产（PET_E2E 未设置）不定义，测试代码拿不到。
+export interface PetE2EHookShape {
+  invokeTrayAction(action: TrayAction): boolean;
+  getTrayState(): { dnd: boolean; passThrough: boolean };
+  getPetWindowState(): { bounds: Electron.Rectangle; visible: boolean } | null;
+  getWindowState(surface: 'pet' | 'panel'): { bounds: Electron.Rectangle; visible: boolean } | null;
+}
+
+declare global {
+  var __petE2E: PetE2EHookShape;
+}
+
+if (process.env['PET_E2E'] === '1') {
+  Object.defineProperty(globalThis, '__petE2E', {
+    configurable: true,
+    value: {
+      invokeTrayAction: (action: TrayAction) => {
+        // 返回是否已 dispatch（托盘未就绪时返回 false，供 E2E 轮询等待启动完成）
+        if (!tray) return false;
+        tray.dispatch(action);
+        return true;
+      },
+      getTrayState: () => tray?.snapshot ?? { dnd: false, passThrough: false },
+      getPetWindowState: () =>
+        petWindow ? { bounds: petWindow.getBounds(), visible: petWindow.isVisible() } : null,
+      getWindowState: (surface: 'pet' | 'panel') => {
+        const match = BrowserWindow.getAllWindows().find((w) =>
+          w.webContents.getURL().includes(`surface=${surface}`),
+        );
+        return match ? { bounds: match.getBounds(), visible: match.isVisible() } : null;
+      },
+    },
+  });
+}

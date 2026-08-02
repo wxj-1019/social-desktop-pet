@@ -1,17 +1,16 @@
 /**
  * 聊天 SSE e2e（10.1）：登录 → 聊天 tab → 输入 → 收到流式回复。
  * 前置：后端已启动（pnpm dev:server）；后端不可达时整组跳过。
+ * Task 12：面板窗（surface=panel）经 helper.openPanel 进入，禁 firstWindow。
  */
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
-const APP_DIR = join(__dirname, '..', 'apps', 'desktop');
+import { launchPetApp } from './helpers/electron-app.js';
+import type { PetApp } from './helpers/electron-app.js';
+
 const API_BASE = process.env['PET_API_BASE'] ?? 'http://127.0.0.1:8787';
 
-let app: ElectronApplication;
+let app: PetApp;
 
 test.beforeAll(async () => {
   try {
@@ -20,11 +19,7 @@ test.beforeAll(async () => {
   } catch {
     test.skip(1, `后端不可达（${API_BASE}）`);
   }
-  const mainEntry = join(APP_DIR, 'out', 'main', 'index.js');
-  if (!existsSync(mainEntry)) {
-    throw new Error(`未找到 ${mainEntry} —— 请先运行 pnpm --filter @pet/desktop build`);
-  }
-  app = await electron.launch({ args: ['.'], cwd: APP_DIR });
+  app = await launchPetApp();
 });
 
 test.afterAll(async () => {
@@ -32,7 +27,7 @@ test.afterAll(async () => {
 });
 
 test('登录 → 聊天 tab → SSE 流式回复', async () => {
-  const page: Page = await app.firstWindow();
+  const page = await app.openPanel('chat');
   await page.waitForLoadState('domcontentloaded');
 
   // 登录（本地 pet 库测试账号）

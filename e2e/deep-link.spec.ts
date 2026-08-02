@@ -8,24 +8,20 @@
  *
  * 前置：后端已启动 + alice/bob 测试账号已注册（本地 pet 库）。
  * 后端不可达时整组跳过（CI 无后端）。
+ * Task 12：登录面在面板窗（surface=panel）经 helper.openPanel 进入，禁 firstWindow。
  */
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-const APP_DIR = join(__dirname, '..', 'apps', 'desktop');
+import { launchPetApp } from './helpers/electron-app.js';
+import type { PetApp } from './helpers/electron-app.js';
+
 const API_BASE = process.env['PET_API_BASE'] ?? 'http://127.0.0.1:8787';
 
 let inviteToken: string;
 
-async function launchApp(extraArgs: string[] = []): Promise<ElectronApplication> {
-  const mainEntry = join(APP_DIR, 'out', 'main', 'index.js');
-  if (!existsSync(mainEntry)) {
-    throw new Error(`未找到 ${mainEntry} —— 请先运行 pnpm --filter @pet/desktop build`);
-  }
-  return electron.launch({ args: ['.', ...extraArgs], cwd: APP_DIR });
+async function launchApp(extraArgs: string[] = []): Promise<PetApp> {
+  return launchPetApp(extraArgs);
 }
 
 async function login(page: Page, email: string, password: string): Promise<void> {
@@ -46,7 +42,7 @@ test('alice 创建邀请链接（供 bob 深链接受）', async () => {
 
   const app = await launchApp();
   try {
-    const page: Page = await app.firstWindow();
+    const page = await app.openPanel('chat');
     await page.waitForLoadState('domcontentloaded');
     await login(page, 'alice@test.local', 'password123');
 
@@ -64,7 +60,7 @@ test('bob 启动即带 pet:// 链接 → 登录后自动接受 → 好友列表�
   // 模拟：应用未运行时 bob 点击 pet:// 链接（启动 argv 携带 URL）
   const app = await launchApp([`pet://invite?token=${inviteToken}`]);
   try {
-    const page: Page = await app.firstWindow();
+    const page = await app.openPanel('chat');
     await page.waitForLoadState('domcontentloaded');
     page.on('console', (m) => process.stdout.write(`[renderer] ${m.text()}\n`));
     page.on('pageerror', (e) => process.stdout.write(`[pageerror] ${e.message}\n`));

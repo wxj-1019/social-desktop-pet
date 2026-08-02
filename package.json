@@ -22,6 +22,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "pnpm --filter @pet/desktop build && playwright test --config e2e/playwright.config.ts",
+    "test:e2e:star-isle": "pnpm --filter @pet/desktop build && playwright test --config e2e/playwright.config.ts star-isle.spec.ts",
     "package:win": "pnpm --filter @pet/desktop package:win",
     "assets:tray": "node tools/generate-tray-icon.mjs",
     "bench:resources": "node tools/bench/resource-bench.mjs",

@@ -4,6 +4,7 @@ import {
   resolvePetPosition,
   toAbsolute,
   toAnchor,
+  toPersistedPosition,
   clampPetWindowToDisplays,
   anchorPanelToPet,
   DEFAULT_PET_SCALE,
@@ -108,6 +109,25 @@ describe('DisplayController (8.5 多屏持久化)', () => {
     const abs = toAbsolute(dualDisplays[1]!, saved);
     const back = toAnchor(dualDisplays[1]!, abs);
     expect(back).toEqual({ anchorX: 123, anchorY: 456 });
+  });
+
+  it('toPersistedPosition maps an in-bounds position to the owning display', () => {
+    const persisted = toPersistedPosition(dualDisplays, { x: 250, y: 180 });
+    expect(persisted?.displayId).toBe('primary');
+    expect(persisted?.anchorX).toBe(250);
+    expect(persisted?.anchorY).toBe(180);
+    expect(persisted?.scale).toBe(DEFAULT_PET_SCALE);
+  });
+
+  it('toPersistedPosition maps a negative-coordinate position to the left display', () => {
+    const persisted = toPersistedPosition(dualDisplays, { x: -1000, y: 120 });
+    expect(persisted?.displayId).toBe('left');
+    expect(persisted?.anchorX).toBe(-1000 - -1280); // abs.x - workArea.x
+    expect(persisted?.anchorY).toBe(120);
+  });
+
+  it('toPersistedPosition returns null when the position is outside all displays', () => {
+    expect(toPersistedPosition(dualDisplays, { x: 5000, y: 5000 })).toBeNull();
   });
 });
 

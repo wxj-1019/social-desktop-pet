@@ -120,6 +120,32 @@ export function toAnchor(
 }
 
 /**
+ * 把窗口绝对位置转成可持久化的 PetPosition（Task 12，拖动结束保存用）。
+ * 找不到所在显示器（窗口在虚拟桌面外）返回 null；找到则按该显示器工作区算锚点。
+ */
+export function toPersistedPosition(
+  displays: DisplayInfo[],
+  abs: { x: number; y: number },
+): PetPosition | null {
+  const current = displays.find(
+    (d) =>
+      abs.x >= d.workArea.x &&
+      abs.x < d.workArea.x + d.workArea.width &&
+      abs.y >= d.workArea.y &&
+      abs.y < d.workArea.y + d.workArea.height,
+  );
+  if (!current) return null;
+  const anchor = toAnchor(current, abs);
+  return {
+    displayId: current.id,
+    anchorX: anchor.anchorX,
+    anchorY: anchor.anchorY,
+    scale: 1,
+    savedAt: Date.now(),
+  };
+}
+
+/**
  * 拖动时把目标位置夹进可见区域（与 resolvePetPosition 规则一致）：
  * 目标左上角所在显示器内夹取（至少露出窗口 1/4）；找不到所在显示器则回主屏（第一个）。
  * 保留负坐标（支持左侧副屏）；无显示器时原样返回。

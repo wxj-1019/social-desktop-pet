@@ -18,7 +18,7 @@ import type { BrowserWindowConstructorOptions } from 'electron';
 import {
   anchorPanelToPet,
   resolvePetPosition,
-  toAnchor,
+  toPersistedPosition,
   type DisplayInfo,
   type PetPosition,
 } from './display-controller.js';
@@ -147,27 +147,14 @@ export function createPetWindow(options: WindowOptions = {}): BrowserWindow {
     if (!options.startHidden) win.show();
   });
 
-  // 8.5：位置变化时回调（由调用方持久化）
+  // 8.5：位置变化时回调（由调用方持久化）。
+  // 注：部分环境（RDP 会话等）setPosition 不触发 'move'/'moved'，持久化的可靠
+  // 触发点是拖动结束（PetDragController.onDragEnd → index.ts），这里作为补充。
   win.on('moved', () => {
     const pos = win.getPosition();
-    const x = pos[0] ?? 0;
-    const y = pos[1] ?? 0;
-    const current = displays.find(
-      (d) =>
-        x >= d.workArea.x &&
-        x < d.workArea.x + d.workArea.width &&
-        y >= d.workArea.y &&
-        y < d.workArea.y + d.workArea.height,
-    );
-    if (current && options.onPositionChanged) {
-      const anchor = toAnchor(current, { x, y });
-      options.onPositionChanged({
-        displayId: current.id,
-        anchorX: anchor.anchorX,
-        anchorY: anchor.anchorY,
-        scale: 1,
-        savedAt: Date.now(),
-      });
+    const persisted = toPersistedPosition(displays, { x: pos[0] ?? 0, y: pos[1] ?? 0 });
+    if (persisted && options.onPositionChanged) {
+      options.onPositionChanged(persisted);
     }
   });
 
