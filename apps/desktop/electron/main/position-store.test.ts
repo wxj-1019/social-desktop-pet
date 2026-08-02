@@ -39,7 +39,7 @@ describe('PositionStore (8.5 位置持久化)', () => {
 
   it('rejects anchorX out of range and keeps fallback', () => {
     const { store } = makeStore();
-    expect(() => store.save({ ...valid, anchorX: 1.5 })).toThrow();
+    expect(() => store.save({ ...valid, anchorX: 1_000_000 })).toThrow();
     expect(store.load()).toEqual(DEFAULT_PET_POSITION);
   });
 

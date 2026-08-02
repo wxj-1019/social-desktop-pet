@@ -32,13 +32,14 @@ export const MAX_PET_SCALE = 2;
 
 /**
  * 持久化 PetPosition 的校验 schema（与上方 PetPosition 类型结构兼容）。
- * anchor/scale 限制在合理范围，savedAt 必须有限；.strict() 拒绝未知字段。
+ * anchor 是相对显示器工作区的像素偏移（可为负，如左侧副屏），限定在合理虚拟桌面范围；
+ * scale 限制在 [MIN_PET_SCALE, MAX_PET_SCALE]；savedAt 必须有限；.strict() 拒绝未知字段。
  */
 export const PetPositionSchema = z
   .object({
     displayId: z.string(),
-    anchorX: z.number().min(0).max(1),
-    anchorY: z.number().min(0).max(1),
+    anchorX: z.number().finite().min(-100_000).max(100_000),
+    anchorY: z.number().finite().min(-100_000).max(100_000),
     scale: z.number().min(MIN_PET_SCALE).max(MAX_PET_SCALE),
     savedAt: z.number().finite(),
   })

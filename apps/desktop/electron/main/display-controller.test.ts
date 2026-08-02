@@ -123,8 +123,9 @@ describe('PetPositionSchema (持久化校验)', () => {
   });
 
   it('rejects out-of-range anchors', () => {
-    expect(() => PetPositionSchema.parse({ ...valid, anchorX: 1.5 })).toThrow();
-    expect(() => PetPositionSchema.parse({ ...valid, anchorY: -0.1 })).toThrow();
+    expect(() => PetPositionSchema.parse({ ...valid, anchorX: 1_000_000 })).toThrow();
+    expect(() => PetPositionSchema.parse({ ...valid, anchorY: NaN })).toThrow();
+    expect(() => PetPositionSchema.parse({ ...valid, anchorX: Infinity })).toThrow();
   });
 
   it('rejects out-of-range scale', () => {
