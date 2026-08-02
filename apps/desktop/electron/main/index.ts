@@ -1,26 +1,30 @@
 /**
  * Electron Main 入口 —— 对应设计稿 8.2 模块结构。
- * 第 3 周单人 Alpha：接入 TrayController、多屏位置持久化（8.5）、IPC allowlist、
- * Session/DeepLink 控制器（9.8 / 6.3）、Startup/Update 控制器（8.2）。
+ *
+ * Task 10：星屿 Main 生命周期接线。
+ * - 显式双窗口：桌宠窗（8.4 透明置顶/穿透）+ 面板窗（8.2 懒创建锚定）
+ * - 托盘（8.2/8.4）：打开面板 / 穿透 / 勿扰 / 隐藏显示 / 完全退出
+ * - 穿透/隐藏恢复（8.4：不可恢复事故为 0，15.2 Go/No-Go）
+ * - 渲染进程崩溃重建（30s 稳定后重置计数）
+ * - E2E 钩子：PET_E2E=1 + PET_E2E_USER_DATA_DIR → ready 前隔离 userData
+ * - Session/DeepLink/Startup/Update 控制器沿用 Task 1/3，session restore 唯一一次
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import type { PanelOpen } from '@pet/protocol';
-import { app, BrowserWindow, screen } from 'electron';
+import { app, screen } from 'electron';
+import type { BrowserWindow } from 'electron';
 
 import { DeepLinkController } from './deep-link-controller.js';
-import type { PetPosition } from './display-controller.js';
-import { registerIpcAllowlist } from './ipc/register.js';
+import { broadcastPetSnapshot, registerIpcAllowlist, sendPetVisual } from './ipc/register.js';
 import type { PetIpcDependencies } from './ipc/register.js';
 import { PetDragController } from './pet-drag-controller.js';
 import { PetProfileStore } from './pet-profile-store.js';
 import { PetRuntimeController } from './pet-runtime-controller.js';
+import { PositionStore } from './position-store.js';
 import { SecureStorageController } from './secure-storage-controller.js';
 import { SessionController } from './session-controller.js';
 import { createAuthApi, createSessionHandlers } from './session-service.js';
 import { StartupController, parseStartupArgs } from './startup-controller.js';
-import { TrayController } from './tray-controller.js';
+import { TrayController, trayIconPath } from './tray-controller.js';
 import { UpdateController } from './update-controller.js';
 import { createUpdateApi } from './update-source.js';
 import { createPanelWindow, createPetWindow, setPassThrough } from './window-controller.js';
@@ -47,32 +51,34 @@ if (!gotLock) {
   app.quit();
 }
 
-/** 8.5 位置持久化文件（userData/pet-position.json） */
-function positionFile(): string {
-  return join(app.getPath('userData'), 'pet-position.json');
-}
-function loadSavedPosition(): PetPosition | null {
-  try {
-    const f = positionFile();
-    if (!existsSync(f)) return null;
-    return JSON.parse(readFileSync(f, 'utf-8')) as PetPosition;
-  } catch {
-    return null;
-  }
-}
-function persistPosition(pos: PetPosition): void {
-  try {
-    writeFileSync(positionFile(), JSON.stringify(pos));
-  } catch {
-    /* 持久化失败不阻塞运行 */
-  }
+// ---- E2E 隔离（ready 前）：PET_E2E=1 且提供 PET_E2E_USER_DATA_DIR → 独立 userData ----
+if (
+  process.env['PET_E2E'] &&
+  process.env['PET_E2E'] !== '0' &&
+  process.env['PET_E2E_USER_DATA_DIR']
+) {
+  app.setPath('userData', process.env['PET_E2E_USER_DATA_DIR']);
 }
 
+// ---- 生命周期状态（模块级，事件处理器跨 whenReady 引用）----
+let petWindow: BrowserWindow | null = null;
+let panelHandle: PanelWindowHandle | null = null;
+let quitting = false;
 let tray: TrayController | null = null;
+let runtime: PetRuntimeController | null = null;
+let drag: PetDragController | null = null;
+let profileStore: PetProfileStore | null = null;
+let positionStore: PositionStore | null = null;
+let ipcDeps: PetIpcDependencies | null = null;
 let session: SessionController | null = null;
 let deepLink: DeepLinkController | null = null;
 let updater: UpdateController | null = null;
-const savedPosition = loadSavedPosition();
+
+// 渲染进程崩溃重建：仅允许一次快速重建；did-finish-load 后 30s 无崩溃重置计数（防崩溃循环）
+const RENDERER_STABILIZE_MS = 30_000;
+let rendererCrashAttempts = 0;
+let stabilityTimer: ReturnType<typeof setTimeout> | null = null;
+let runtimeStarted = false;
 
 // 8.2 StartupController：自启动开关（D30 留存指标依赖项）+ 启动参数
 const startup = new StartupController({
@@ -97,69 +103,117 @@ void app.whenReady().then(async () => {
   );
   session = createdSession;
   const restorePromise = createdSession.restore();
-  let win: BrowserWindow | null = null;
-  let panelHandle: PanelWindowHandle | null = null;
 
   // Task 4：宠物档案持久化（userData/pet-profile.json）
-  const profile = new PetProfileStore(app.getPath('userData'));
+  profileStore = new PetProfileStore(app.getPath('userData'));
+  // 8.5：宠物位置持久化（userData/pet-position.json）
+  positionStore = new PositionStore(app.getPath('userData'));
   // Task 6：安全拖动控制器
-  const drag = new PetDragController();
-  // Task 5：唯一桌宠运行时；生命周期启动与 snapshot/visual 推送接线在 Task 10
-  const runtime = new PetRuntimeController({
-    emitSnapshot: () => undefined,
-    emitVisual: () => undefined,
-  });
+  drag = new PetDragController();
 
-  // 8.2 面板：首次打开时懒创建，锚定到宠物旁
-  const openPanel = (view: PanelOpen): void => {
+  // Task 5/10：桌宠唯一运行时；snapshot/visual 推送经 IPC deps 广播
+  //（ipcDeps 在 createPetWindow 后组装，运行时 start 前的早发 snapshot 被忽略）
+  runtime = new PetRuntimeController({
+    emitSnapshot: (snap) => {
+      if (ipcDeps) broadcastPetSnapshot(ipcDeps, snap);
+    },
+    emitVisual: (cmd) => {
+      if (ipcDeps) sendPetVisual(ipcDeps, cmd);
+    },
+  });
+  // 在线状态：本任务固定 online=true（运行时默认），Task 11 由聊天/网络状态驱动 setOnline
+
+  // ---- 8.4 穿透（Main 端）：窗口 + 托盘 snapshot 同步 ----
+  // 唯一穿透入口；tray 的 dispatch('show') 也会先经 onSetPassThrough(false) 回到这里。
+  const setPassThroughFromMain = (enabled: boolean): void => {
+    if (petWindow) setPassThrough(petWindow, enabled);
+    tray?.setPassThroughForced(enabled);
+  };
+
+  // ---- 8.2 面板：首次打开时懒创建，锚定到宠物旁 ----
+  const openPanel = (view: PanelOpen['view']): void => {
     if (!panelHandle) {
       panelHandle = createPanelWindow();
     }
-    if (win) panelHandle.showPanel(win.getBounds());
+    if (petWindow) panelHandle.showPanel(petWindow.getBounds());
     panelHandle.win.webContents.send('panel:navigate', view);
   };
+  const closePanel = (): void => panelHandle?.hide();
+  const showContextMenu = (): void => {
+    // Task 10：自定义右键菜单未实现；桌宠右键交互由托盘承载（8.2）
+  };
 
-  // 8.3 IPC allowlist 在窗口加载前生效；session:init 等待上面的唯一 restorePromise。
-  const deps: PetIpcDependencies = {
-    getPetWindow: () => win,
+  // ---- 桌宠窗创建 + 生命周期接线（崩溃重建 / 渲染就绪启动运行时）----
+  const createAndWirePetWindow = (): BrowserWindow => {
+    const win = createPetWindow({
+      savedPosition: positionStore!.load(),
+      // 8.5：位置变化 → 持久化
+      onPositionChanged: (pos) => positionStore!.save(pos),
+      // 启动参数：--poc 进窗口能力自检页；--minimized 启动隐藏到托盘
+      urlSuffix: startupArgs.poc ? '?poc' : '',
+      startHidden: startupArgs.minimized,
+    });
+    petWindow = win;
+
+    // 崩溃重建：quitting / 已重建过一次 → 跳过；否则 destroy 重建，30s 稳定后重置计数
+    win.webContents.on('render-process-gone', () => {
+      if (quitting) return;
+      if (rendererCrashAttempts >= 1) return;
+      rendererCrashAttempts += 1;
+      if (stabilityTimer !== null) {
+        clearTimeout(stabilityTimer);
+        stabilityTimer = null;
+      }
+      win.destroy();
+      createAndWirePetWindow();
+    });
+
+    // 渲染就绪：启动运行时（仅一次）+ 挂起 30s 稳定计时（届时重置崩溃计数）
+    win.webContents.on('did-finish-load', () => {
+      if (!runtimeStarted && runtime) {
+        runtimeStarted = true;
+        runtime.start();
+      }
+      if (stabilityTimer !== null) {
+        clearTimeout(stabilityTimer);
+        stabilityTimer = null;
+      }
+      stabilityTimer = setTimeout(() => {
+        stabilityTimer = null;
+        rendererCrashAttempts = 0;
+      }, RENDERER_STABILIZE_MS);
+    });
+
+    return win;
+  };
+
+  // 8.3 IPC allowlist：在 createPetWindow 后、runtime.start 前注册。
+  createAndWirePetWindow();
+  ipcDeps = {
+    getPetWindow: () => petWindow,
     getPanelWindow: () => panelHandle?.win ?? null,
-    runtime,
-    drag,
-    profile,
+    runtime: runtime!,
+    drag: drag!,
+    profile: profileStore!,
     getDisplays: () =>
       screen.getAllDisplays().map((d) => ({
         id: String(d.id),
         workArea: d.workArea,
         scaleFactor: d.scaleFactor,
       })),
-    openPanel,
-    closePanel: () => panelHandle?.hide(),
-    showContextMenu: () => {
-      // 第 3 周接 ContextMenuController；先以打开面板兜底
-      if (win) openPanel({ view: 'chat' });
-    },
-    setPassThrough: (enabled) => {
-      if (win) setPassThrough(win, enabled);
-    },
+    openPanel: (target: PanelOpen) => openPanel(target.view),
+    closePanel,
+    showContextMenu,
+    setPassThrough: setPassThroughFromMain,
     sessionHandlers: createSessionHandlers(
       createdSession,
       () => void deepLink?.restorePending(),
       restorePromise,
     ),
   };
-  registerIpcAllowlist(deps);
+  registerIpcAllowlist(ipcDeps);
 
-  const createdWindow = createPetWindow({
-    savedPosition,
-    // 8.5：位置变化 → 持久化
-    onPositionChanged: (pos) => persistPosition(pos),
-    // 启动参数：--poc 进窗口能力自检页；--minimized 启动隐藏到托盘
-    urlSuffix: startupArgs.poc ? '?poc' : '',
-    startHidden: startupArgs.minimized,
-  });
-  win = createdWindow;
-
-  // 8.2 启动序列：单点失败不阻塞后续（降级友好）
+  // 8.2 启动序列：单点失败不阻塞后续（降级友好）；session restore 由 Task 1 唯一 restorePromise 处理
   const failures = await startup.bootstrap([
     {
       name: 'session-restore',
@@ -170,16 +224,16 @@ void app.whenReady().then(async () => {
     {
       name: 'deep-link-restore',
       run: async () => {
-        // 6.3：Deep Link（pet://invite?token=...）
+        // 6.3：Deep Link（pet://invite?token=...）→ 面板方向（登录 / 好友），不直接给 pet 发 payload
         deepLink = new DeepLinkController({
           isSignedIn: () => session?.snapshot.phase === 'ACTIVE',
-          applyInvite: async (payload) => {
-            // 已登录 → 转发渲染进程执行邀请流程；Alpha 阶段仅透传原始 token
-            createdWindow.webContents.send('deeplink:payload', payload.rawToken);
+          applyInvite: async () => {
+            // 已登录 → 打开好友面板执行邀请流程
+            openPanel('friends');
           },
           requestSignIn: async () => {
-            // 未登录 → Alpha 阶段透传，登录 UI 就绪后打开登录窗
-            createdWindow.webContents.send('deeplink:payload', 'NEED_SIGN_IN');
+            // 未登录 → 打开登录面板
+            openPanel('login');
           },
         });
         await deepLink.restorePending();
@@ -207,15 +261,29 @@ void app.whenReady().then(async () => {
     setTimeout(() => void updater?.check(), 30_000);
   }
 
-  // 8.2 托盘
-  tray = new TrayController(() => createdWindow, {
-    onTogglePassThrough: (on) => setPassThrough(createdWindow, on),
-    onToggleDnd: () => {
-      /* 第 3 周接 PetStateMachine QUIET 状态 */
+  // 8.2 托盘（Task 10：注入端口默认用 Electron 原生；图标 assets:tray 生成）
+  tray = new TrayController({
+    win: () => petWindow,
+    handlers: {
+      onOpenPanel: (view) => openPanel(view),
+      onSetDnd: (enabled) => runtime?.setDnd(enabled),
+      onSetPassThrough: setPassThroughFromMain,
+      onHide: () => {
+        petWindow?.hide();
+        runtime?.setHidden(true);
+      },
+      onShow: () => {
+        petWindow?.show();
+        petWindow?.setIgnoreMouseEvents(false);
+        runtime?.setHidden(false);
+      },
+      onQuit: () => {
+        quitting = true;
+        app.quit();
+      },
     },
-    onQuit: () => app.quit(),
   });
-  tray.create();
+  tray.create(trayIconPath());
 
   // Windows：注册 pet:// 为默认协议（用户点击链接拉起应用）
   if (process.platform === 'win32') {
@@ -223,21 +291,24 @@ void app.whenReady().then(async () => {
   }
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createPetWindow({ savedPosition });
+    // macOS 语义：窗口不存在则重建，存在则前台聚焦
+    if (petWindow) {
+      petWindow.show();
+      petWindow.focus();
+    } else {
+      createAndWirePetWindow();
     }
   });
 });
 
-// 单实例：二次启动（含点击 pet:// 链接）→ 聚焦已有窗口并处理 deep link
+// 单实例：二次启动（含点击 pet:// 链接）→ 聚焦已有宠物窗并处理 deep link
 app.on('second-instance', (_event, argv) => {
   const url = argv.find((a) => a.startsWith('pet://'));
   if (url) void deepLink?.handle(url);
-  const win = BrowserWindow.getAllWindows()[0];
-  if (win) {
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
+  if (petWindow) {
+    if (petWindow.isMinimized()) petWindow.restore();
+    petWindow.show();
+    petWindow.focus();
   }
 });
 
@@ -245,6 +316,19 @@ app.on('second-instance', (_event, argv) => {
 app.on('open-url', (event, url) => {
   event.preventDefault();
   void deepLink?.handle(url);
+});
+
+app.on('before-quit', () => {
+  // 托盘"完全退出"/系统退出：标记 quitting（跳过崩溃重建），清理定时器与子资源
+  quitting = true;
+  if (stabilityTimer !== null) {
+    clearTimeout(stabilityTimer);
+    stabilityTimer = null;
+  }
+  runtime?.stop();
+  drag?.cancel();
+  tray?.destroy();
+  panelHandle?.allowClose();
 });
 
 app.on('window-all-closed', () => {

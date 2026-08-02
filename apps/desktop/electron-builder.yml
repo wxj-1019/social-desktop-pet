@@ -12,6 +12,11 @@ files:
   - out/**
   - package.json
 
+# Task 10：托盘图标随包分发（TrayController.trayIconPath 指向 resources/tray.png）
+extraResources:
+  - from: resources/tray.png
+    to: tray.png
+
 win:
   # NSIS 默认 per-user 安装（13.1：不要求管理员权限）
   target:
