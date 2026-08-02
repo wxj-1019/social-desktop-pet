@@ -28,9 +28,10 @@ packages/supabase/.temp
 packages/supabase/.db
 packages/supabase/.storage
 
-# ZCode / brainstorming 工具目录
+# ZCode / brainstorming / isolated worktree directories
 .zcode/
 .superpowers/
+.worktrees/
 
 # Env & secrets
 .env
