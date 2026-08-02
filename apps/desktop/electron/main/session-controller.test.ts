@@ -93,23 +93,33 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     expect(c.snapshot.profile).toEqual({ userId: 'u1', deviceId: 'dev-1', nickname: 'Alice' });
   });
 
-  it('revoke() invalidates an in-flight refresh result', async () => {
+  it('revoke() invalidates all refresh operations from the previous generation', async () => {
     const storage = new MemoryStorage();
     const auth = makeAuth();
-    let resolveRefresh!: (tokens: SessionTokens) => void;
+    const pending = new Map<string, (tokens: SessionTokens) => void>();
     auth.refreshAccessToken = vi.fn(
-      () =>
+      (refreshToken) =>
         new Promise<SessionTokens>((resolve) => {
-          resolveRefresh = resolve;
+          pending.set(refreshToken, resolve);
         }),
     );
     const c = new SessionController(storage, auth);
     await c.activate(makeTokens(), profile);
 
-    const refreshPromise = c.refresh('refresh-1');
+    const refreshA = c.refresh('refresh-a');
+    const refreshB = c.refresh('refresh-b');
     await c.revoke();
-    resolveRefresh({ ...makeTokens(), accessToken: 'access-old', refreshToken: 'refresh-2' });
-    await refreshPromise;
+    pending.get('refresh-a')?.({
+      ...makeTokens(),
+      accessToken: 'access-a-old',
+      refreshToken: 'refresh-a-2',
+    });
+    pending.get('refresh-b')?.({
+      ...makeTokens(),
+      accessToken: 'access-b-old',
+      refreshToken: 'refresh-b-2',
+    });
+    await Promise.all([refreshA, refreshB]);
 
     expect(c.snapshot).toEqual({ phase: 'SIGNED_OUT', profile: null, tokens: null });
     expect(storage.loadRefreshToken()).toBeNull();
@@ -150,20 +160,21 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     await revokePromise;
   });
 
-  it('activate() invalidates an in-flight refresh from the previous account', async () => {
+  it('activate() invalidates all refresh operations from the previous account', async () => {
     const storage = new MemoryStorage();
     const auth = makeAuth();
-    let resolveRefresh!: (tokens: SessionTokens) => void;
+    const pending = new Map<string, (tokens: SessionTokens) => void>();
     auth.refreshAccessToken = vi.fn(
-      () =>
+      (refreshToken) =>
         new Promise<SessionTokens>((resolve) => {
-          resolveRefresh = resolve;
+          pending.set(refreshToken, resolve);
         }),
     );
     const c = new SessionController(storage, auth);
     await c.activate(makeTokens(), profile);
 
-    const refreshPromise = c.refresh('refresh-1');
+    const refreshA = c.refresh('refresh-a');
+    const refreshB = c.refresh('refresh-b');
     const newProfile = { userId: 'u2', deviceId: 'dev-2', nickname: 'Bob' };
     const newTokens = {
       accessToken: 'access-new',
@@ -171,14 +182,23 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
       accessExpiresAt: Date.now() + 15 * 60_000,
     };
     await c.activate(newTokens, newProfile);
-    resolveRefresh({ ...makeTokens(), accessToken: 'access-old', refreshToken: 'refresh-2' });
-    await refreshPromise;
+    pending.get('refresh-a')?.({
+      ...makeTokens(),
+      accessToken: 'access-a-old',
+      refreshToken: 'refresh-a-2',
+    });
+    pending.get('refresh-b')?.({
+      ...makeTokens(),
+      accessToken: 'access-b-old',
+      refreshToken: 'refresh-b-2',
+    });
+    await Promise.all([refreshA, refreshB]);
 
     expect(c.snapshot).toEqual({ phase: 'ACTIVE', profile: newProfile, tokens: newTokens });
     expect(storage.loadRefreshToken()).toBe('refresh-new');
   });
 
-  it('single-flight only shares the same generation and refresh token', async () => {
+  it('isolates A → B → A refresh operations and reuses the matching A operation', async () => {
     const storage = new MemoryStorage();
     const auth = makeAuth();
     const pending = new Map<string, (tokens: SessionTokens) => void>();
@@ -190,24 +210,32 @@ describe('SessionController (9.8 多设备 / 8.3 令牌生命周期)', () => {
     );
     const c = new SessionController(storage, auth);
 
-    const first = c.refresh('refresh-1');
-    const same = c.refresh('refresh-1');
-    const different = c.refresh('refresh-other');
+    const firstA = c.refresh('refresh-a');
+    const refreshB = c.refresh('refresh-b');
+    const secondA = c.refresh('refresh-a');
+    expect(secondA).toBe(firstA);
     expect(auth.refreshAccessToken).toHaveBeenCalledTimes(2);
+    expect(auth.refreshAccessToken).toHaveBeenCalledWith('refresh-a');
+    expect(auth.refreshAccessToken).toHaveBeenCalledWith('refresh-b');
 
-    pending.get('refresh-1')?.({ ...makeTokens(), refreshToken: 'refresh-2' });
-    pending.get('refresh-other')?.({
+    pending.get('refresh-a')?.({
       ...makeTokens(),
-      accessToken: 'access-other',
-      refreshToken: 'refresh-other-2',
+      accessToken: 'access-a',
+      refreshToken: 'refresh-a-2',
     });
-    const [firstState, sameState, differentState] = await Promise.all([first, same, different]);
+    const [firstAState, secondAState] = await Promise.all([firstA, secondA]);
+    expect(firstAState).toEqual(secondAState);
+    expect(c.snapshot).toEqual(firstAState);
+    expect(storage.loadRefreshToken()).toBe('refresh-a-2');
 
-    expect(firstState).toEqual(sameState);
-    expect(differentState.phase).toBe('ACTIVE');
-    expect(differentState.tokens?.accessToken).toBe('access-other');
-    expect(c.snapshot).toEqual(differentState);
-    expect(storage.loadRefreshToken()).toBe('refresh-other-2');
+    pending.get('refresh-b')?.({
+      ...makeTokens(),
+      accessToken: 'access-b',
+      refreshToken: 'refresh-b-2',
+    });
+    await refreshB;
+    expect(c.snapshot).toEqual(firstAState);
+    expect(storage.loadRefreshToken()).toBe('refresh-a-2');
   });
 
   it('activate() saves refresh token to secure storage (8.3)', async () => {
