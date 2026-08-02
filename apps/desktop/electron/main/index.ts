@@ -16,6 +16,7 @@ import { DeepLinkController } from './deep-link-controller.js';
 import { toPersistedPosition } from './display-controller.js';
 import { broadcastPetSnapshot, registerIpcAllowlist, sendPetVisual } from './ipc/register.js';
 import type { PetIpcDependencies } from './ipc/register.js';
+import { deliverPanelMessage } from './panel-delivery.js';
 import { PetDragController } from './pet-drag-controller.js';
 import { PetProfileStore } from './pet-profile-store.js';
 import { PetRuntimeController } from './pet-runtime-controller.js';
@@ -141,13 +142,19 @@ void app.whenReady().then(async () => {
   };
 
   // ---- 8.2 面板：首次打开时懒创建，锚定到宠物旁 ----
-  const openPanel = (view: PanelOpen['view']): void => {
+  // C1 修复：深链 payload（deeplink:payload）只投递到面板渲染进程，不再发往桌宠窗；
+  // 渲染进程未就绪（首次创建/正在加载）时等 did-finish-load 再发（见 panel-delivery.ts）。
+  // 待投递 payload 保留在缓冲里，供渲染进程挂载后主动拉取（deeplink:consume-pending），
+  // 覆盖"推送早于组件挂载"的时序（登录完成瞬间 FriendsPage 尚未订阅）。
+  let panelDeepLinkPayload: string | null = null;
+  const openPanel = (view: PanelOpen['view'], deeplinkPayload?: string): void => {
     // 面板窗口若被硬关闭/渲染崩溃销毁，重建句柄（保证面板随时可重开）
     if (!panelHandle || panelHandle.win.isDestroyed()) {
       panelHandle = createPanelWindow();
     }
     if (petWindow) panelHandle.showPanel(petWindow.getBounds());
-    panelHandle.win.webContents.send('panel:navigate', view);
+    if (deeplinkPayload !== undefined) panelDeepLinkPayload = deeplinkPayload;
+    deliverPanelMessage(panelHandle.win, view, deeplinkPayload);
   };
   const closePanel = (): void => panelHandle?.hide();
   const showContextMenu = (): void => {
@@ -215,6 +222,12 @@ void app.whenReady().then(async () => {
     openPanel: (target: PanelOpen) => openPanel(target.view),
     closePanel,
     showContextMenu,
+    // C1：渲染进程挂载后拉取尚未投递成功的深链 payload（拉取即清除，兜底时序竞态）
+    consumeDeepLinkPayload: () => {
+      const payload = panelDeepLinkPayload;
+      panelDeepLinkPayload = null;
+      return payload;
+    },
     setPassThrough: setPassThroughFromMain,
     sessionHandlers: createSessionHandlers(
       createdSession,
@@ -238,13 +251,13 @@ void app.whenReady().then(async () => {
         // 6.3：Deep Link（pet://invite?token=...）→ 面板方向（登录 / 好友），不直接给 pet 发 payload
         deepLink = new DeepLinkController({
           isSignedIn: () => session?.snapshot.phase === 'ACTIVE',
-          applyInvite: async () => {
-            // 已登录 → 打开好友面板执行邀请流程
-            openPanel('friends');
+          applyInvite: async (payload) => {
+            // 已登录 → 打开好友面板执行邀请流程；邀请 token 投递到面板（C1）
+            openPanel('friends', payload.rawToken);
           },
           requestSignIn: async () => {
-            // 未登录 → 打开登录面板
-            openPanel('login');
+            // 未登录 → 打开登录面板；登录后恢复邀请（6.3）
+            openPanel('login', 'NEED_SIGN_IN');
           },
         });
         await deepLink.restorePending();

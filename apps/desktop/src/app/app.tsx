@@ -1,5 +1,5 @@
 import { Bubble } from '@pet/ui';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { initApi, setAccessToken } from '../lib/api/client.js';
 
@@ -26,6 +26,9 @@ export function AppPanel() {
   const [tab, setTab] = useState<ActiveTab>('friends');
   const [user, setUser] = useState<AuthResult | null>(null);
   const [pendingInvite, setPendingInvite] = useState(false);
+  // I1：panel:navigate 回调里读最新 phase（订阅只注册一次，闭包里的 phase 会过期）
+  const phaseRef = useRef<SessionPhase>('booting');
+  phaseRef.current = phase;
 
   // 启动：API 基址 + 会话恢复
   useEffect(() => {
@@ -57,6 +60,18 @@ export function AppPanel() {
   useEffect(() => {
     const off = window.pet.onDeepLink((payload) => {
       if (payload === 'NEED_SIGN_IN') setPendingInvite(true);
+    });
+    return off;
+  }, []);
+
+  // I1：面板导航消费（8.2）——'login' → signed_out；'chat'/'friends' → 已登录时切 tab
+  useEffect(() => {
+    const off = window.pet.panel.onNavigate((nav) => {
+      if (nav.view === 'login') {
+        setPhase('signed_out');
+      } else if (phaseRef.current === 'active') {
+        setTab(nav.view === 'chat' ? 'chat' : 'friends');
+      }
     });
     return off;
   }, []);

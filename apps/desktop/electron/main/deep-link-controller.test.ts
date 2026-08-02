@@ -46,6 +46,19 @@ describe('DeepLinkController (6.3 邀请链接)', () => {
     });
   });
 
+  it('parses server-format single-segment token (6.3 现行 /invite 格式)', () => {
+    // 服务端 randomBytes(32).toString('base64url')，无内嵌用户信息
+    const raw = 'pet://invite?token=6hrz_3PyfWQBy9q1j5e4RvOuNzkW6KcJFCn3b4eFELs';
+    const parsed = parseInviteUrl(raw);
+    expect(parsed).toEqual({
+      userId: '',
+      inviteCode: '',
+      rawToken: '6hrz_3PyfWQBy9q1j5e4RvOuNzkW6KcJFCn3b4eFELs',
+    });
+    // 消费路径：rawToken 原样透传给 /invite/accept
+    expect(parsed?.rawToken).toBe('6hrz_3PyfWQBy9q1j5e4RvOuNzkW6KcJFCn3b4eFELs');
+  });
+
   it('rejects non-pet protocols', () => {
     expect(parseInviteUrl('https://example.com/invite?token=abc.def')).toBeNull();
   });
@@ -54,7 +67,8 @@ describe('DeepLinkController (6.3 邀请链接)', () => {
     expect(parseInviteUrl('pet://other?token=a.b')).toBeNull();
     expect(parseInviteUrl('pet://invite')).toBeNull();
     expect(parseInviteUrl('pet://invite?token=!!!')).toBeNull();
-    expect(parseInviteUrl('pet://invite?token=a.b.c')).toBeNull(); // 必须恰好两段
+    expect(parseInviteUrl('pet://invite?token=a.b.c')).toBeNull(); // 三段非法
+    expect(parseInviteUrl('pet://invite?token=')).toBeNull(); // 空 token
   });
 
   it('when signed in, applies invite immediately and clears pending', async () => {
@@ -91,6 +105,17 @@ describe('DeepLinkController (6.3 邀请链接)', () => {
     const c = new DeepLinkController(ctx, null);
     expect(await c.restorePending()).toBe(false);
     expect(ctx.applyInvite).not.toHaveBeenCalled();
+  });
+
+  it('server-format link: handle → pending → restorePending 透传 rawToken（C1 fresh 流程）', async () => {
+    const ctx = makeContext({ isSignedIn: () => false });
+    const c = new DeepLinkController(ctx, null);
+    const token = '6hrz_3PyfWQBy9q1j5e4RvOuNzkW6KcJFCn3b4eFELs';
+    expect(await c.handle(`pet://invite?token=${token}`)).toBe('pending');
+    expect(ctx.requestSignIn).toHaveBeenCalledOnce();
+    expect(await c.restorePending()).toBe(true);
+    expect(ctx.applyInvite).toHaveBeenCalledWith({ userId: '', inviteCode: '', rawToken: token });
+    expect(c.pendingInvite).toBeNull();
   });
 
   it('persists pending across restarts when a store is provided', async () => {

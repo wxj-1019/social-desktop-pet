@@ -38,6 +38,9 @@ const api = {
       ipcRenderer.removeListener('deeplink:payload', listener);
     };
   },
+  /** 6.3 拉取主进程尚未被推送消费的深链 payload（拉取即清除）——面板挂载时序兜底（C1） */
+  consumeDeepLinkPayload: () =>
+    ipcRenderer.invoke('deeplink:consume-pending') as Promise<string | null>,
   /** 自建后端地址（D-13）：API client 基址 */
   getApiBase: () => ipcRenderer.invoke('app:getApiBase') as Promise<string>,
   /** 9.8 会话：启动恢复 / 登录 / 注册 / 刷新 / 登出（refresh token 留在主进程 safeStorage） */

@@ -10,6 +10,9 @@ interface FriendsPageProps {
   userId: string;
 }
 
+/** 已处理过的深链 payload（模块级 Set：同一 token 只接受一次；跨组件重挂载仍去重） */
+const seenDeepLinkPayloads = new Set<string>();
+
 export function FriendsPage({ userId }: FriendsPageProps) {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
@@ -63,8 +66,12 @@ export function FriendsPage({ userId }: FriendsPageProps) {
   }, [pullSync]);
 
   // 6.3 深链：接受邀请（登录完成后由主进程恢复转发）
+  // C1：除推送订阅外，挂载时主动拉取主进程待投递 payload（deeplink:consume-pending）——
+  // 推送可能早于本组件挂载（登录完成瞬间 / 面板首次创建时渲染进程尚未订阅）。
   useEffect(() => {
-    const off = window.pet.onDeepLink((payload) => {
+    const handleDeepLink = (payload: string): void => {
+      if (seenDeepLinkPayloads.has(payload)) return; // 推送/拉取双路径去重
+      seenDeepLinkPayloads.add(payload);
       if (payload === 'NEED_SIGN_IN') {
         setNotice('请先登录，再点击邀请链接');
         return;
@@ -78,6 +85,10 @@ export function FriendsPage({ userId }: FriendsPageProps) {
           setNotice((e as Error).message);
         }
       })();
+    };
+    const off = window.pet.onDeepLink((payload) => handleDeepLink(payload));
+    void window.pet.consumeDeepLinkPayload().then((payload) => {
+      if (payload) handleDeepLink(payload);
     });
     return off;
   }, [refreshFriends]);

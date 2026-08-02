@@ -5,6 +5,11 @@
  *   access token 在渲染进程（业务调用用），refresh token 只存在于主进程
  *   （SecureStorageController safeStorage 加密存储，绝不出主进程）。
  * - IPC：session:init / session:login / session:refresh / session:revoke
+ *
+ * M4（审查修复）：IPC 载荷 schema 不再本地重复定义，直接复用 @pet/protocol 的
+ * SessionLoginPayloadSchema / SessionRegisterPayloadSchema（单一真相源；
+ * 约束以 protocol 为准：email ≤254 / password 8–128 / nickname trim 1–40）。
+ * 注意：这里 re-export 仅为保持 ipc/register.ts 既有 import 路径。
  */
 import { z } from 'zod';
 
@@ -15,6 +20,8 @@ import {
   type SessionProfile,
   type SessionState,
 } from './session-controller.js';
+
+export { SessionLoginPayloadSchema, SessionRegisterPayloadSchema } from '@pet/protocol';
 
 /** 自建后端地址（D-13）：生产指向 HTTPS 域名；本机默认 127.0.0.1:8787 */
 export function apiBaseUrl(): string {
@@ -52,14 +59,6 @@ const sessionTokensBodySchema = z.object({
 });
 const loginBodySchema = sessionTokensBodySchema.extend({ userId: z.string().min(1) });
 const registerBodySchema = z.object({ userId: z.string().min(1) });
-export const SessionLoginPayloadSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  deviceId: z.string().uuid(),
-});
-export const SessionRegisterPayloadSchema = SessionLoginPayloadSchema.extend({
-  nickname: z.string().min(1).max(64),
-});
 const profileBodySchema = z.object({
   userId: z.string().min(1),
   nickname: z.string(),

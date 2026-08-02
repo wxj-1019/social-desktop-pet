@@ -114,6 +114,7 @@ function makeDeps() {
   };
   const openPanel = vi.fn();
   const closePanel = vi.fn();
+  const consumeDeepLinkPayload = vi.fn<() => string | null>(() => null);
   const showContextMenu = vi.fn();
   const setPassThrough = vi.fn();
   const deps: PetIpcDependencies = {
@@ -125,6 +126,7 @@ function makeDeps() {
     getDisplays: () => [{ id: 'primary', workArea: { x: 0, y: 0, width: 1000, height: 800 } }],
     openPanel,
     closePanel,
+    consumeDeepLinkPayload,
     showContextMenu,
     setPassThrough,
   };
@@ -136,6 +138,7 @@ function makeDeps() {
     profile,
     openPanel,
     closePanel,
+    consumeDeepLinkPayload,
     showContextMenu,
     setPassThrough,
     deps,
@@ -481,6 +484,23 @@ describe('panel 通道（Task 7）', () => {
 
     await handler?.(eventFrom(panel), { view: 'friends' });
     expect(panel.webContents.send).toHaveBeenCalledWith('panel:navigate', { view: 'friends' });
+  });
+
+  it('deeplink:consume-pending returns the pending payload (panel only; 拉取即清除由 deps 实现)', async () => {
+    const { panel, deps, consumeDeepLinkPayload } = makeDeps();
+    consumeDeepLinkPayload.mockReturnValue('raw-token-abc');
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.invokeHandlers.get('deeplink:consume-pending');
+
+    await expect(handler?.(eventFrom(panel), undefined)).resolves.toBe('raw-token-abc');
+  });
+
+  it('deeplink:consume-pending rejects pet-window callers', async () => {
+    const { pet, deps } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.invokeHandlers.get('deeplink:consume-pending');
+
+    await expect(handler?.(eventFrom(pet), undefined)).rejects.toThrow(IpcSenderError);
   });
 });
 

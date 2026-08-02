@@ -35,6 +35,10 @@ function b64urlDecode(input: string): string {
 
 /**
  * 解析并校验邀请链接。
+ * token 兼容两种格式：
+ * - 单段（6.3 现行，服务端 /invite 生成）：randomBytes(32).toString('base64url')，
+ *   无内嵌用户信息——userId/inviteCode 置空，消费端只依赖 rawToken（/invite/accept 按 token 校验）；
+ * - 两段（早期自造格式）：b64url(userId).b64url(inviteCode)。
  * @returns null 表示非法/格式错误链接
  */
 export function parseInviteUrl(raw: string): InvitePayload | null {
@@ -52,18 +56,23 @@ export function parseInviteUrl(raw: string): InvitePayload | null {
   const token = url.searchParams.get('token');
   if (!token) return null;
   const parts = token.split('.');
-  if (parts.length !== 2) return null;
-  const [userIdPart, codePart] = parts as [string, string];
-  if (!userIdPart || !codePart) return null;
-
-  try {
-    const userId = b64urlDecode(userIdPart);
-    const inviteCode = b64urlDecode(codePart);
-    if (!userId || !inviteCode) return null;
-    return { userId, inviteCode, rawToken: token };
-  } catch {
-    return null; // base64 解码失败 → 非法链接
+  if (parts.length === 2) {
+    const [userIdPart, codePart] = parts as [string, string];
+    if (!userIdPart || !codePart) return null;
+    try {
+      const userId = b64urlDecode(userIdPart);
+      const inviteCode = b64urlDecode(codePart);
+      if (!userId || !inviteCode) return null;
+      return { userId, inviteCode, rawToken: token };
+    } catch {
+      return null; // base64 解码失败 → 非法链接
+    }
   }
+  if (parts.length === 1 && parts[0] !== '' && /^[A-Za-z0-9_-]+$/.test(parts[0]!)) {
+    // 服务端单段 token（6.3 现行格式：base64url 字符集）
+    return { userId: '', inviteCode: '', rawToken: token };
+  }
+  return null;
 }
 
 export interface PendingStore {

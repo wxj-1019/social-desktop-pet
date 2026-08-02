@@ -56,6 +56,8 @@ export interface PetIpcDependencies {
   openPanel: (view: PanelOpen) => void;
   /** 关闭面板 */
   closePanel: () => void;
+  /** 消费主进程待投递的深链 payload（拉取即清除；C1 时序兜底） */
+  consumeDeepLinkPayload: () => string | null;
   /** 桌宠右键菜单 */
   showContextMenu: () => void;
   /** 整窗穿透切换（8.4） */
@@ -214,6 +216,8 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
     deps.getPanelWindow()?.webContents.send('panel:navigate', view);
     return view;
   });
+  // C1：深链 payload 拉取（面板挂载后消费；推送可能早于组件订阅，见 index.ts openPanel）
+  registerInvoke(deps, 'deeplink:consume-pending', 'panel', () => deps.consumeDeepLinkPayload());
 
   // ---- 档案（Task 4）：读取两窗皆可；写入仅 panel ----
   registerInvoke(deps, 'pet-profile:get', ['pet', 'panel'], () => profile.load());
