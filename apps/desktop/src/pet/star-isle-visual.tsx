@@ -51,13 +51,18 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
         </radialGradient>
       </defs>
 
-      {/* 大尾巴：从身体左下翘起，弧线回卷，尾端缀星 */}
+      {/* 大尾巴：从身体左下翘起，弧线回卷，尾端缀星；内腹浅色增加层次 */}
       <g data-part="tail" data-hit="tail" className="star-isle__tail">
         <path
           d="M 96 248 C 40 242 22 192 48 122 C 62 140 88 180 102 222 Z"
           fill={COLORS.fur}
           stroke={STROKE.color}
           strokeWidth={STROKE.width}
+        />
+        <path
+          data-part="tail-belly"
+          d="M 96 246 C 66 240 52 208 60 158 C 74 176 90 204 96 230 Z"
+          fill="#e4edfc"
         />
         <g data-part="tail-star" className="star-isle__tail-star">
           <circle cx="48" cy="120" r="26" fill="url(#star-glow)" />
@@ -141,6 +146,16 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
           fill={COLORS.fur}
           stroke={STROKE.color}
           strokeWidth={STROKE.width}
+        />
+        {/* 头顶柔和高光（刘海之下，增加立体感） */}
+        <ellipse
+          className="star-isle__headshine"
+          cx="112"
+          cy="126"
+          rx="16"
+          ry="10"
+          fill="#ffffff"
+          opacity="0.32"
         />
         {/* 刘海 */}
         <path

@@ -56,6 +56,12 @@ describe('StarIsleVisual（原创分层 SVG 星屿）', () => {
     }
   });
 
+  it('adds depth layers: tail belly and head shine', () => {
+    const html = renderToStaticMarkup(<StarIsleVisual state={DEFAULT_VISUAL_STATE} />);
+    expect(html).toContain('data-part="tail-belly"');
+    expect(html).toContain('star-isle__headshine');
+  });
+
   it('reflects motion and expression on the root svg', () => {
     const html = renderToStaticMarkup(
       <StarIsleVisual

@@ -331,13 +331,41 @@ body,
   transform-origin: 22% 92%;
 }
 
-/* 常态：idle/walk/sit 呼吸 */
+/* 常态：idle 呼吸；walk 摇摆；sit 坐姿压扁（形态动画见各自规则） */
 [data-motion='idle'] .star-isle__body,
-[data-motion='idle'] .star-isle__head,
-[data-motion='walk'] .star-isle__body,
-[data-motion='walk'] .star-isle__head,
-[data-motion='sit'] .star-isle__body {
+[data-motion='idle'] .star-isle__head {
   animation: star-isle-breathe 3.2s ease-in-out infinite;
+}
+
+/* 行走：身体轻摆 + 前肢交替踏步 */
+[data-motion='walk'] .star-isle__body {
+  animation: star-isle-walk-body 0.7s ease-in-out infinite;
+}
+[data-motion='walk'] .star-isle__head {
+  animation: star-isle-walk-head 0.7s ease-in-out infinite;
+}
+[data-motion='walk'] .star-isle__paw-left {
+  animation: star-isle-paw-step 0.7s ease-in-out infinite;
+}
+[data-motion='walk'] .star-isle__paw-right {
+  animation: star-isle-paw-step 0.7s ease-in-out infinite 0.35s;
+}
+
+/* 坐下：身体压扁、头微低、前肢收拢 */
+[data-motion='sit'] .star-isle__body {
+  animation: star-isle-sit-breathe 3.2s ease-in-out infinite;
+}
+[data-motion='sit'] .star-isle__head {
+  animation: star-isle-sit-head 3.2s ease-in-out infinite;
+}
+[data-motion='sit'] .star-isle__paw-left,
+[data-motion='sit'] .star-isle__paw-right {
+  transform: translateY(4px);
+}
+
+/* 开心：轻弹跳 */
+[data-motion='happy'] .star-isle__body {
+  animation: star-isle-bounce 0.55s ease-in-out infinite;
 }
 
 /* 尾巴摆动 */
@@ -375,9 +403,23 @@ body,
   animation: star-isle-talk 0.45s ease-in-out infinite;
 }
 
-/* 触摸：低头 */
+/* 触摸：低头，耳朵向外放松下垂 */
 [data-motion='touch'] .star-isle__head {
   animation: star-isle-touch 1.3s ease-in-out infinite;
+}
+[data-motion='touch'] .star-isle__ear-left {
+  transform: rotate(9deg);
+}
+[data-motion='touch'] .star-isle__ear-right {
+  transform: rotate(-9deg);
+}
+
+/* 待机小细节：耳尖偶尔微动（与尾巴节奏错开，增强"活着"感） */
+[data-motion='idle'] .star-isle__ear-left {
+  animation: star-isle-ear-tip 5.5s ease-in-out infinite;
+}
+[data-motion='idle'] .star-isle__ear-right {
+  animation: star-isle-ear-tip 5.5s ease-in-out infinite 0.9s;
 }
 
 /* 挥手：右前肢摆动 */
@@ -494,6 +536,81 @@ body,
   }
   50% {
     transform: translateY(6px) rotate(7deg);
+  }
+}
+
+/* 行走：身体左右轻摆、头反向微晃、前肢交替抬落 */
+@keyframes star-isle-walk-body {
+  0%,
+  100% {
+    transform: rotate(-2.5deg);
+  }
+  50% {
+    transform: rotate(2.5deg);
+  }
+}
+@keyframes star-isle-walk-head {
+  0%,
+  100% {
+    transform: rotate(2deg);
+  }
+  50% {
+    transform: rotate(-2deg);
+  }
+}
+@keyframes star-isle-paw-step {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(3.5px);
+  }
+}
+
+/* 坐姿：身体压扁微呼吸、头微低 */
+@keyframes star-isle-sit-breathe {
+  0%,
+  100% {
+    transform: scaleY(0.9);
+  }
+  50% {
+    transform: scaleY(0.93);
+  }
+}
+@keyframes star-isle-sit-head {
+  0%,
+  100% {
+    transform: translateY(7px) rotate(2deg);
+  }
+  50% {
+    transform: translateY(6px) rotate(1deg);
+  }
+}
+
+/* 开心：轻弹跳 */
+@keyframes star-isle-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-7px);
+  }
+}
+
+/* 耳尖微动：绝大部分时间静止，偶发轻抖（好奇） */
+@keyframes star-isle-ear-tip {
+  0%,
+  86%,
+  100% {
+    transform: rotate(0deg);
+  }
+  90% {
+    transform: rotate(5deg);
+  }
+  94% {
+    transform: rotate(-2deg);
   }
 }
 @keyframes star-isle-glow {
