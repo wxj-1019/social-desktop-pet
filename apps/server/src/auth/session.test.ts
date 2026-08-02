@@ -45,7 +45,10 @@ describe('SessionManager（自建 Auth refresh token 生命周期，9.8）', () 
     expect(deviceId).toBe('dev-1');
     expect(store.sessions.get(hashRefreshToken(token1))?.revokedAt).not.toBeNull();
     // 旧 token 再轮换 → 拒绝（revoked）
-    await expect(m.rotate(token1)).rejects.toThrow('revoked');
+    await expect(m.rotate(token1)).rejects.toMatchObject({
+      code: 'revoked',
+      message: 'refresh token revoked',
+    });
   });
 
   it('rejects unknown / expired tokens', async () => {
@@ -54,8 +57,14 @@ describe('SessionManager（自建 Auth refresh token 生命周期，9.8）', () 
     const m = new SessionManager(store, 30 * 24 * 60 * 60_000, () => now);
     const token = await m.createRefreshToken('u1', 'dev-1');
     store.sessions.get(hashRefreshToken(token))!.expiresAt = now - 1; // 过期
-    await expect(m.rotate(token)).rejects.toThrow('expired');
-    await expect(m.rotate('not-a-real-token')).rejects.toThrow('invalid');
+    await expect(m.rotate(token)).rejects.toMatchObject({
+      code: 'expired',
+      message: 'refresh token expired',
+    });
+    await expect(m.rotate('not-a-real-token')).rejects.toMatchObject({
+      code: 'invalid',
+      message: 'invalid refresh token',
+    });
   });
 
   it('revokeDevice() kills all sessions of that device (9.8 停用旧设备)', async () => {

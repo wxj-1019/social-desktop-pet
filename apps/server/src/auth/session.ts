@@ -18,6 +18,18 @@ export interface RefreshSession {
   revokedAt: number | null;
 }
 
+export type SessionRotationErrorCode = 'invalid' | 'revoked' | 'expired';
+
+export class SessionRotationError extends Error {
+  constructor(
+    readonly code: SessionRotationErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'SessionRotationError';
+  }
+}
+
 export interface SessionStore {
   /** 保存 refresh 会话（upsert：同一设备只留最新） */
   save(session: RefreshSession): Promise<void>;
@@ -60,9 +72,13 @@ export class SessionManager {
    */
   async rotate(token: string): Promise<{ refreshToken: string; userId: string; deviceId: string }> {
     const session = await this.store.load(hashRefreshToken(token));
-    if (!session) throw new Error('invalid refresh token');
-    if (session.revokedAt !== null) throw new Error('refresh token revoked');
-    if (this.now() > session.expiresAt) throw new Error('refresh token expired');
+    if (!session) throw new SessionRotationError('invalid', 'invalid refresh token');
+    if (session.revokedAt !== null) {
+      throw new SessionRotationError('revoked', 'refresh token revoked');
+    }
+    if (this.now() > session.expiresAt) {
+      throw new SessionRotationError('expired', 'refresh token expired');
+    }
 
     // 轮换：旧 token 立即撤销（防重放）
     await this.store.revokeDevice(session.userId, session.deviceId);

@@ -8,7 +8,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 
 import type { JwtService } from '../auth/jwt.js';
-import { hashRefreshToken } from '../auth/session.js';
+import { hashRefreshToken, SessionRotationError } from '../auth/session.js';
 import type { SessionManager, SessionStore } from '../auth/session.js';
 
 export interface AuthDeps {
@@ -74,7 +74,15 @@ export function createAuthRouter(deps: AuthDeps): Hono {
 
   app.post('/refresh', async (c) => {
     const { refreshToken } = await c.req.json();
-    const rotated = await deps.sessions.rotate(String(refreshToken));
+    let rotated: Awaited<ReturnType<SessionManager['rotate']>>;
+    try {
+      rotated = await deps.sessions.rotate(String(refreshToken));
+    } catch (error) {
+      if (error instanceof SessionRotationError) {
+        return c.json({ error: 'refresh_invalid' }, 401);
+      }
+      throw error;
+    }
     const accessToken = await deps.jwt.sign({
       sub: rotated.userId,
       deviceId: rotated.deviceId,
