@@ -9,6 +9,7 @@ import type { NodeFn } from '../runtime/types.js';
 
 import type { ChatFlowState } from './chat-flow-state.js';
 import { detectCrisis } from './crisis-rules.js';
+import { chunkDialogue, parseModelOutput } from './parse-model-output.js';
 
 /** 10.1 认证、配额、限流 */
 export const authNode: NodeFn<ChatFlowState> = async (
@@ -69,11 +70,17 @@ export const buildContextNode: NodeFn<ChatFlowState> = async (
 /**
  * 10.4 人格 system prompt（简版；第 7–10 周完善层级人格）。
  * 安全约束：不承诺永久陪伴/依赖关系（10.4 反 sycophancy/反永久承诺）。
+ * 10.2 输出契约：prompt 约束单行 JSON（无 response_format 依赖，容错解析兜底）。
  */
 export const PET_SYSTEM_PROMPT =
   '你是一只陪伴用户的桌面宠物，语气温暖、简短、口语化（1-3 句话）。' +
   '不要说"我永远不会离开你"之类的永久承诺，不要假装是人类。' +
-  '如果用户提到自伤/伤害他人，停止闲聊并建议联系专业帮助。';
+  '如果用户提到自伤/伤害他人，停止闲聊并建议联系专业帮助。' +
+  '请严格输出单行 JSON（不要 Markdown 代码块、不要额外文字）：' +
+  '{"dialogue":"你的回复（1-3句，温暖简短口语化）",' +
+  '"emotion":"neutral|warm|happy|sad|surprised|shy|apologetic|concerned",' +
+  '"actionIntent":"idle|wave|nod|shake_head|touch|sit|sleep|walk|cheer|comfort",' +
+  '"intensity":1-5 的整数}';
 
 /** generateNode 工厂：注入 llm 走真实模型；无 llm 降级骨架（框架阶段行为不变） */
 export function generateNodeFactory(llm?: LlmClient): NodeFn<ChatFlowState> {
@@ -96,21 +103,31 @@ export function generateNodeFactory(llm?: LlmClient): NodeFn<ChatFlowState> {
       };
     }
 
-    // 真实模型：10.2 输出契约（dialogue ≤600；emotion/actionIntent 的结构化解析
-    // 在第 7–10 周随分类器一起完善，当前用安全默认值）
-    const dialogue = await llm.streamChat(
+    // 真实模型：10.2 输出契约 —— prompt 约束单行 JSON（无 response_format 依赖）。
+    // 原始 token 先收集到局部 buffer（不外发），完成后容错解析出结构化字段，
+    // 再把解析后的 dialogue 按 chunk 模拟流式（不泄露 JSON 骨架到客户端）。
+    let buffer = '';
+    await llm.streamChat(
       [
         { role: 'system', content: PET_SYSTEM_PROMPT },
         { role: 'user', content: state.userMessage },
       ],
-      (t) => ctx.emit({ type: 'token', text: t }),
+      (t) => {
+        buffer += t;
+      },
     );
+    const parsed = parseModelOutput(buffer);
+    for (const chunk of chunkDialogue(parsed.dialogue)) {
+      ctx.emit({ type: 'token', text: chunk });
+      // 模拟流式节奏（12-15ms；chunk size 4 → ≤600 字符 ≈ ≤150 chunk ≈ 2.2s 内）
+      await new Promise((r) => setTimeout(r, 15));
+    }
     return {
       modelOutput: {
-        dialogue: dialogue.slice(0, 600),
-        emotion: 'neutral',
-        actionIntent: 'idle',
-        intensity: 1,
+        dialogue: parsed.dialogue,
+        emotion: parsed.emotion,
+        actionIntent: parsed.actionIntent,
+        intensity: parsed.intensity,
       },
     };
   };

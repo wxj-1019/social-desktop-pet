@@ -7,3 +7,4 @@ export * from './graphs/chat-flow-nodes.js';
 export * from './graphs/memory-extract.js';
 export * from './llm/types.js';
 export * from './graphs/crisis-rules.js';
+export * from './graphs/parse-model-output.js';
