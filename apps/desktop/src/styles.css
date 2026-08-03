@@ -368,17 +368,31 @@ body,
   animation: star-isle-bounce 0.55s ease-in-out infinite;
 }
 
-/* 尾巴摆动 */
-[data-motion='idle'] .star-isle__tail,
-[data-motion='walk'] .star-isle__tail,
+/* 尾巴摆动（非对称）：idle 慢摆、walk 随步伐、sit 保留轻摆 */
+[data-motion='idle'] .star-isle__tail {
+  animation: star-isle-tail 2.8s ease-in-out infinite;
+}
+[data-motion='walk'] .star-isle__tail {
+  animation: star-isle-tail 0.7s ease-in-out infinite;
+}
 [data-motion='sit'] .star-isle__tail {
   animation: star-isle-tail 2.8s ease-in-out infinite;
 }
 [data-motion='happy'] .star-isle__tail {
-  animation: star-isle-tail 1.4s ease-in-out infinite;
+  animation: star-isle-tail 1.2s ease-in-out infinite;
+}
+[data-motion='sad'] .star-isle__tail {
+  animation: star-isle-tail-sad 5s ease-in-out infinite;
 }
 [data-motion='happy'] .star-isle__tail-star {
   animation: star-isle-glow 1.2s ease-in-out infinite;
+}
+
+/* 尾端星延迟跟随摆动（idle/walk/sit；特异性高于下方常亮呼吸规则） */
+[data-motion='idle'] .star-isle__tail-star,
+[data-motion='walk'] .star-isle__tail-star,
+[data-motion='sit'] .star-isle__tail-star {
+  animation: star-isle-tail-star 2.8s ease-in-out infinite 0.15s;
 }
 
 /* 睡眠：缓慢呼吸、闭眼、慢摆尾 */
@@ -509,13 +523,34 @@ body,
     transform: scaleY(0.08);
   }
 }
+/* 尾巴非对称摆：快摆到位（30%）、慢速回摆（70% 占空比），尾部惯性感 */
 @keyframes star-isle-tail {
   0%,
   100% {
     transform: rotate(0deg);
   }
-  50% {
+  30% {
     transform: rotate(9deg);
+  }
+}
+/* 难过：尾巴下垂慢摆（向下压后轻微回摆） */
+@keyframes star-isle-tail-sad {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(-1deg);
+  }
+}
+/* 尾端星：同向摆动但延迟 0.15s（余韵感），幅度为尾巴的约 60% */
+@keyframes star-isle-tail-star {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  30% {
+    transform: rotate(5.5deg);
   }
 }
 @keyframes star-isle-talk {
