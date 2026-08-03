@@ -8,6 +8,8 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   // config 位于 e2e/ 下，testDir 相对于 config 文件位置
   testDir: '.',
+  // 本地环境自愈：后端可达时预置测试账号/好友（不可达则静默跳过，CI 无后端）
+  globalSetup: './helpers/global-setup.ts',
   timeout: 60_000,
   retries: 0,
   reporter: [['list']],
