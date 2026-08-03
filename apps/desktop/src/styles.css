@@ -417,7 +417,13 @@ body,
   animation: star-isle-talk 0.45s ease-in-out infinite;
 }
 
-/* 触摸：低头，耳朵向外放松下垂 */
+/* 耳朵绕根部旋转（默认 transform-origin 是部件包围盒中心） */
+.star-isle__ear-left,
+.star-isle__ear-right {
+  transform-origin: 50% 92%;
+}
+
+/* 触摸：低头，耳朵向外放松下垂（保留；rotate 方向沿用现状） */
 [data-motion='touch'] .star-isle__head {
   animation: star-isle-touch 1.3s ease-in-out infinite;
 }
@@ -428,12 +434,22 @@ body,
   transform: rotate(-9deg);
 }
 
-/* 待机小细节：耳尖偶尔微动（与尾巴节奏错开，增强"活着"感） */
+/* 待机：偶发好奇竖起（左右异步：左 0s / 右 0.7s） */
 [data-motion='idle'] .star-isle__ear-left {
-  animation: star-isle-ear-tip 5.5s ease-in-out infinite;
+  animation: star-isle-ear-perk-left 5.5s ease-in-out infinite;
 }
 [data-motion='idle'] .star-isle__ear-right {
-  animation: star-isle-ear-tip 5.5s ease-in-out infinite 0.9s;
+  animation: star-isle-ear-perk-right 5.5s ease-in-out infinite 0.7s;
+}
+
+/* 难过/睡眠：双耳缓慢下垂（与垂尾同节奏） */
+[data-motion='sad'] .star-isle__ear-left,
+[data-motion='sleep'] .star-isle__ear-left {
+  animation: star-isle-ear-drop-left 5s ease-in-out infinite;
+}
+[data-motion='sad'] .star-isle__ear-right,
+[data-motion='sleep'] .star-isle__ear-right {
+  animation: star-isle-ear-drop-right 5s ease-in-out infinite;
 }
 
 /* 挥手：右前肢摆动 */
@@ -634,18 +650,50 @@ body,
   }
 }
 
-/* 耳尖微动：绝大部分时间静止，偶发轻抖（好奇） */
-@keyframes star-isle-ear-tip {
+/* 耳尖微动：偶发"好奇竖起"——对称外展（左右正负角拆分），回弹微过冲 */
+@keyframes star-isle-ear-perk-left {
   0%,
-  86%,
+  84%,
   100% {
     transform: rotate(0deg);
   }
   90% {
-    transform: rotate(5deg);
+    transform: rotate(-9deg);
   }
-  94% {
+  95% {
+    transform: rotate(2deg);
+  }
+}
+@keyframes star-isle-ear-perk-right {
+  0%,
+  84%,
+  100% {
+    transform: rotate(0deg);
+  }
+  90% {
+    transform: rotate(9deg);
+  }
+  95% {
     transform: rotate(-2deg);
+  }
+}
+/* 放松下垂（sad/sleep）：对称下压 + 缓慢微喘 */
+@keyframes star-isle-ear-drop-left {
+  0%,
+  100% {
+    transform: rotate(-8deg);
+  }
+  50% {
+    transform: rotate(-6deg);
+  }
+}
+@keyframes star-isle-ear-drop-right {
+  0%,
+  100% {
+    transform: rotate(8deg);
+  }
+  50% {
+    transform: rotate(6deg);
   }
 }
 @keyframes star-isle-glow {
