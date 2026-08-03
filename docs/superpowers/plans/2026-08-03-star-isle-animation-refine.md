@@ -558,6 +558,15 @@ e) 新私有方法（`armBootTimeout` 前插入）：
 
 说明：`transition('WALKING')` 先于 `requestAction`——WALKING 白名单含 `walk`，审批必过；`requestAction`（public，215 行）approved 时已 emit `motion: 'walk'`，无需重复广播；`transition` 失败（非 IDLE 竞态）时 `machine.transition` 返回 false 但会吞掉——`startWander` 已先判 `current === 'IDLE'`，无竞态入口（单线程 Main）。
 
+**实现期修订（活动窗口，防降级不可达）**：溜达循环使 IDLE 连续时长永远 < 180s，空闲降级（SITTING/SLEEPING）在 Controller 层不可达。修订：
+
+- 常量 `WANDER_STOP_IDLE_MS = 150_000`（< 180s 降级阈值）；
+- 字段 `lastActivityAt`；`nowMs()` 私有方法（`options.now?.() ?? Date.now()`）；
+- `start()` 与 `handleInteraction` / `handleChat` / `handleSocialEvent` 开头刷新 `lastActivityAt`；
+- `armWanderTimer` 检查 `nowMs() - lastActivityAt > WANDER_STOP_IDLE_MS` 则不再挂起——久置无活动后溜达停止，降级自然发生；
+- 测试：首个测试降级断言改为 `advanceTimersByTime(500_000 - 1_200)` 后断言 SITTING（最坏末轮溜达结束 ≤245s，+180s → SITTING；500s 内不到 SLEEPING）；新增"交互刷新活动窗口"测试（130s 时触摸，再 90s 仍见 WALKING）；
+- 提交：`fix(pet): stop wander beyond activity window so idle degrade to SITTING stays reachable`（在 Task 5 主提交之后、独立提交）。
+
 - [ ] **Step 5: 确认通过**
 
 Run: `npx vitest run apps/desktop/electron/main/pet-runtime-controller.test.ts`

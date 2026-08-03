@@ -196,6 +196,7 @@ IDLE ──(随机 30–90s)──▶ WALKING ──(3–5s)──▶ IDLE
   - 定时器（随机 30–90s）到点且当前为 IDLE → `requestAction({ intent: 'walk' })`（WALKING 白名单含 walk，审批通过）；
   - 进入 WALKING 后设 3–5s 返回定时器 → 回 IDLE；
   - 调度器在 `QUIET/HIDDEN/SLEEPING/OFFLINE` 下不触发，已有状态已触发时跳过（避免打断礼物/聊天反应）；
+  - **活动窗口（实现期修订）**：记录 `lastActivityAt`（start / 交互 / 聊天 / 社交事件时刷新）；距最后活动超过 150s（< 180s 降级阈值）后不再挂起溜达定时器——否则溜达循环使 IDLE 连续时长永远 < 180s，空闲降级（SITTING/SLEEPING）不可达。活跃期溜达与久置入睡共存；
   - **计时器依赖注入**（现 `TICK_MS` 已有构造注入先例），单测可用假定时器；
 - **pet-state 零改动**：`IDLE ↔ WALKING` 转换、WALKING 白名单 `['idle','walk']` 均已就绪；
 - **联动检查**：溜达中收到送礼（`handleSocialEvent`）→ cheer 不在 WALKING 白名单，动作被审批拒绝，但 happy 表情与送礼气泡仍正常播放——可接受（溜达为 3–5s 短时状态）；聊天进入 CHATTING 同理，状态机转换优先于溜达返回定时器（返回定时器触发时若已不在 WALKING 则忽略）。
