@@ -337,7 +337,7 @@ body,
   animation: star-isle-breathe 3.2s ease-in-out infinite;
 }
 
-/* 行走：身体轻摆 + 前肢交替踏步 */
+/* 行走：身体 bob + 前肢交替划动 + 后足对角步态 + 尾巴随步（尾巴规则见尾巴区） */
 [data-motion='walk'] .star-isle__body {
   animation: star-isle-walk-body 0.7s ease-in-out infinite;
 }
@@ -345,10 +345,16 @@ body,
   animation: star-isle-walk-head 0.7s ease-in-out infinite;
 }
 [data-motion='walk'] .star-isle__paw-left {
-  animation: star-isle-paw-step 0.7s ease-in-out infinite;
+  animation: star-isle-paw-step-left 0.7s ease-in-out infinite;
 }
 [data-motion='walk'] .star-isle__paw-right {
-  animation: star-isle-paw-step 0.7s ease-in-out infinite 0.35s;
+  animation: star-isle-paw-step-right 0.7s ease-in-out infinite 0.35s;
+}
+[data-motion='walk'] .star-isle__foot-left {
+  animation: star-isle-foot-step-left 0.7s ease-in-out infinite 0.35s;
+}
+[data-motion='walk'] .star-isle__foot-right {
+  animation: star-isle-foot-step-right 0.7s ease-in-out infinite;
 }
 
 /* 坐下：身体压扁、头微低、前肢收拢 */
@@ -590,32 +596,68 @@ body,
   }
 }
 
-/* 行走：身体左右轻摆、头反向微晃、前肢交替抬落 */
+/* 行走（0.7s 两步循环）：身体 bob + 轻摆合并进同一关键帧 transform */
 @keyframes star-isle-walk-body {
   0%,
   100% {
-    transform: rotate(-2.5deg);
+    transform: rotate(-2.5deg) translateY(0);
+  }
+  25% {
+    transform: rotate(0deg) translateY(-3px);
   }
   50% {
-    transform: rotate(2.5deg);
+    transform: rotate(2.5deg) translateY(0);
+  }
+  75% {
+    transform: rotate(0deg) translateY(-3px);
   }
 }
+/* 头：反向微晃 + 轻微点头 */
 @keyframes star-isle-walk-head {
   0%,
   100% {
-    transform: rotate(2deg);
+    transform: rotate(2deg) translateY(0);
   }
   50% {
-    transform: rotate(-2deg);
+    transform: rotate(-2deg) translateY(1px);
   }
 }
-@keyframes star-isle-paw-step {
+/* 前肢交替划动（左右正负角拆分）：前划 + 微抬 */
+@keyframes star-isle-paw-step-left {
   0%,
   100% {
-    transform: translateY(0);
+    transform: rotate(0deg) translateY(0);
   }
   50% {
-    transform: translateY(3.5px);
+    transform: rotate(-8deg) translateY(3px);
+  }
+}
+@keyframes star-isle-paw-step-right {
+  0%,
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  50% {
+    transform: rotate(8deg) translateY(3px);
+  }
+}
+/* 后足对角步态：与对侧前肢同相（左后足随右前肢，右后足随左前肢） */
+@keyframes star-isle-foot-step-left {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(-5deg);
+  }
+}
+@keyframes star-isle-foot-step-right {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(5deg);
   }
 }
 
