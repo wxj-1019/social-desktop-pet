@@ -444,9 +444,14 @@ if (process.env['PET_E2E'] === '1') {
         return win ? { bounds: win.getBounds(), visible: win.isVisible() } : null;
       },
       getWindowState: (surface: 'pet' | 'panel') => {
-        const match = BrowserWindow.getAllWindows().find((w) =>
-          w.webContents.getURL().includes(`surface=${surface}`),
-        );
+        const match = BrowserWindow.getAllWindows().find((w) => {
+          try {
+            return w.webContents.getURL().includes(`surface=${surface}`);
+          } catch {
+            // 窗口 close 异步：webContents 可能已销毁（e2e 轮询竞态），跳过
+            return false;
+          }
+        });
         return match ? { bounds: match.getBounds(), visible: match.isVisible() } : null;
       },
     },
