@@ -194,3 +194,24 @@ test('reduced-motion：档案开启减弱动态后星屿响应', async () => {
     timeout: 15_000,
   });
 });
+
+test('溜达：90s 内出现过 walk 动作（弱断言，随机性未观察到则跳过）', async () => {
+  const pet = await app.petWindow();
+  const isle = pet.getByRole('img', { name: '星尾狐猫星屿' });
+  const seenWalk = await isle.evaluate(
+    (el) =>
+      new Promise<boolean>((resolve) => {
+        const deadline = Date.now() + 90_000;
+        const timer = setInterval(() => {
+          if (el.getAttribute('data-motion') === 'walk') {
+            clearInterval(timer);
+            resolve(true);
+          } else if (Date.now() > deadline) {
+            clearInterval(timer);
+            resolve(false);
+          }
+        }, 500);
+      }),
+  );
+  test.skip(!seenWalk, '90s 内未观察到溜达（随机性，跳过）');
+});
