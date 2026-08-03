@@ -5,6 +5,7 @@ import { PetRuntimeController } from './pet-runtime-controller.js';
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 function makeRuntime(visuals: PetVisualCommand[], snapshots: PetRuntimeSnapshot[]) {
@@ -15,7 +16,7 @@ function makeRuntime(visuals: PetVisualCommand[], snapshots: PetRuntimeSnapshot[
 }
 
 describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
-  it('boots to IDLE, broadcasts happy stretch, then degrades to SITTING/SLEEPING', () => {
+  it('boots to IDLE, broadcasts happy stretch, then degrades to SITTING after the activity window', () => {
     vi.useFakeTimers();
     const snapshots: PetRuntimeSnapshot[] = [];
     const visuals: PetVisualCommand[] = [];
@@ -29,12 +30,13 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     vi.advanceTimersByTime(1_200);
     expect(visuals).toContainEqual({ type: 'motion', motion: 'idle', intensity: 1 });
 
-    // 180s 空闲降级 → SITTING；再 600s → SLEEPING，状态切换广播 stateToMotion
-    vi.advanceTimersByTime(180_000 - 1_200);
+    // 活动窗口（150s）过后停止溜达，空闲降级可达：最坏末轮溜达结束 ≤245s，+180s → SITTING（500s 内不会到 SLEEPING）
+    vi.advanceTimersByTime(500_000 - 1_200);
     expect(snapshots.at(-1)?.state).toBe('SITTING');
     expect(visuals).toContainEqual({ type: 'motion', motion: 'sit', intensity: 1 });
 
-    vi.advanceTimersByTime(600_000);
+    // SITTING 连续 600s → SLEEPING（窗口已过，溜达不再重挂，确定性）
+    vi.advanceTimersByTime(610_000);
     expect(snapshots.at(-1)?.state).toBe('SLEEPING');
     expect(visuals).toContainEqual({ type: 'motion', motion: 'sleep', intensity: 1 });
 
@@ -42,7 +44,7 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('stops all timers while hidden and restores exactly one tick on unhide', () => {
+  it('stops all timers while hidden and restores tick + wander timers on unhide', () => {
     vi.useFakeTimers();
     const snapshots: PetRuntimeSnapshot[] = [];
     const visuals: PetVisualCommand[] = [];
@@ -61,7 +63,8 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
 
     runtime.setHidden(false);
     expect(runtime.snapshot.state).toBe('IDLE');
-    expect(vi.getTimerCount()).toBe(1);
+    // tick + wander 两个定时器
+    expect(vi.getTimerCount()).toBe(2);
 
     runtime.stop();
     expect(vi.getTimerCount()).toBe(0);
@@ -85,6 +88,87 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     expect(visuals.filter((c) => c.type === 'motion' && c.motion === 'wave')).toHaveLength(0);
 
     runtime.stop();
+  });
+
+  it('wanders: random 30-90s enters WALKING, then returns to IDLE after 3-5s', () => {
+    vi.useFakeTimers();
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const visuals: PetVisualCommand[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+
+    // 90s 推进必触发溜达（随机上限 90s，延迟 < 90s）；期间 tick 不降级（180s 才 SITTING）
+    vi.advanceTimersByTime(90_000);
+    const walkingIdx = snapshots.findIndex((s) => s.state === 'WALKING');
+    expect(walkingIdx).toBeGreaterThanOrEqual(0);
+    expect(visuals).toContainEqual({ type: 'motion', motion: 'walk', intensity: 1 });
+
+    // 溜达 3-5s 后回 IDLE（结束定时器上限 5s；回 IDLE 后 30-90s 才可能再溜达）
+    vi.advanceTimersByTime(5_000);
+    expect(snapshots.slice(walkingIdx).some((s) => s.state === 'IDLE')).toBe(true);
+
+    runtime.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not wander while QUIET (rearms instead of entering WALKING)', () => {
+    vi.useFakeTimers();
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const visuals: PetVisualCommand[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+    runtime.setDnd(true);
+
+    vi.advanceTimersByTime(90_000);
+    expect(runtime.snapshot.state).toBe('QUIET');
+    expect(snapshots.every((s) => s.state !== 'WALKING')).toBe(true);
+
+    runtime.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('interaction refreshes the activity window (wander continues after touch)', () => {
+    vi.useFakeTimers();
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const visuals: PetVisualCommand[] = [];
+    // 固定随机值 → 溜达延迟 60s、持续 4s（30s + r*60s / 3s + r*2s），轮次可精确预期：60/124/188/252s
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+
+    // 130s 触摸刷新活动窗口（延至 280s）：若不刷新，150s 后不再挂溜达，第 4 轮（252s）不会触发
+    vi.advanceTimersByTime(130_000);
+    runtime.handleInteraction({ kind: 'head_touch' });
+    vi.advanceTimersByTime(150_000);
+    expect(snapshots.filter((s) => s.state === 'WALKING').length).toBeGreaterThanOrEqual(4);
+
+    runtime.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('re-arms after a walk-cooldown rejection (chat walk within 15s)', () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0.5); // 溜达延迟 60s
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const visuals: PetVisualCommand[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+
+    // 55s 时聊天输出 walk 动作（进入 15s 冷却）
+    vi.advanceTimersByTime(55_000);
+    runtime.requestAction({ intent: 'walk', source: 'cloud_ai' });
+    expect(visuals).toContainEqual({ type: 'motion', motion: 'walk', intensity: 1 });
+
+    // t=60s 溜达到点 → walk 冷却中 → 本轮跳过（无 WALKING 快照）
+    vi.advanceTimersByTime(5_000);
+    expect(snapshots.every((s) => s.state !== 'WALKING')).toBe(true);
+
+    // 修复后重挂：下一轮 t=120s（冷却已过 70s）→ 溜达成功
+    vi.advanceTimersByTime(60_000);
+    expect(snapshots.some((s) => s.state === 'WALKING')).toBe(true);
+
+    runtime.stop();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('maps head/body/tail touches to approved visuals and ignores UI-only clicks', () => {

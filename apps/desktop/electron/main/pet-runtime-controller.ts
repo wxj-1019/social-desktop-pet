@@ -34,6 +34,14 @@ const TICK_MS = 5_000;
 /** 启动伸懒腰动画结束后回到 idle 的延时 */
 const BOOT_STRETCH_MS = 1_200;
 
+/** 溜达调度（7.2 idle 随机溜达）：开始延迟 30-90s、持续 3-5s */
+const WANDER_MIN_DELAY_MS = 30_000;
+const WANDER_MAX_DELAY_MS = 90_000;
+const WANDER_DURATION_MIN_MS = 3_000;
+const WANDER_DURATION_MAX_MS = 5_000;
+/** 活动窗口：距最近一次用户/系统活动超过该时长后停止溜达，让空闲降级（SITTING）可达 */
+const WANDER_STOP_IDLE_MS = 150_000;
+
 /** 点心名称映射（送礼气泡显示文案；未知 id 回退"点心"） */
 export function snackLabel(snackId: string): string {
   switch (snackId) {
@@ -77,11 +85,15 @@ export class PetRuntimeController {
 
   private interval: ReturnType<typeof globalThis.setInterval> | null = null;
   private bootTimeout: ReturnType<typeof globalThis.setTimeout> | null = null;
+  private wanderTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  private wanderEndTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   private online = true;
   private dnd = false;
   private hidden = false;
   private started = false;
   private stopped = false;
+  /** 最近一次用户/系统活动时刻（活动窗口起点；溜达仅在窗口内挂起） */
+  private lastActivityAt = 0;
 
   constructor(options: PetRuntimeOptions) {
     this.options = options;
@@ -96,6 +108,7 @@ export class PetRuntimeController {
   start(): void {
     if (this.stopped || this.started) return;
     this.started = true;
+    this.lastActivityAt = this.nowMs();
     this.enterModeState('boot');
     this.emitSnapshot();
     this.emitVisual({ type: 'motion', motion: 'happy', intensity: 1 }); // 伸懒腰开场（7.2）
@@ -141,6 +154,7 @@ export class PetRuntimeController {
 
   handleInteraction(interaction: PetInteraction): void {
     if (this.stopped) return;
+    this.lastActivityAt = this.nowMs();
     let intent: ActionIntent;
     switch (interaction.kind) {
       case 'head_touch':
@@ -168,6 +182,7 @@ export class PetRuntimeController {
 
   handleChat(event: PetChatEvent): void {
     if (this.stopped) return;
+    this.lastActivityAt = this.nowMs();
     switch (event.phase) {
       case 'start':
         this.handleChatStart(event);
@@ -190,6 +205,7 @@ export class PetRuntimeController {
    */
   handleSocialEvent(event: PetSocialEvent): void {
     if (this.stopped) return;
+    this.lastActivityAt = this.nowMs();
     if (this.machine.current === 'QUIET' || this.machine.current === 'HIDDEN') return;
 
     // 表情是情绪，不经动作审批（9.4 收到礼物的第一反应）
@@ -352,6 +368,65 @@ export class PetRuntimeController {
     if (this.interval === null) {
       this.interval = this.setIntervalFn(() => this.onTick(), TICK_MS);
     }
+    this.armWanderTimer();
+  }
+
+  /** 当前时间（与 state machine 同一时钟源：options.now 注入或 Date.now） */
+  private nowMs(): number {
+    return this.options.now?.() ?? Date.now();
+  }
+
+  /** 挂起溜达开始定时器（30-90s 随机；已挂起/隐藏时不重复挂） */
+  private armWanderTimer(): void {
+    if (this.stopped || this.hidden || this.wanderTimer !== null) return;
+    if (this.nowMs() - this.lastActivityAt > WANDER_STOP_IDLE_MS) return; // 久置无活动：停止溜达，让空闲降级可达
+    const delay =
+      WANDER_MIN_DELAY_MS + Math.floor(Math.random() * (WANDER_MAX_DELAY_MS - WANDER_MIN_DELAY_MS));
+    this.wanderTimer = this.setTimeoutFn(() => {
+      this.wanderTimer = null;
+      this.startWander();
+    }, delay);
+  }
+
+  /** 溜达开始：仅 IDLE 时进入 WALKING（QUIET/SLEEPING/OFFLINE 等重新挂起）；walk 经动作审批 */
+  private startWander(): void {
+    if (this.stopped) return;
+    if (this.machine.current !== 'IDLE') {
+      this.armWanderTimer();
+      return;
+    }
+    this.machine.transition('WALKING', 'wander_start');
+    const decision = this.requestAction({ intent: 'walk', source: 'system' });
+    if (!decision.approved) {
+      // walk 冷却中（聊天输出可能刚用过 walk）：本轮跳过，重新挂起下一轮
+      this.machine.transition('IDLE', 'wander_abort');
+      this.armWanderTimer();
+      return;
+    }
+    this.emitSnapshot();
+    this.wanderEndTimer = this.setTimeoutFn(
+      () => {
+        this.wanderEndTimer = null;
+        this.endWander();
+      },
+      WANDER_DURATION_MIN_MS +
+        Math.floor(Math.random() * (WANDER_DURATION_MAX_MS - WANDER_DURATION_MIN_MS)),
+    );
+  }
+
+  /** 溜达结束：仍在 WALKING 才回 IDLE；随后重新挂起下一轮 */
+  private endWander(): void {
+    if (this.stopped) return;
+    if (this.machine.current === 'WALKING') {
+      this.machine.transition('IDLE', 'wander_done');
+      this.emitSnapshot();
+      this.emitVisual({
+        type: 'motion',
+        motion: stateToMotion(this.machine.current),
+        intensity: 1,
+      });
+    }
+    this.armWanderTimer();
   }
 
   /** 启动伸懒腰 1.2s 后回到 idle 动作（一次性） */
@@ -376,6 +451,14 @@ export class PetRuntimeController {
     if (this.bootTimeout !== null) {
       this.clearTimeoutFn(this.bootTimeout);
       this.bootTimeout = null;
+    }
+    if (this.wanderTimer !== null) {
+      this.clearTimeoutFn(this.wanderTimer);
+      this.wanderTimer = null;
+    }
+    if (this.wanderEndTimer !== null) {
+      this.clearTimeoutFn(this.wanderEndTimer);
+      this.wanderEndTimer = null;
     }
   }
 }

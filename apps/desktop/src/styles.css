@@ -8,6 +8,15 @@
      .tab.active 等）的样式唯一来源是 panel.css（旧星空深色规则已移除）。
    - [data-reduced-motion='true'] 全局禁动规则必须保留在文件末尾。 */
 
+:root {
+  color-scheme: light dark;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+}
+
 html,
 body,
 #root {
@@ -20,12 +29,24 @@ body,
   font-family: 'Microsoft YaHei UI', 'PingFang SC', system-ui, sans-serif;
 }
 
+.pet-stage {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+}
+
 /* ---- 星屿（StarIsle）原创 SVG 视觉 ---- */
 .star-isle {
   width: 100%;
   height: 100%;
   display: block;
   overflow: visible;
+  /* 生命感缓动：弹性过冲（弹跳/挥动/惊吓）与惯性（摆动甩出后缓回） */
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-inert: cubic-bezier(0.22, 1, 0.36, 1);
   /* 动作幅度基准（intensity=1）；2/3 档见下方修饰规则 */
   --amp-bounce-y: -7px;
   --amp-wave-deg: -16deg;
@@ -47,10 +68,15 @@ body,
   --amp-surprised-x: 1.13;
 }
 
-/* 所有部件默认以自身包围盒为变换原点，便于纯 CSS 动画 */
+/* 所有部件默认以自身包围盒为变换原点，便于纯 CSS 动画。
+   transition 仅覆盖"动画↔静态"切换（animation 运行期间不生效），
+   让 motion 切换时部件平滑回位而非硬跳；opacity 保留表情淡入淡出 */
 .star-isle [class*='star-isle__'] {
   transform-box: fill-box;
   transform-origin: center;
+  transition:
+    transform 0.18s ease-out,
+    opacity 0.22s ease;
 }
 
 /* 透明命中区：接收指针事件但不参与视觉（fill 由 SVG 属性透明） */
@@ -78,7 +104,10 @@ body,
   animation: star-isle-breathe 3.2s ease-in-out infinite;
 }
 
-/* 行走：身体轻摆 + 前肢交替踏步 */
+/* 行走：整只同步 bob（rig 纯平移）+ 身体摆 + 前肢交替划动 + 后足对角步态 + 尾巴随步 */
+[data-motion='walk'] .star-isle__rig {
+  animation: star-isle-walk-bob 0.7s ease-in-out infinite;
+}
 [data-motion='walk'] .star-isle__body {
   animation: star-isle-walk-body 0.7s ease-in-out infinite;
 }
@@ -86,10 +115,16 @@ body,
   animation: star-isle-walk-head 0.7s ease-in-out infinite;
 }
 [data-motion='walk'] .star-isle__paw-left {
-  animation: star-isle-paw-step 0.7s ease-in-out infinite;
+  animation: star-isle-paw-step-left 0.7s ease-in-out infinite;
 }
 [data-motion='walk'] .star-isle__paw-right {
-  animation: star-isle-paw-step 0.7s ease-in-out infinite 0.35s;
+  animation: star-isle-paw-step-right 0.7s ease-in-out infinite 0.35s;
+}
+[data-motion='walk'] .star-isle__foot-left {
+  animation: star-isle-foot-step-left 0.7s ease-in-out infinite 0.35s;
+}
+[data-motion='walk'] .star-isle__foot-right {
+  animation: star-isle-foot-step-right 0.7s ease-in-out infinite;
 }
 
 /* 坐下：身体压扁、头微低、前肢收拢 */
@@ -104,22 +139,39 @@ body,
   transform: translateY(4px);
 }
 
-/* 开心：轻弹跳 */
-[data-motion='happy'] .star-isle__body {
+/* 开心：整只轻弹跳（rig 承担——头/四肢/尾巴同步起伏，不再头身分离） */
+[data-motion='happy'] .star-isle__rig {
   animation: star-isle-bounce 0.55s ease-in-out infinite;
 }
 
-/* 尾巴摆动 */
-[data-motion='idle'] .star-isle__tail,
-[data-motion='walk'] .star-isle__tail,
+/* 尾巴摆动（非对称）：idle 慢摆、walk 随步伐、sit 保留轻摆 */
+[data-motion='idle'] .star-isle__tail {
+  animation: star-isle-tail 2.8s ease-in-out infinite;
+}
+[data-motion='walk'] .star-isle__tail {
+  animation: star-isle-tail-walk 0.7s ease-in-out infinite;
+}
 [data-motion='sit'] .star-isle__tail {
   animation: star-isle-tail 2.8s ease-in-out infinite;
 }
 [data-motion='happy'] .star-isle__tail {
-  animation: star-isle-tail 1.4s ease-in-out infinite;
+  animation: star-isle-tail-happy 1.2s ease-in-out infinite;
+}
+[data-motion='sad'] .star-isle__tail {
+  animation: star-isle-tail-sad 5s ease-in-out infinite;
 }
 [data-motion='happy'] .star-isle__tail-star {
   animation: star-isle-glow 1.2s ease-in-out infinite;
+}
+
+/* 尾端星延迟跟随摆动（idle/sit；特异性高于下方常亮呼吸规则） */
+[data-motion='idle'] .star-isle__tail-star,
+[data-motion='sit'] .star-isle__tail-star {
+  animation: star-isle-tail-star 2.8s ease-in-out infinite 0.15s;
+}
+/* 走路尾星随步伐同频（0.7s 与尾巴一致） */
+[data-motion='walk'] .star-isle__tail-star {
+  animation: star-isle-tail-star 0.7s ease-in-out infinite 0.15s;
 }
 
 /* 睡眠：缓慢呼吸、闭眼、慢摆尾 */
@@ -135,7 +187,7 @@ body,
   transform: scaleY(0.08);
 }
 
-/* 说话嘴型（data-motion / data-speaking 均可触发）；平时张嘴隐藏 */
+/* 说话嘴型（data-motion / data-speaking 均可触发）；平时张嘴隐藏，避免双嘴叠加 */
 .star-isle__mouth-open {
   opacity: 0;
 }
@@ -154,7 +206,13 @@ body,
   opacity: 1;
 }
 
-/* 触摸：低头，耳朵向外放松下垂 */
+/* 耳朵绕根部旋转（默认 transform-origin 是部件包围盒中心） */
+.star-isle__ear-left,
+.star-isle__ear-right {
+  transform-origin: 50% 92%;
+}
+
+/* 触摸：低头，耳朵向外放松下垂（保留；rotate 方向沿用现状） */
 [data-motion='touch'] .star-isle__head {
   animation: star-isle-touch 1.3s ease-in-out infinite;
 }
@@ -165,12 +223,27 @@ body,
   transform: rotate(-9deg);
 }
 
-/* 待机小细节：耳尖偶尔微动（与尾巴节奏错开，增强"活着"感） */
+/* 待机：偶发好奇竖起（左右异步：左 0s / 右 0.7s） */
 [data-motion='idle'] .star-isle__ear-left {
-  animation: star-isle-ear-tip 5.5s ease-in-out infinite;
+  animation: star-isle-ear-perk-left 5.5s ease-in-out infinite;
 }
 [data-motion='idle'] .star-isle__ear-right {
-  animation: star-isle-ear-tip 5.5s ease-in-out infinite 0.9s;
+  animation: star-isle-ear-perk-right 5.5s ease-in-out infinite 0.7s;
+}
+
+/* 难过：双耳缓慢下垂（5s 慢节奏） */
+[data-motion='sad'] .star-isle__ear-left {
+  animation: star-isle-ear-drop-left 5s ease-in-out infinite;
+}
+[data-motion='sad'] .star-isle__ear-right {
+  animation: star-isle-ear-drop-right 5s ease-in-out infinite;
+}
+/* 睡眠：垂耳与垂尾同节奏（4.5s） */
+[data-motion='sleep'] .star-isle__ear-left {
+  animation: star-isle-ear-drop-left 4.5s ease-in-out infinite;
+}
+[data-motion='sleep'] .star-isle__ear-right {
+  animation: star-isle-ear-drop-right 4.5s ease-in-out infinite;
 }
 
 /* 挥手：右前肢摆动 */
@@ -254,22 +327,31 @@ body,
 }
 
 /* 关键帧：只动 transform/opacity，禁止布局属性 */
+/* 呼吸：吸气快（ease-out）、呼气慢（ease-in）——像活物的呼吸节律 */
 @keyframes star-isle-breathe {
-  0%,
-  100% {
+  0% {
     transform: scaleY(1);
+    animation-timing-function: ease-out;
   }
   50% {
     transform: scaleY(1.025);
+    animation-timing-function: ease-in;
   }
-}
-@keyframes star-isle-breathe-slow {
-  0%,
   100% {
     transform: scaleY(1);
   }
+}
+@keyframes star-isle-breathe-slow {
+  0% {
+    transform: scaleY(1);
+    animation-timing-function: ease-out;
+  }
   50% {
     transform: scaleY(1.03);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: scaleY(1);
   }
 }
 @keyframes star-isle-blink {
@@ -283,13 +365,74 @@ body,
     transform: scaleY(0.08);
   }
 }
+/* 尾巴非对称摆：快摆甩出（ease-out）、惯性缓回（--ease-inert），尾部惯性感 */
 @keyframes star-isle-tail {
-  0%,
+  0% {
+    transform: rotate(0deg);
+    animation-timing-function: ease-out;
+  }
+  30% {
+    transform: rotate(9deg);
+    animation-timing-function: var(--ease-inert);
+  }
   100% {
     transform: rotate(0deg);
   }
+}
+/* 难过：尾巴下垂慢摆（向下压后轻微回摆） */
+@keyframes star-isle-tail-sad {
+  0% {
+    transform: rotate(-4deg);
+    animation-timing-function: ease-in-out;
+  }
   50% {
-    transform: rotate(9deg);
+    transform: rotate(-1deg);
+    animation-timing-function: ease-in-out;
+  }
+  100% {
+    transform: rotate(-4deg);
+  }
+}
+/* 尾端星：同向摆动但延迟 0.15s（余韵感），幅度为尾巴的约 60% */
+@keyframes star-isle-tail-star {
+  0% {
+    transform: rotate(0deg);
+    animation-timing-function: ease-out;
+  }
+  30% {
+    transform: rotate(5.5deg);
+    animation-timing-function: var(--ease-inert);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+/* 开心尾巴：高频小摆（幅度收敛，30% 快摆到位） */
+@keyframes star-isle-tail-happy {
+  0% {
+    transform: rotate(0deg);
+    animation-timing-function: ease-out;
+  }
+  30% {
+    transform: rotate(7deg);
+    animation-timing-function: var(--ease-inert);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+/* 走路随步尾巴：幅度最小、与步伐同频 */
+@keyframes star-isle-tail-walk {
+  0% {
+    transform: rotate(0deg);
+    animation-timing-function: ease-out;
+  }
+  30% {
+    transform: rotate(5deg);
+    animation-timing-function: var(--ease-inert);
+  }
+  100% {
+    transform: rotate(0deg);
   }
 }
 @keyframes star-isle-talk {
@@ -313,7 +456,30 @@ body,
   }
 }
 
-/* 行走：身体左右轻摆、头反向微晃、前肢交替抬落 */
+/* 全身 bob：快抬（ease-out）慢落（ease-in）——每步"蹬起-踏落"有节奏差，
+   不再均匀正弦上下（rig 纯平移，无旋转干扰） */
+@keyframes star-isle-walk-bob {
+  0% {
+    transform: translateY(0);
+    animation-timing-function: ease-out;
+  }
+  25% {
+    transform: translateY(-3px);
+    animation-timing-function: ease-in;
+  }
+  50% {
+    transform: translateY(0);
+    animation-timing-function: ease-out;
+  }
+  75% {
+    transform: translateY(-3px);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+/* 行走身体：纯轻摆（bob 由 rig 承担，避免 rotate+translateY 组合吃掉位移） */
 @keyframes star-isle-walk-body {
   0%,
   100% {
@@ -323,22 +489,60 @@ body,
     transform: rotate(2.5deg);
   }
 }
+/* 头：反向微晃 + 轻微点头 */
 @keyframes star-isle-walk-head {
   0%,
   100% {
-    transform: rotate(2deg);
+    transform: rotate(2deg) translateY(0);
   }
   50% {
-    transform: rotate(-2deg);
+    transform: rotate(-2deg) translateY(1px);
   }
 }
-@keyframes star-isle-paw-step {
-  0%,
-  100% {
-    transform: translateY(0);
+/* 前肢交替划动（左右正负角拆分）：快抬慢落 + 前划 */
+@keyframes star-isle-paw-step-left {
+  0% {
+    transform: rotate(0deg) translateY(0);
+    animation-timing-function: ease-out;
   }
   50% {
-    transform: translateY(3.5px);
+    transform: rotate(-8deg) translateY(3px);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+}
+@keyframes star-isle-paw-step-right {
+  0% {
+    transform: rotate(0deg) translateY(0);
+    animation-timing-function: ease-out;
+  }
+  50% {
+    transform: rotate(8deg) translateY(3px);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+}
+/* 后足对角步态：与对侧前肢同相（左后足随右前肢，右后足随左前肢） */
+@keyframes star-isle-foot-step-left {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(-5deg);
+  }
+}
+@keyframes star-isle-foot-step-right {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(5deg);
   }
 }
 
@@ -363,28 +567,73 @@ body,
 }
 
 /* 开心：轻弹跳 */
+/* 开心蹦跳：弹性过冲抬起 + 触地小回弹（两段弹跳更有生命感） */
 @keyframes star-isle-bounce {
-  0%,
+  0% {
+    transform: translateY(0);
+    animation-timing-function: var(--ease-spring);
+  }
+  35% {
+    transform: translateY(var(--amp-bounce-y, -8px));
+    animation-timing-function: ease-in;
+  }
+  55% {
+    transform: translateY(0);
+    animation-timing-function: ease-out;
+  }
+  70% {
+    transform: translateY(-3px);
+    animation-timing-function: ease-in;
+  }
   100% {
     transform: translateY(0);
   }
-  40% {
-    transform: translateY(var(--amp-bounce-y, -7px));
-  }
 }
 
-/* 耳尖微动：绝大部分时间静止，偶发轻抖（好奇） */
-@keyframes star-isle-ear-tip {
+/* 耳尖微动：偶发"好奇竖起"——对称外展（左右正负角拆分），回弹微过冲 */
+@keyframes star-isle-ear-perk-left {
   0%,
-  86%,
+  84%,
   100% {
     transform: rotate(0deg);
   }
   90% {
-    transform: rotate(5deg);
+    transform: rotate(-9deg);
   }
-  94% {
+  95% {
+    transform: rotate(2deg);
+  }
+}
+@keyframes star-isle-ear-perk-right {
+  0%,
+  84%,
+  100% {
+    transform: rotate(0deg);
+  }
+  90% {
+    transform: rotate(9deg);
+  }
+  95% {
     transform: rotate(-2deg);
+  }
+}
+/* 放松下垂（sad/sleep）：对称下压 + 缓慢微喘 */
+@keyframes star-isle-ear-drop-left {
+  0%,
+  100% {
+    transform: rotate(-8deg);
+  }
+  50% {
+    transform: rotate(-6deg);
+  }
+}
+@keyframes star-isle-ear-drop-right {
+  0%,
+  100% {
+    transform: rotate(8deg);
+  }
+  50% {
+    transform: rotate(6deg);
   }
 }
 @keyframes star-isle-glow {
@@ -396,25 +645,34 @@ body,
     opacity: 1;
   }
 }
+/* 挥手：弹性甩出（过冲）再收回 */
 @keyframes star-isle-wave {
-  0%,
+  0% {
+    transform: rotate(0deg);
+    animation-timing-function: var(--ease-spring);
+  }
+  50% {
+    transform: rotate(var(--amp-wave-deg, -18deg));
+    animation-timing-function: ease-in-out;
+  }
   100% {
     transform: rotate(0deg);
   }
-  50% {
-    transform: rotate(var(--amp-wave-deg, -16deg));
-  }
 }
+/* 惊讶：弹性弹开（过冲）再回落 */
 @keyframes star-isle-surprised {
-  0%,
-  100% {
+  0% {
     transform: scale(1);
+    animation-timing-function: var(--ease-spring);
   }
   35% {
     transform: scale(1.05, 0.96);
   }
   70% {
     transform: scale(var(--amp-surprised-x, 1.07), 1.04);
+  }
+  100% {
+    transform: scale(1);
   }
 }
 
