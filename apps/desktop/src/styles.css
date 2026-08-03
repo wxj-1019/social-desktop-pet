@@ -337,7 +337,10 @@ body,
   animation: star-isle-breathe 3.2s ease-in-out infinite;
 }
 
-/* 行走：身体 bob + 前肢交替划动 + 后足对角步态 + 尾巴随步（尾巴规则见尾巴区） */
+/* 行走：整只同步 bob（rig 纯平移）+ 身体摆 + 前肢交替划动 + 后足对角步态 + 尾巴随步 */
+[data-motion='walk'] .star-isle__rig {
+  animation: star-isle-walk-bob 0.7s ease-in-out infinite;
+}
 [data-motion='walk'] .star-isle__body {
   animation: star-isle-walk-body 0.7s ease-in-out infinite;
 }
@@ -369,8 +372,8 @@ body,
   transform: translateY(4px);
 }
 
-/* 开心：轻弹跳 */
-[data-motion='happy'] .star-isle__body {
+/* 开心：整只轻弹跳（rig 承担——头/四肢/尾巴同步起伏，不再头身分离） */
+[data-motion='happy'] .star-isle__rig {
   animation: star-isle-bounce 0.55s ease-in-out infinite;
 }
 
@@ -624,20 +627,26 @@ body,
   }
 }
 
-/* 行走（0.7s 两步循环）：身体 bob + 轻摆合并进同一关键帧 transform */
+/* 全身 bob：整只同步上下起伏（rig 纯平移，无旋转干扰；25/75% 为每步抬脚点） */
+@keyframes star-isle-walk-bob {
+  0%,
+  50%,
+  100% {
+    transform: translateY(0);
+  }
+  25%,
+  75% {
+    transform: translateY(-3px);
+  }
+}
+/* 行走身体：纯轻摆（bob 由 rig 承担，避免 rotate+translateY 组合吃掉位移） */
 @keyframes star-isle-walk-body {
   0%,
   100% {
-    transform: rotate(-2.5deg) translateY(0);
-  }
-  25% {
-    transform: rotate(0deg) translateY(-3px);
+    transform: rotate(-2.5deg);
   }
   50% {
-    transform: rotate(2.5deg) translateY(0);
-  }
-  75% {
-    transform: rotate(0deg) translateY(-3px);
+    transform: rotate(2.5deg);
   }
 }
 /* 头：反向微晃 + 轻微点头 */

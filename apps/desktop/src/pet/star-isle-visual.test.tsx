@@ -70,6 +70,19 @@ describe('StarIsleVisual（原创分层 SVG 星屿）', () => {
     expect(html).toContain('class="star-isle__foot star-isle__foot-right"');
   });
 
+  it('wraps all visible parts in the rig group (whole-body bob/bounce anchor)', () => {
+    const html = renderToStaticMarkup(<StarIsleVisual state={DEFAULT_VISUAL_STATE} />);
+    // rig 组必须包裹所有可见部件（tail 在 rig 内、paw-right 之后闭合）
+    const rigOpen = html.indexOf('class="star-isle__rig"');
+    const tail = html.indexOf('data-part="tail"');
+    const pawRight = html.indexOf('data-part="paw-right"');
+    const rigClose = html.indexOf('</g>', pawRight);
+    expect(rigOpen).toBeGreaterThan(-1);
+    expect(rigOpen).toBeLessThan(tail);
+    expect(pawRight).toBeGreaterThan(-1);
+    expect(rigClose).toBeGreaterThan(pawRight);
+  });
+
   it('reflects motion and expression on the root svg', () => {
     const html = renderToStaticMarkup(
       <StarIsleVisual
