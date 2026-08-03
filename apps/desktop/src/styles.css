@@ -379,13 +379,13 @@ body,
   animation: star-isle-tail 2.8s ease-in-out infinite;
 }
 [data-motion='walk'] .star-isle__tail {
-  animation: star-isle-tail 0.7s ease-in-out infinite;
+  animation: star-isle-tail-walk 0.7s ease-in-out infinite;
 }
 [data-motion='sit'] .star-isle__tail {
   animation: star-isle-tail 2.8s ease-in-out infinite;
 }
 [data-motion='happy'] .star-isle__tail {
-  animation: star-isle-tail 1.2s ease-in-out infinite;
+  animation: star-isle-tail-happy 1.2s ease-in-out infinite;
 }
 [data-motion='sad'] .star-isle__tail {
   animation: star-isle-tail-sad 5s ease-in-out infinite;
@@ -394,11 +394,14 @@ body,
   animation: star-isle-glow 1.2s ease-in-out infinite;
 }
 
-/* 尾端星延迟跟随摆动（idle/walk/sit；特异性高于下方常亮呼吸规则） */
+/* 尾端星延迟跟随摆动（idle/sit；特异性高于下方常亮呼吸规则） */
 [data-motion='idle'] .star-isle__tail-star,
-[data-motion='walk'] .star-isle__tail-star,
 [data-motion='sit'] .star-isle__tail-star {
   animation: star-isle-tail-star 2.8s ease-in-out infinite 0.15s;
+}
+/* 走路尾星随步伐同频（0.7s 与尾巴一致） */
+[data-motion='walk'] .star-isle__tail-star {
+  animation: star-isle-tail-star 0.7s ease-in-out infinite 0.15s;
 }
 
 /* 睡眠：缓慢呼吸、闭眼、慢摆尾 */
@@ -448,14 +451,19 @@ body,
   animation: star-isle-ear-perk-right 5.5s ease-in-out infinite 0.7s;
 }
 
-/* 难过/睡眠：双耳缓慢下垂（与垂尾同节奏） */
-[data-motion='sad'] .star-isle__ear-left,
-[data-motion='sleep'] .star-isle__ear-left {
+/* 难过：双耳缓慢下垂（5s 慢节奏） */
+[data-motion='sad'] .star-isle__ear-left {
   animation: star-isle-ear-drop-left 5s ease-in-out infinite;
 }
-[data-motion='sad'] .star-isle__ear-right,
-[data-motion='sleep'] .star-isle__ear-right {
+[data-motion='sad'] .star-isle__ear-right {
   animation: star-isle-ear-drop-right 5s ease-in-out infinite;
+}
+/* 睡眠：垂耳与垂尾同节奏（4.5s） */
+[data-motion='sleep'] .star-isle__ear-left {
+  animation: star-isle-ear-drop-left 4.5s ease-in-out infinite;
+}
+[data-motion='sleep'] .star-isle__ear-right {
+  animation: star-isle-ear-drop-right 4.5s ease-in-out infinite;
 }
 
 /* 挥手：右前肢摆动 */
@@ -553,6 +561,26 @@ body,
   }
   30% {
     transform: rotate(9deg);
+  }
+}
+/* 开心：高频小摆（幅度收敛） */
+@keyframes star-isle-tail-happy {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  30% {
+    transform: rotate(7deg);
+  }
+}
+/* 走路随步：幅度最小 */
+@keyframes star-isle-tail-walk {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  30% {
+    transform: rotate(5deg);
   }
 }
 /* 难过：尾巴下垂慢摆（向下压后轻微回摆） */

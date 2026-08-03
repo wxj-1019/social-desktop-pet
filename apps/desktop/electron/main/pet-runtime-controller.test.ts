@@ -146,6 +146,31 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('re-arms after a walk-cooldown rejection (chat walk within 15s)', () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0.5); // 溜达延迟 60s
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const visuals: PetVisualCommand[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+
+    // 55s 时聊天输出 walk 动作（进入 15s 冷却）
+    vi.advanceTimersByTime(55_000);
+    runtime.requestAction({ intent: 'walk', source: 'cloud_ai' });
+    expect(visuals).toContainEqual({ type: 'motion', motion: 'walk', intensity: 1 });
+
+    // t=60s 溜达到点 → walk 冷却中 → 本轮跳过（无 WALKING 快照）
+    vi.advanceTimersByTime(5_000);
+    expect(snapshots.every((s) => s.state !== 'WALKING')).toBe(true);
+
+    // 修复后重挂：下一轮 t=120s（冷却已过 70s）→ 溜达成功
+    vi.advanceTimersByTime(60_000);
+    expect(snapshots.some((s) => s.state === 'WALKING')).toBe(true);
+
+    runtime.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('maps head/body/tail touches to approved visuals and ignores UI-only clicks', () => {
     vi.useFakeTimers();
     const visuals: PetVisualCommand[] = [];

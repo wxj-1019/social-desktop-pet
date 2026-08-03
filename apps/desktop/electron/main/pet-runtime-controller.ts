@@ -398,8 +398,9 @@ export class PetRuntimeController {
     this.machine.transition('WALKING', 'wander_start');
     const decision = this.requestAction({ intent: 'walk', source: 'system' });
     if (!decision.approved) {
-      // walk 冷却中（聊天输出可能刚用过 walk）等真实拒绝源：本轮跳过，不挂 end 定时器
+      // walk 冷却中（聊天输出可能刚用过 walk）：本轮跳过，重新挂起下一轮
       this.machine.transition('IDLE', 'wander_abort');
+      this.armWanderTimer();
       return;
     }
     this.emitSnapshot();
