@@ -79,8 +79,9 @@ body,
     opacity 0.22s ease;
 }
 
-/* 透明命中区：接收指针事件但不参与视觉（fill 由 SVG 属性透明） */
-.star-isle [data-hit-rect] {
+/* 透明命中区：仅桌宠窗（PetExperience）接收指针事件——
+   面板头像内的星屿命中矩形不抢事件（panel.css 已设 pointer-events: none） */
+.pet-experience [data-hit-rect] {
   fill: transparent;
   pointer-events: all;
 }

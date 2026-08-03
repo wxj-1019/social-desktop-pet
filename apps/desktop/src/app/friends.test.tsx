@@ -52,7 +52,8 @@ describe('FriendsPage · marshmallow social surface', () => {
   it('shows a friendly empty state and supports invite copy feedback', async () => {
     render(<FriendsPage userId="user-1" />);
 
-    expect((await screen.findByText('小圈子还空着')).textContent).toContain('小圈子还空着');
+    // 空状态提示真实渲染（findByText 找不到会抛错，此处保持文件内断言风格）
+    expect(await screen.findByText('小圈子还空着')).not.toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '邀请好友' }));
 
     expect(await screen.findByText('专属邀请链接')).not.toBeNull();

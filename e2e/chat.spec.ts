@@ -47,8 +47,9 @@ test('登录 → 聊天 tab → SSE 流式回复', async () => {
   // 流式占位消息出现后，等待云端或本地兜底完成。
   await expect(page.locator('.chat-msg.pet').last()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('button', { name: '发送' })).toBeVisible({ timeout: 60_000 });
-  // 本次回复气泡（最后一条 pet，排除历史消息）已被 token 填充为非空
-  await expect(page.locator('.chat-msg.pet').last().locator('.chat-bubble')).not.toHaveText('…', {
+  // 本次回复气泡（最后一条 pet，排除历史消息）已被 token 填充——
+  // 占位符为「•••」（chat-panel typing-dots），等待其消失即回复完成
+  await expect(page.locator('.chat-msg.pet').last().locator('.chat-bubble')).not.toHaveText('•••', {
     timeout: 60_000,
   });
 });
