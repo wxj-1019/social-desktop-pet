@@ -49,13 +49,33 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
           <stop offset="60%" stopColor="#ffe094" stopOpacity="0.55" />
           <stop offset="100%" stopColor="#ffe094" stopOpacity="0" />
         </radialGradient>
+        {/* 星空魔法主题（2026-08-03）：毛色渐变 + 魔法光环 */}
+        <linearGradient id="fur-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#e4edfc" />
+          <stop offset="55%" stopColor="#cbdaf5" />
+          <stop offset="100%" stopColor="#a9bce8" />
+        </linearGradient>
+        <linearGradient id="tail-grad" x1="100%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#dbe6fa" />
+          <stop offset="60%" stopColor="#b7c9ea" />
+          <stop offset="100%" stopColor="#8fa8dd" />
+        </linearGradient>
+        <radialGradient id="halo-glow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.32" />
+          <stop offset="55%" stopColor="#8b5cf6" stopOpacity="0.16" />
+          <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0" />
+        </radialGradient>
       </defs>
+
+      {/* 背后魔法光环（角色底层背景，不参与命中） */}
+      <circle className="star-isle__halo" cx="140" cy="196" r="132" fill="url(#halo-glow)" />
+      <circle className="star-isle__halo" cx="140" cy="150" r="84" fill="url(#halo-glow)" />
 
       {/* 大尾巴：从身体左下翘起，弧线回卷，尾端缀星；内腹浅色增加层次 */}
       <g data-part="tail" data-hit="tail" className="star-isle__tail">
         <path
           d="M 96 248 C 40 242 22 192 48 122 C 62 140 88 180 102 222 Z"
-          fill={COLORS.fur}
+          fill="url(#tail-grad)"
           stroke={STROKE.color}
           strokeWidth={STROKE.width}
         />
@@ -82,7 +102,7 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
           cy="240"
           rx="54"
           ry="46"
-          fill={COLORS.fur}
+          fill="url(#fur-grad)"
           stroke={STROKE.color}
           strokeWidth={STROKE.width}
         />
@@ -143,7 +163,7 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
           cy="158"
           rx="64"
           ry="58"
-          fill={COLORS.fur}
+          fill="url(#fur-grad)"
           stroke={STROKE.color}
           strokeWidth={STROKE.width}
         />
@@ -284,6 +304,46 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
           fill={COLORS.fur}
           stroke={STROKE.color}
           strokeWidth={STROKE.width}
+        />
+      </g>
+
+      {/* 环绕星光与尾巴星尘（装饰层：不参与命中，不含 data-part） */}
+      <g>
+        <path
+          className="star-isle__sparkle"
+          d="M 52 82 L 53.8 86.2 L 58 88 L 53.8 89.8 L 52 94 L 50.2 89.8 L 46 88 L 50.2 86.2 Z"
+          fill={COLORS.star}
+        />
+        <path
+          className="star-isle__sparkle"
+          d="M 228 82 L 229.8 86.2 L 234 88 L 229.8 89.8 L 228 94 L 226.2 89.8 L 222 88 L 226.2 86.2 Z"
+          fill="#a78bfa"
+        />
+        <path
+          className="star-isle__sparkle"
+          d="M 240 166 L 241.8 170.2 L 246 172 L 241.8 173.8 L 240 178 L 238.2 173.8 L 234 172 L 238.2 170.2 Z"
+          fill="#67e8f9"
+        />
+        <path
+          className="star-isle__sparkle"
+          d="M 30 166 L 31.8 170.2 L 36 172 L 31.8 173.8 L 30 178 L 28.2 173.8 L 24 172 L 28.2 170.2 Z"
+          fill={COLORS.blush}
+        />
+        <circle
+          className="star-isle__stardust"
+          cx="66"
+          cy="156"
+          r="3.4"
+          fill="#fff8cf"
+          opacity="0.8"
+        />
+        <circle
+          className="star-isle__stardust"
+          cx="74"
+          cy="196"
+          r="2.6"
+          fill="#a78bfa"
+          opacity="0.7"
         />
       </g>
     </svg>

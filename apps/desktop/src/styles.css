@@ -1,10 +1,30 @@
+/* ============================================================
+   星空魔法（深色）主题 —— 二次元魔幻风格
+   ============================================================
+   约定：
+   - 所有 e2e / 单测依赖的 class 锚点（.login-page / .friends-page /
+     .chat-panel / .pet-speech / .app-tabs / .tab.active 等）与
+     star-isle 全部动画规则保留，仅重做视觉层。
+   - 面板窗（surface=panel）根为 .pet-stage；宠物窗（surface=pet）
+     根为 .pet-experience，body 必须保持透明。
+   - [data-reduced-motion='true'] 全局禁动规则必须保留在文件末尾。 */
+
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
+  /* 星空魔法色板 */
+  --night-1: #0d0a1e; /* 最深夜空 */
+  --night-2: #171238; /* 深紫夜空 */
+  --night-3: #2b2160; /* 靛蓝 */
+  --night-4: #3b2f7d; /* 亮靛 */
+  --magic-violet: #8b5cf6; /* 魔法紫 */
+  --magic-purple: #a855f7; /* 紫罗兰 */
+  --magic-pink: #f472b6; /* 品红 */
+  --magic-cyan: #67e8f9; /* 魔力青 */
+  --star-gold: #ffd977; /* 星光金 */
+  --text: #ece7ff;
+  --text-dim: #b7abdf;
   font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    sans-serif;
+    'Noto Serif SC', 'Source Han Serif SC', 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif;
 }
 
 html,
@@ -12,7 +32,7 @@ body,
 #root {
   margin: 0;
   height: 100vh;
-  /* 透明桌宠窗口：背景透明，由 Live2D Canvas 渲染角色 */
+  /* 透明桌宠窗口：背景透明，由 SVG 渲染角色；面板装饰在 .pet-stage 内完成 */
   background: transparent;
   overflow: hidden;
   user-select: none;
@@ -25,6 +45,90 @@ body,
   flex-direction: column;
   justify-content: flex-end;
   align-items: center;
+  position: relative;
+  /* 星空夜空：深紫→靛蓝竖直渐变（仅面板窗可见，宠物窗不经过 .pet-stage） */
+  background:
+    radial-gradient(120% 90% at 50% -10%, rgba(139, 92, 246, 0.28), transparent 60%),
+    radial-gradient(140% 100% at 50% 115%, rgba(103, 232, 249, 0.12), transparent 55%),
+    linear-gradient(180deg, var(--night-2) 0%, var(--night-1) 100%);
+  overflow: hidden;
+}
+
+/* 星尘层：缓缓漂浮的金色星光（box-shadow 星点 + 位移循环） */
+.pet-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(1.6px 1.6px at 20% 18%, rgba(255, 217, 119, 0.95), transparent 60%),
+    radial-gradient(1.2px 1.2px at 72% 30%, rgba(255, 255, 255, 0.8), transparent 60%),
+    radial-gradient(2.2px 2.2px at 88% 12%, rgba(244, 114, 182, 0.75), transparent 60%),
+    radial-gradient(1.2px 1.2px at 38% 62%, rgba(255, 217, 119, 0.6), transparent 60%),
+    radial-gradient(1.4px 1.4px at 62% 78%, rgba(103, 232, 249, 0.65), transparent 60%),
+    radial-gradient(1.2px 1.2px at 12% 84%, rgba(255, 255, 255, 0.55), transparent 60%),
+    radial-gradient(2px 2px at 92% 66%, rgba(168, 85, 247, 0.65), transparent 60%),
+    radial-gradient(1.2px 1.2px at 52% 44%, rgba(255, 217, 119, 0.55), transparent 60%),
+    radial-gradient(1.8px 1.8px at 6% 42%, rgba(255, 255, 255, 0.7), transparent 60%),
+    radial-gradient(1.6px 1.6px at 80% 88%, rgba(255, 217, 119, 0.6), transparent 60%);
+  animation: star-drift 9s ease-in-out infinite alternate;
+}
+
+/* 底部魔法辉光 */
+.pet-stage::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -40px;
+  width: 260px;
+  height: 90px;
+  transform: translateX(-50%);
+  background: radial-gradient(50% 60% at 50% 50%, rgba(139, 92, 246, 0.35), transparent 70%);
+  pointer-events: none;
+  filter: blur(6px);
+}
+
+/* ---- 通用魔幻卡片（登录/好友/聊天/本地共用基底） ---- */
+.login-page,
+.friends-page,
+.chat-panel,
+.local-chat {
+  position: relative;
+  z-index: 1;
+  /* 上缘亮紫罗兰 → 底部深空：与页面背景拉开层次（玻璃卡片感） */
+  background:
+    linear-gradient(165deg, rgba(96, 72, 180, 0.62), rgba(30, 24, 70, 0.92) 58%),
+    rgba(35, 28, 82, 0.94);
+  border: 1.5px solid rgba(167, 139, 250, 0.65);
+  border-radius: 18px;
+  box-shadow:
+    0 0 36px rgba(139, 92, 246, 0.4),
+    inset 0 0 22px rgba(103, 232, 249, 0.08);
+  backdrop-filter: blur(10px);
+}
+
+/* 卡片顶部符文线（菱形徽记序列） */
+.login-page::before,
+.friends-page::before,
+.chat-panel::before,
+.local-chat::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 14px;
+  height: 8px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 6px,
+    rgba(255, 217, 119, 0.85) 6px 10px,
+    transparent 10px 16px,
+    rgba(244, 114, 182, 0.8) 16px 20px,
+    transparent 20px 26px
+  );
+  mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
+  opacity: 0.85;
+  pointer-events: none;
 }
 
 /* ---- 登录页 ---- */
@@ -32,51 +136,108 @@ body,
   width: 260px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  background: rgba(20, 20, 30, 0.85);
-  border-radius: 12px;
-  padding: 16px;
+  gap: 10px;
+  padding: 18px 16px 16px;
   margin-bottom: 24px;
 }
 .login-page h2 {
-  margin: 0 0 4px;
-  font-size: 16px;
+  margin: 2px 0 6px;
+  font-size: 18px;
+  letter-spacing: 0.35em;
+  text-align: center;
+  /* 星光金→品红→魔法紫的渐变文字 */
+  background: linear-gradient(
+    92deg,
+    var(--star-gold) 8%,
+    var(--magic-pink) 48%,
+    var(--magic-purple) 92%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 22px rgba(255, 217, 119, 0.35);
+}
+.login-page h2::before {
+  content: '✦ ';
+}
+.login-page h2::after {
+  content: ' ✦';
 }
 .login-page input {
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.08);
-  color: inherit;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  background: rgba(13, 10, 30, 0.6);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
-.login-page button {
-  padding: 8px;
-  border-radius: 6px;
+.login-page input::placeholder {
+  color: rgba(183, 171, 223, 0.55);
+}
+.login-page input:focus {
+  border-color: rgba(167, 139, 250, 0.9);
+  box-shadow:
+    0 0 0 3px rgba(139, 92, 246, 0.22),
+    0 0 14px rgba(139, 92, 246, 0.35);
+}
+.login-page button[type='submit'] {
+  padding: 10px;
+  border-radius: 12px;
   border: none;
-  background: #6c5ce7;
+  background: linear-gradient(135deg, var(--magic-violet), var(--magic-purple) 60%, #d946ef);
   color: #fff;
+  font-size: 14px;
+  letter-spacing: 0.2em;
   cursor: pointer;
+  box-shadow:
+    0 4px 18px rgba(139, 92, 246, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.2s ease,
+    filter 0.2s ease;
+}
+.login-page button[type='submit']:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
+  box-shadow:
+    0 6px 24px rgba(217, 70, 239, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.login-page button[type='submit']:active:not(:disabled) {
+  transform: translateY(0);
 }
 .login-page button:disabled {
   opacity: 0.5;
 }
 .login-error {
-  color: #ff6b6b;
+  color: #ff6b9d;
   font-size: 12px;
   margin: 0;
+  text-shadow: 0 0 10px rgba(255, 107, 157, 0.4);
 }
 .login-hint {
-  color: #feca57;
+  color: var(--star-gold);
   font-size: 12px;
   margin: 0;
 }
 .link-button {
   background: none;
   border: none;
-  color: #a29bfe;
+  color: #a78bfa;
   cursor: pointer;
   font-size: 12px;
   text-decoration: underline;
+  text-decoration-color: rgba(167, 139, 250, 0.5);
+  text-underline-offset: 3px;
+}
+.link-button:hover {
+  color: var(--magic-pink);
+  text-shadow: 0 0 10px rgba(244, 114, 182, 0.5);
 }
 
 /* ---- 好友页 ---- */
@@ -88,18 +249,21 @@ body,
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(20, 20, 30, 0.8);
-  border-radius: 10px;
-  padding: 6px 10px;
+  background: linear-gradient(120deg, rgba(43, 33, 96, 0.88), rgba(23, 18, 56, 0.85));
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: 12px;
+  padding: 7px 12px;
   font-size: 12px;
+  color: var(--text);
+  z-index: 5;
+  box-shadow: 0 2px 14px rgba(139, 92, 246, 0.2);
+  backdrop-filter: blur(8px);
 }
 .friends-page {
   width: 300px;
   max-height: 60vh;
   overflow-y: auto;
-  background: rgba(20, 20, 30, 0.85);
-  border-radius: 12px;
-  padding: 14px;
+  padding: 18px 14px 14px;
   margin-bottom: 16px;
   display: flex;
   flex-direction: column;
@@ -109,26 +273,44 @@ body,
 .friends-page h3 {
   margin: 0;
   font-size: 14px;
+  color: var(--text);
+  letter-spacing: 0.12em;
+}
+.friends-page h2 {
+  background: linear-gradient(92deg, var(--star-gold), var(--magic-cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 .friends-page button {
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: none;
-  background: #6c5ce7;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.85), rgba(168, 85, 247, 0.85));
   color: #fff;
   cursor: pointer;
   font-size: 12px;
+  box-shadow: 0 2px 10px rgba(139, 92, 246, 0.3);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.2s ease;
+}
+.friends-page button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(168, 85, 247, 0.5);
 }
 .invite-link {
   font-size: 11px;
   word-break: break-all;
+  color: var(--text-dim);
 }
 .invite-link code {
-  color: #feca57;
+  color: var(--star-gold);
+  text-shadow: 0 0 8px rgba(255, 217, 119, 0.35);
 }
 .notice {
   font-size: 12px;
-  color: #74b9ff;
+  color: var(--magic-cyan);
   margin: 0;
 }
 .friend-list,
@@ -146,50 +328,65 @@ body,
   align-items: center;
   gap: 6px;
   font-size: 13px;
+  color: var(--text);
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgba(139, 92, 246, 0.08);
 }
 .friend-item button {
-  background: #2d3436;
+  background: linear-gradient(135deg, rgba(45, 52, 78, 0.9), rgba(23, 18, 56, 0.9));
+  border: 1px solid rgba(139, 92, 246, 0.3);
 }
 .event-list li {
   font-size: 12px;
   display: flex;
   gap: 6px;
   align-items: baseline;
+  color: var(--text-dim);
 }
 .event-time {
-  color: #636e72;
+  color: rgba(183, 171, 223, 0.55);
   margin-left: auto;
 }
 .empty {
-  color: #636e72;
+  color: rgba(183, 171, 223, 0.6);
   font-size: 12px;
 }
 
 /* ---- 本地模式 ---- */
 .local-entry {
   margin-top: 8px;
-  background: none;
-  border: 1px dashed #a29bfe;
-  color: #a29bfe;
-  border-radius: 8px;
+  background: rgba(23, 18, 56, 0.6);
+  border: 1px dashed rgba(167, 139, 250, 0.7);
+  color: #a78bfa;
+  border-radius: 12px;
   padding: 8px 16px;
   cursor: pointer;
   font-size: 13px;
+  z-index: 1;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.local-entry:hover {
+  border-color: var(--magic-pink);
+  color: var(--magic-pink);
+  box-shadow: 0 0 14px rgba(244, 114, 182, 0.3);
 }
 .local-chat {
   width: 300px;
   max-height: 62vh;
   display: flex;
   flex-direction: column;
-  background: rgba(20, 20, 30, 0.85);
-  border-radius: 12px;
-  padding: 12px;
+  padding: 16px 12px 12px;
   margin-bottom: 16px;
 }
 .local-banner {
   font-size: 11px;
-  color: #feca57;
+  color: var(--star-gold);
   margin-bottom: 8px;
+  text-shadow: 0 0 8px rgba(255, 217, 119, 0.3);
 }
 .chat-list {
   list-style: none;
@@ -210,71 +407,118 @@ body,
 }
 .chat-bubble {
   max-width: 80%;
-  padding: 6px 10px;
-  border-radius: 10px;
+  padding: 7px 12px;
+  border-radius: 12px 12px 4px 12px;
   font-size: 13px;
-  background: rgba(255, 255, 255, 0.1);
+  line-height: 1.5;
+  background: linear-gradient(160deg, rgba(59, 47, 125, 0.7), rgba(23, 18, 56, 0.85));
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: var(--text);
 }
 .chat-msg.user .chat-bubble {
-  background: #6c5ce7;
+  /* 用户：魔法紫→品红渐变 + 光晕 */
+  background: linear-gradient(135deg, var(--magic-violet), var(--magic-purple) 55%, #d946ef);
   color: #fff;
+  border: none;
+  border-radius: 12px 12px 12px 4px;
+  box-shadow: 0 3px 14px rgba(168, 85, 247, 0.4);
+}
+.chat-msg.pet .chat-bubble {
+  border-radius: 12px 12px 4px 12px;
+  border-color: rgba(255, 217, 119, 0.35);
+  box-shadow: 0 2px 12px rgba(139, 92, 246, 0.18);
 }
 .chat-empty {
-  color: #636e72;
+  color: rgba(183, 171, 223, 0.6);
   font-size: 12px;
 }
 .chat-input-row {
   display: flex;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 .chat-input-row input {
   flex: 1;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.08);
-  color: inherit;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  background: rgba(13, 10, 30, 0.6);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.chat-input-row input::placeholder {
+  color: rgba(183, 171, 223, 0.55);
+}
+.chat-input-row input:focus {
+  border-color: rgba(167, 139, 250, 0.9);
+  box-shadow:
+    0 0 0 3px rgba(139, 92, 246, 0.22),
+    0 0 14px rgba(139, 92, 246, 0.35);
 }
 .chat-input-row button {
-  padding: 6px 12px;
-  border-radius: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
   border: none;
-  background: #6c5ce7;
+  background: linear-gradient(135deg, var(--magic-violet), var(--magic-purple) 60%, #d946ef);
   color: #fff;
   cursor: pointer;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  box-shadow: 0 3px 12px rgba(139, 92, 246, 0.4);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.2s ease;
+}
+.chat-input-row button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 18px rgba(217, 70, 239, 0.5);
+}
+.chat-input-row button:disabled {
+  opacity: 0.55;
 }
 
-/* ---- tab 切换 ---- */
+/* ---- tab 切换（魔法书签） ---- */
 .app-tabs {
   position: fixed;
-  top: 40px;
+  top: 38px;
   left: 8px;
   display: flex;
   gap: 4px;
   z-index: 10;
 }
 .tab {
-  background: rgba(20, 20, 30, 0.8);
-  border: none;
-  color: #b2bec3;
-  border-radius: 8px 8px 0 0;
-  padding: 4px 12px;
+  background: linear-gradient(180deg, rgba(43, 33, 96, 0.9), rgba(23, 18, 56, 0.85));
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-bottom: none;
+  color: var(--text-dim);
+  border-radius: 12px 12px 0 0;
+  padding: 6px 14px;
   font-size: 12px;
+  letter-spacing: 0.15em;
   cursor: pointer;
+  transition:
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.tab:hover {
+  color: var(--text);
 }
 .tab.active {
-  background: rgba(108, 92, 231, 0.85);
+  background: linear-gradient(180deg, var(--magic-violet), rgba(139, 92, 246, 0.85));
   color: #fff;
+  border-color: rgba(139, 92, 246, 0.6);
+  box-shadow: 0 -3px 16px rgba(139, 92, 246, 0.4);
 }
 .chat-panel {
   width: 300px;
   max-height: 62vh;
   display: flex;
   flex-direction: column;
-  background: rgba(20, 20, 30, 0.85);
-  border-radius: 12px;
-  padding: 12px;
+  padding: 16px 12px 12px;
   margin-bottom: 16px;
 }
 
@@ -286,16 +530,18 @@ body,
 }
 .friend-actions select {
   font-size: 11px;
-  background: rgba(255, 255, 255, 0.08);
-  color: inherit;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-  padding: 2px 4px;
+  background: rgba(13, 10, 30, 0.6);
+  color: var(--text);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: 6px;
+  padding: 3px 5px;
+  outline: none;
 }
 .friend-actions button {
-  background: #2d3436;
+  background: linear-gradient(135deg, rgba(45, 52, 78, 0.9), rgba(23, 18, 56, 0.9));
   font-size: 11px;
-  padding: 4px 8px;
+  padding: 4px 9px;
+  border: 1px solid rgba(139, 92, 246, 0.3);
 }
 
 /* ---- 星屿（StarIsle）原创 SVG 视觉 ---- */
@@ -479,6 +725,29 @@ body,
   animation: star-isle-glow 3.4s ease-in-out infinite;
 }
 
+/* ---- 魔幻氛围增强（2026-08-03 星空魔法主题） ---- */
+/* 背后魔法光环：柔光脉动（置于角色底层，不抢指针） */
+.star-isle__halo {
+  pointer-events: none;
+  animation: star-isle-halo 4.6s ease-in-out infinite;
+}
+/* 环绕星光：错峰闪烁 */
+.star-isle__sparkle {
+  pointer-events: none;
+  animation: star-isle-sparkle 2.6s ease-in-out infinite;
+}
+.star-isle__sparkle:nth-of-type(2n) {
+  animation-delay: 0.7s;
+}
+.star-isle__sparkle:nth-of-type(3n) {
+  animation-delay: 1.4s;
+}
+/* 尾巴星尘尾迹 */
+.star-isle__stardust {
+  pointer-events: none;
+  animation: star-isle-glow 3.2s ease-in-out infinite;
+}
+
 /* 关键帧：只动 transform/opacity，禁止布局属性 */
 @keyframes star-isle-breathe {
   0%,
@@ -644,6 +913,43 @@ body,
   }
 }
 
+/* 魔法光环：呼吸 + 轻微旋转的星光环 */
+@keyframes star-isle-halo {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.06);
+  }
+}
+/* 环绕星光闪烁（transform-box 已居中） */
+@keyframes star-isle-sparkle {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(0.6);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.15);
+  }
+}
+
+/* 面板星尘漂移 */
+@keyframes star-drift {
+  0% {
+    transform: translateY(0);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(-14px);
+    opacity: 1;
+  }
+}
+
 /* 减弱动态效果：禁止一切无限动画，保留 120ms opacity 过渡 */
 [data-reduced-motion='true'] *,
 [data-reduced-motion='true'] *::before,
@@ -682,10 +988,11 @@ body,
   bottom: 94%;
   transform: translateX(-50%);
   width: 200px;
-  padding: 6px 10px;
-  border-radius: 10px;
-  background: rgba(20, 20, 30, 0.9);
-  color: #fff;
+  padding: 8px 12px;
+  border-radius: 14px 14px 4px 14px;
+  background: linear-gradient(160deg, rgba(43, 33, 96, 0.92), rgba(13, 10, 30, 0.94));
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  color: var(--text);
   font-size: 12px;
   line-height: 1.4;
   max-height: 3.6em;
@@ -696,4 +1003,24 @@ body,
   text-align: center;
   pointer-events: none;
   z-index: 1;
+  box-shadow:
+    0 4px 18px rgba(139, 92, 246, 0.3),
+    inset 0 0 12px rgba(103, 232, 249, 0.06);
+}
+/* 气泡四角符文点 */
+.pet-speech::before {
+  content: '✦';
+  position: absolute;
+  top: 1px;
+  left: 6px;
+  font-size: 9px;
+  color: rgba(255, 217, 119, 0.8);
+}
+.pet-speech::after {
+  content: '✦';
+  position: absolute;
+  bottom: 1px;
+  right: 6px;
+  font-size: 9px;
+  color: rgba(244, 114, 182, 0.7);
 }
