@@ -24,7 +24,7 @@ import {
 } from './display-controller.js';
 import { SECURE_WEB_PREFS } from './security.js';
 
-/** 宠物窗：240×260 —— 桌面常驻小巧，角色占窗口高度约 70%（viewBox 320×380） */
+/** 宠物窗：240×260 —— 桌面常驻小巧，角色经构图框放大后占窗口高度约 81%（viewBox 320×380） */
 export const PET_WINDOW_SIZE = { width: 240, height: 260 };
 export const PANEL_WINDOW_SIZE = { width: 360, height: 480 };
 

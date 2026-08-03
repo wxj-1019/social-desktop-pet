@@ -35,11 +35,15 @@ export interface PetRuntimeController {
   applyCommand: (command: PetVisualCommand) => void;
 }
 
+/** 气泡自动消失：新内容会刷新计时；超过该时长无更新则清除（设计稿 7.4 短驻留） */
+const BUBBLE_TIMEOUT_MS = 5000;
+
 export function usePetRuntime(): PetRuntimeController {
   const [snapshot, setSnapshot] = useState<PetRuntimeSnapshot | null>(null);
   const [profile, setProfile] = useState<PetProfile | null>(null);
   const [visualState, setVisualState] = useState<StarIsleVisualState>(DEFAULT_VISUAL_STATE);
   const [bubbleText, setBubbleText] = useState<string | null>(null);
+  const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const rendererRef = useRef<PetRenderer | null>(null);
   if (!rendererRef.current) {
@@ -61,9 +65,27 @@ export function usePetRuntime(): PetRuntimeController {
         break;
       case 'bubble':
         setBubbleText(command.text);
+        if (bubbleTimerRef.current) {
+          clearTimeout(bubbleTimerRef.current);
+          bubbleTimerRef.current = null;
+        }
+        if (command.text) {
+          bubbleTimerRef.current = setTimeout(() => {
+            setBubbleText(null);
+            bubbleTimerRef.current = null;
+          }, BUBBLE_TIMEOUT_MS);
+        }
         break;
     }
   }, []);
+
+  // 卸载时清掉气泡计时器
+  useEffect(
+    () => () => {
+      if (bubbleTimerRef.current) clearTimeout(bubbleTimerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     const runtime = window.pet?.petRuntime;

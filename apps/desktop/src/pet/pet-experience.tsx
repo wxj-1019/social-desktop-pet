@@ -74,6 +74,17 @@ export function PetExperience({
     return { x: screenX, y: screenY, at: e.timeStamp };
   };
 
+  /** 结束进行中的拖动（dragEnd + 取消节流 + 复位手势） */
+  const endActiveDrag = () => {
+    const runtime = window.pet?.petRuntime;
+    const gesture = gestureRef.current;
+    if (gesture?.dragging && runtime) {
+      runtime.dragEnd();
+      schedulerRef.current?.cancel();
+    }
+    gestureRef.current = { start: null, hit: null, dragging: false };
+  };
+
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     const runtime = window.pet?.petRuntime;
     if (!runtime) return;
@@ -83,6 +94,13 @@ export function PetExperience({
       ?.closest?.('[data-hit]')
       ?.getAttribute('data-hit') as HitPart | null;
     gestureRef.current = { start: sample, hit, dragging: false };
+    // 指针捕获：光标甩出窗口后 pointermove/up 仍会回到本元素，
+    // 避免松手丢失导致拖动卡死（jsdom 不支持时静默降级）
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* 环境不支持指针捕获 */
+    }
   };
 
   const handlePointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -90,6 +108,11 @@ export function PetExperience({
     if (!runtime) return;
     const gesture = gestureRef.current;
     if (!gesture?.start) return;
+    // 自愈：拖动中按钮已松开（pointerup 因故丢失）→ 立即结束拖动
+    if (gesture.dragging && e.buttons === 0) {
+      endActiveDrag();
+      return;
+    }
     const sample = screenSample(e);
     if (!sample) return;
     if (!gesture.dragging) {
@@ -116,8 +139,7 @@ export function PetExperience({
     if (!gesture?.start) return;
     const sample = screenSample(e) ?? gesture.start;
     if (gesture.dragging) {
-      runtime.dragEnd();
-      schedulerRef.current?.cancel();
+      endActiveDrag();
     } else {
       const kind = classifyPointer({
         start: gesture.start,
@@ -130,19 +152,22 @@ export function PetExperience({
         runtime.interaction({ kind: HIT_INTERACTION[gesture.hit] });
       }
       lastClickAtRef.current = sample.at;
+      gestureRef.current = { start: null, hit: null, dragging: false };
     }
-    gestureRef.current = { start: null, hit: null, dragging: false };
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* 未持有捕获时忽略 */
+    }
   };
 
-  const handlePointerCancel = () => {
-    const runtime = window.pet?.petRuntime;
-    if (!runtime) return;
-    const gesture = gestureRef.current;
-    if (gesture?.dragging) {
-      runtime.dragEnd();
-      schedulerRef.current?.cancel();
+  const handlePointerCancel = (e: ReactPointerEvent<HTMLDivElement>) => {
+    endActiveDrag();
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* 未持有捕获时忽略 */
     }
-    gestureRef.current = { start: null, hit: null, dragging: false };
   };
 
   const handleContextMenu = (e: ReactMouseEvent<HTMLDivElement>) => {

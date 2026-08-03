@@ -73,32 +73,37 @@ export function resolvePetPosition(
   displays: DisplayInfo[],
   petSize: { width: number; height: number },
 ): { display: DisplayInfo; x: number; y: number; scale: number } {
-  // 1. 找持久化显示器；找不到回主屏（第一个）
-  const target = (saved && displays.find((d) => d.id === saved.displayId)) || displays[0];
+  // 1. 找持久化显示器。空 displayId（出厂默认值，PositionStore 无文件时返回）
+  //    或显示器已失效（拔屏/ID 变化）→ 回主屏并丢弃旧偏移，避免把失效
+  //    显示器的锚点套到主屏上导致角色贴边甚至大半跑出屏幕。
+  const savedDisplay =
+    saved && saved.displayId ? displays.find((d) => d.id === saved.displayId) : undefined;
+  const target = savedDisplay ?? displays[0];
   if (!target) throw new Error('DisplayController: 无可用显示器');
 
-  // 2. 计算绝对位置（负数坐标支持）
+  // 2. 计算绝对位置（负数坐标支持）：仅保存位置确实可用时才恢复，
+  //    否则回默认（目标屏底部中央）
   const scale = clamp(saved?.scale ?? DEFAULT_PET_SCALE, MIN_PET_SCALE, MAX_PET_SCALE);
-  const abs = saved
-    ? toAbsolute(target, saved)
-    : // 默认放主屏底部中央
-      {
-        x: target.workArea.x + (target.workArea.width - petSize.width) / 2,
-        y: target.workArea.y + target.workArea.height - petSize.height - 8,
-      };
+  const abs =
+    savedDisplay && saved
+      ? toAbsolute(target, saved)
+      : {
+          x: target.workArea.x + (target.workArea.width - petSize.width) / 2,
+          y: target.workArea.y + target.workArea.height - petSize.height - 8,
+        };
 
-  // 3. 夹进可见区域（角色至少露出 1/4，避免完全跑出屏幕）
-  const visibleW = petSize.width * 0.25;
-  const visibleH = petSize.height * 0.25;
+  // 3. 恢复位置必须完整落在工作区内：拖到屏幕边缘的位置会被持久化，若原样
+  //    恢复角色会探出屏幕被裁掉（用户反馈：卡在右边缘）。恢复时夹进完整
+  //    工作区（实时拖动的钳制规则与此一致，见 clampPetWindowToDisplays）。
   const x = clamp(
     abs.x,
-    target.workArea.x - petSize.width + visibleW,
-    target.workArea.x + target.workArea.width - visibleW,
+    target.workArea.x,
+    target.workArea.x + Math.max(0, target.workArea.width - petSize.width),
   );
   const y = clamp(
     abs.y,
-    target.workArea.y - petSize.height + visibleH,
-    target.workArea.y + target.workArea.height - visibleH,
+    target.workArea.y,
+    target.workArea.y + Math.max(0, target.workArea.height - petSize.height),
   );
 
   return { display: target, x, y, scale };
@@ -147,7 +152,8 @@ export function toPersistedPosition(
 
 /**
  * 拖动时把目标位置夹进可见区域（与 resolvePetPosition 规则一致）：
- * 目标左上角所在显示器内夹取（至少露出窗口 1/4）；找不到所在显示器则回主屏（第一个）。
+ * 目标左上角所在显示器内夹取，**窗口完整落在工作区内**（用户反馈：桌宠
+ * 探出屏幕边缘会被裁掉，拖动与恢复都不允许跑出屏幕）。
  * 保留负坐标（支持左侧副屏）；无显示器时原样返回。
  */
 export function clampPetWindowToDisplays(
@@ -165,18 +171,16 @@ export function clampPetWindowToDisplays(
     ) ?? displays[0];
   if (!current) return { x: target.x, y: target.y };
 
-  const visibleW = petSize.width * 0.25;
-  const visibleH = petSize.height * 0.25;
   return {
     x: clamp(
       target.x,
-      current.workArea.x - petSize.width + visibleW,
-      current.workArea.x + current.workArea.width - visibleW,
+      current.workArea.x,
+      current.workArea.x + Math.max(0, current.workArea.width - petSize.width),
     ),
     y: clamp(
       target.y,
-      current.workArea.y - petSize.height + visibleH,
-      current.workArea.y + current.workArea.height - visibleH,
+      current.workArea.y,
+      current.workArea.y + Math.max(0, current.workArea.height - petSize.height),
     ),
   };
 }

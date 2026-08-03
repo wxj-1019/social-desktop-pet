@@ -181,6 +181,43 @@ describe('PetExperience（星屿直连交互面）', () => {
     expect(pet.petRuntime.dragEnd).toHaveBeenCalledTimes(1);
   });
 
+  it('self-heals a stuck drag when the button is already released mid-move', () => {
+    render(<PetExperience />);
+    const container = document.querySelector('.pet-experience');
+    firePointer(container!, 'down', { screenX: 100, screenY: 100 });
+    firePointer(container!, 'move', { screenX: 130, screenY: 120 });
+    expect(pet.petRuntime.dragStart).toHaveBeenCalledTimes(1);
+
+    // 模拟 pointerup 丢失（快速甩出窗口）：再次 move 时按钮已松开
+    container!.dispatchEvent(
+      new PointerEvent('pointermove', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+        pointerType: 'touch',
+        button: 0,
+        buttons: 0,
+        screenX: 170,
+        screenY: 160,
+      }),
+    );
+    expect(pet.petRuntime.dragEnd).toHaveBeenCalledTimes(1);
+
+    // 自愈后再次移动不应重新进入拖动（避免"不按键也在拖"）
+    firePointer(container!, 'move', { screenX: 200, screenY: 200 });
+    expect(pet.petRuntime.dragStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('ends the drag on pointercancel', () => {
+    render(<PetExperience />);
+    const container = document.querySelector('.pet-experience');
+    firePointer(container!, 'down', { screenX: 100, screenY: 100 });
+    firePointer(container!, 'move', { screenX: 130, screenY: 120 });
+    expect(pet.petRuntime.dragStart).toHaveBeenCalledTimes(1);
+    firePointer(container!, 'cancel', { screenX: 130, screenY: 120 });
+    expect(pet.petRuntime.dragEnd).toHaveBeenCalledTimes(1);
+  });
+
   it('shows a bubble when enabled and the runtime emits one', async () => {
     render(<PetExperience />);
     await act(async () => {

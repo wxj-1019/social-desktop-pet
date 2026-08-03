@@ -44,14 +44,15 @@ describe('PetDragController (安全拖动)', () => {
     expect(win.calls).toEqual([{ x: 200, y: 150 }]);
   });
 
-  it('clamps out-of-bounds targets so the window stays at least 1/4 visible', () => {
+  it('clamps out-of-bounds targets so the window stays fully visible', () => {
     const win = makeWin({ x: 100, y: 50, width: 280, height: 320 });
     const c = new PetDragController();
     c.start(win, { x: 120, y: 70 });
 
-    // 目标 (980,480) → x 夹到 930（1000-70）
+    // 目标 (1000,500)：窗口 280×320 必须完整留在 1000×800 工作区内
+    // x 夹到 720（1000-280），y 夹到 480（800-320）
     c.move(win, { x: 1000, y: 500 }, displays);
-    expect(win.setPosition).toHaveBeenLastCalledWith(930, 480);
+    expect(win.setPosition).toHaveBeenLastCalledWith(720, 480);
   });
 
   it('keeps the pet on the display the pointer moved to (negative coords)', () => {

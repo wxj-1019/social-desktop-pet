@@ -1,13 +1,13 @@
 /**
  * Task 12 —— 星屿可见/可交互/可拖动/托盘恢复/本地聊天 e2e。
  *
- * 不依赖后端：全程本地模式（会话恢复失败 → 登录页 → 先逛逛（本地模式））。
+ * 不依赖后端：全程本地模式（会话恢复失败 → 登录页 → 先体验本地聊天）。
  * 串行（workers=1，Electron 单实例锁）；共享一个 app 实例（restart 场景除外）。
  *
  * 像素阈值依据（PIXEL_THRESHOLD）：桌宠窗 240×260 CSS px、透明背景。
- * 角色 SVG（320×380 viewBox，xMidYMax meet）约占窗口高度 70%，主体（头/身/尾/耳）
- * 约占窗口面积 50%+。实测（本机 RDP 环境）冷启动可见像素约 4 万（alpha>16 计数）；
- * 取安全下限 8000（约实测值 1/6），仅用来证明"角色真实画出来了"而非空窗/白屏/
+ * 角色 SVG（320×380 viewBox，构图框放大 1.15 后脚底贴底）约占窗口高度 81%。
+ * 实测（本机环境）冷启动可见像素约 2.5 万（alpha>16 计数）；
+ * 取安全下限 8000（约实测值 1/3），仅用来证明"角色真实画出来了"而非空窗/白屏/
  * 渲染错误降级——阈值远低于角色实际像素量，DPR/字号差异不会误杀。
  */
 import { expect, test } from '@playwright/test';
@@ -143,7 +143,7 @@ test('本地聊天：面板本地模式输入 → 宠物气泡出现，宠物窗
   const panel = await app.openPanel('chat');
   await expect(panel.locator('.login-page')).toBeVisible({ timeout: 15_000 });
 
-  await panel.getByRole('button', { name: '先逛逛（本地模式）' }).click();
+  await panel.getByRole('button', { name: '先体验本地聊天' }).click();
   await expect(panel.locator('.local-chat')).toBeVisible();
 
   await panel.locator('.chat-input-row input').fill('你好');

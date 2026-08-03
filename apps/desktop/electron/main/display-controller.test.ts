@@ -15,7 +15,8 @@ import {
   type PetPosition,
 } from './display-controller.js';
 
-const petSize = { width: 360, height: 480 };
+/** 真实桌宠窗口尺寸（window-controller.PET_WINDOW_SIZE） */
+const petSize = { width: 240, height: 260 };
 
 /** 双屏：主屏(0,0) 1000×800，副屏在主屏左侧(-1280,0) 1280×800 */
 const dualDisplays: DisplayInfo[] = [
@@ -53,34 +54,67 @@ describe('DisplayController (8.5 多屏持久化)', () => {
   it('falls back to primary display when saved display is gone (8.5)', () => {
     const saved: PetPosition = {
       displayId: 'unplugged-tv',
-      anchorX: 0,
-      anchorY: 0,
+      anchorX: 900, // 失效显示器上的大偏移——绝不能被套到主屏
+      anchorY: 700,
       scale: 1,
       savedAt: 0,
     };
     const result = resolvePetPosition(saved, dualDisplays, petSize);
     expect(result.display.id).toBe('primary');
+    // 丢弃旧偏移，回主屏底部中央默认位
+    expect(result.x).toBe((1000 - 240) / 2);
+    expect(result.y).toBe(800 - 260 - 8);
   });
 
   it('defaults to bottom-center of primary when no saved position', () => {
     const result = resolvePetPosition(null, dualDisplays, petSize);
     expect(result.display.id).toBe('primary');
-    expect(result.x).toBe((1000 - 360) / 2);
-    expect(result.y).toBe(800 - 480 - 8);
+    expect(result.x).toBe((1000 - 240) / 2);
+    expect(result.y).toBe(800 - 260 - 8);
   });
 
-  it('clamps position so the pet stays at least 1/4 visible', () => {
-    // 存一个完全跑出屏幕外的位置（负锚点 -9999）
+  it('treats the empty displayId factory default as no saved position', () => {
+    // 生产路径：PositionStore 无文件时返回 displayId:'' 的默认值——必须走默认位，
+    // 否则首次启动会被恢复到工作区左上角
+    const saved: PetPosition = { displayId: '', anchorX: 0, anchorY: 0, scale: 1, savedAt: 0 };
+    const result = resolvePetPosition(saved, dualDisplays, petSize);
+    expect(result.display.id).toBe('primary');
+    expect(result.x).toBe((1000 - 240) / 2);
+    expect(result.y).toBe(800 - 260 - 8);
+  });
+
+  it('clamps a persisted right-edge position back fully into the work area', () => {
+    // 拖到右边缘探出屏幕 180px 的位置会被持久化；重启恢复必须完整拉回工作区内
     const saved: PetPosition = {
       displayId: 'primary',
-      anchorX: -9999,
-      anchorY: -9999,
+      anchorX: 940, // 940+240=1180 超出 1000 工作区
+      anchorY: 500,
       scale: 1,
       savedAt: 0,
     };
     const result = resolvePetPosition(saved, dualDisplays, petSize);
-    expect(result.x).toBeGreaterThanOrEqual(0 - petSize.width + petSize.width * 0.25);
-    expect(result.y).toBeGreaterThanOrEqual(0 - petSize.height + petSize.height * 0.25);
+    expect(result.x).toBe(1000 - 240);
+    expect(result.y).toBe(500);
+  });
+
+  it('clamps taskbar overlap and fully off-screen positions on restore', () => {
+    // 窗口完全落在工作区内 → 原样恢复
+    const inside: PetPosition = {
+      displayId: 'primary',
+      anchorX: 380,
+      anchorY: 508, // 508+260=768 ≤ 800
+      scale: 1,
+      savedAt: 0,
+    };
+    expect(resolvePetPosition(inside, dualDisplays, petSize).y).toBe(508);
+    // 底部探入任务栏 → 拉回完整可见
+    const overlap: PetPosition = { ...inside, anchorY: 572 }; // 572+260=832 超出 32px
+    expect(resolvePetPosition(overlap, dualDisplays, petSize).y).toBe(800 - 260);
+    // 完全跑出屏幕 → 拉回工作区原点
+    const lost: PetPosition = { ...inside, anchorX: -9999, anchorY: -9999 };
+    const result = resolvePetPosition(lost, dualDisplays, petSize);
+    expect(result.x).toBe(0);
+    expect(result.y).toBe(0);
   });
 
   it('clamps scale to [MIN, MAX]', () => {
@@ -166,7 +200,7 @@ describe('PetPositionSchema (持久化校验)', () => {
 });
 
 describe('clampPetWindowToDisplays (拖动夹取)', () => {
-  const petSize = { width: 280, height: 320 };
+  const petSize = { width: 240, height: 260 };
 
   it('keeps an already visible position unchanged', () => {
     expect(clampPetWindowToDisplays({ x: 500, y: 300 }, dualDisplays, petSize)).toEqual({
@@ -175,10 +209,10 @@ describe('clampPetWindowToDisplays (拖动夹取)', () => {
     });
   });
 
-  it('clamps the right edge so at least 1/4 of the window stays visible', () => {
-    // 主屏 1000px 宽，宠物窗口最多只能露出 70px（280*0.25），所以 x 最大 1000-70
+  it('clamps the right edge so the window stays fully visible', () => {
+    // 主屏 1000px 宽，窗口右缘最多 1000（240 宽 → x 最大 760）
     expect(clampPetWindowToDisplays({ x: 950, y: 300 }, dualDisplays, petSize)).toEqual({
-      x: 930,
+      x: 760,
       y: 300,
     });
   });
@@ -186,23 +220,23 @@ describe('clampPetWindowToDisplays (拖动夹取)', () => {
   it('clamps off-screen top edge', () => {
     expect(clampPetWindowToDisplays({ x: 500, y: -300 }, dualDisplays, petSize)).toEqual({
       x: 500,
-      y: -240,
+      y: 0,
     });
   });
 
   it('preserves negative coordinates on the left secondary display', () => {
-    // 目标位于左侧副屏内（x ∈ [-1280,0)），右边界被夹到 -70
+    // 目标位于左侧副屏内（x ∈ [-1280,0)），窗口必须完整留在屏内 → x 最大 -240
     expect(clampPetWindowToDisplays({ x: -50, y: 400 }, dualDisplays, petSize)).toEqual({
-      x: -70,
+      x: -240,
       y: 400,
     });
   });
 
   it('falls back to the primary display when the target is on no display', () => {
-    // y=900 超出所有显示器 → 回主屏并夹进可见区域
+    // y=900 超出所有显示器 → 回主屏并夹进完整可见
     expect(clampPetWindowToDisplays({ x: 500, y: 900 }, dualDisplays, petSize)).toEqual({
       x: 500,
-      y: 720,
+      y: 540,
     });
   });
 
@@ -214,10 +248,10 @@ describe('clampPetWindowToDisplays (拖动夹取)', () => {
 describe('anchorPanelToPet (面板锚定)', () => {
   const panel = { width: 360, height: 480 };
   const workArea = { x: 0, y: 0, width: 1000, height: 800 };
-  const pet = { x: 100, y: 100, width: 280, height: 320 };
+  const pet = { x: 100, y: 100, width: 240, height: 260 };
 
   it('anchors to the right side of the pet when it fits', () => {
-    expect(anchorPanelToPet(pet, panel, workArea)).toEqual({ x: 380, y: 100 });
+    expect(anchorPanelToPet(pet, panel, workArea)).toEqual({ x: 340, y: 100 });
   });
 
   it('falls back to the left side when the right side does not fit', () => {
@@ -227,25 +261,26 @@ describe('anchorPanelToPet (面板锚定)', () => {
 
   it('clamps into the work area when neither side fits (partial visibility)', () => {
     const narrow = { x: 0, y: 0, width: 400, height: 800 };
-    const petAtLeft = { x: 50, y: 100, width: 280, height: 320 };
-    expect(anchorPanelToPet(petAtLeft, panel, narrow)).toEqual({ x: 310, y: 100 });
+    const petAtLeft = { x: 50, y: 100, width: 240, height: 260 };
+    // rightX=290，290+360>400 且左侧 50-360<0 → 夹进工作区（上限 400-90=310）
+    expect(anchorPanelToPet(petAtLeft, panel, narrow)).toEqual({ x: 290, y: 100 });
   });
 
   it('works on a negative-coordinate display', () => {
     const negWorkArea = { x: -1280, y: 0, width: 1280, height: 800 };
-    const negPet = { x: -1200, y: 100, width: 280, height: 320 };
-    // 右侧：-1200+280=-920，-920+360=-560 仍在工作区内 → 放右侧
-    expect(anchorPanelToPet(negPet, panel, negWorkArea)).toEqual({ x: -920, y: 100 });
+    const negPet = { x: -1200, y: 100, width: 240, height: 260 };
+    // 右侧：-1200+240=-960，-960+360=-600 仍在工作区内 → 放右侧
+    expect(anchorPanelToPet(negPet, panel, negWorkArea)).toEqual({ x: -960, y: 100 });
   });
 
   it('returns integer coordinates even when clamping yields fractions', () => {
     const fractionalPanel = { width: 361, height: 480 };
     const narrow = { x: 0, y: 0, width: 401, height: 800 };
-    const petAtLeft = { x: 50, y: 100, width: 280, height: 320 };
+    const petAtLeft = { x: 90, y: 100, width: 240, height: 260 };
     const result = anchorPanelToPet(petAtLeft, fractionalPanel, narrow);
     expect(Number.isInteger(result.x)).toBe(true);
     expect(Number.isInteger(result.y)).toBe(true);
-    expect(result.x).toBe(311); // Math.round(401 - 361*0.25) = Math.round(310.75)
+    expect(result.x).toBe(311); // clamp(90+240=330, …, 401-90.25=310.75) → Math.round(310.75)
     expect(result.y).toBe(100);
   });
 });
