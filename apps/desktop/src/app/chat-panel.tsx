@@ -16,10 +16,13 @@
  * - 网络/模型异常 try/catch 兜底，streaming 永不卡死
  */
 import type { ModelOutput } from '@pet/protocol';
+import { Send, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { api } from '../lib/api/client.js';
 import { localReply } from '../lib/local-mode.js';
+import { DEFAULT_VISUAL_STATE } from '../pet/pet-renderer.js';
+import { StarIsleVisual } from '../pet/star-isle-visual.js';
 
 interface ChatEntry {
   id: string;
@@ -150,32 +153,78 @@ export function ChatPanel() {
   }
 
   return (
-    <div className="chat-panel">
-      <ul className="chat-list" ref={listRef}>
+    <main className="chat-panel" aria-labelledby="cloud-chat-title">
+      <div className="chat-heading chat-heading--character">
+        <div className="character-presence">
+          <div className="character-presence__avatar" aria-hidden="true">
+            <StarIsleVisual
+              variant="head"
+              state={{ ...DEFAULT_VISUAL_STATE, speaking: streaming }}
+            />
+          </div>
+          <div className="character-presence__copy">
+            <h2 id="cloud-chat-title">星屿</h2>
+            <p>{streaming ? '正在输入…' : '在呢，想聊什么？'}</p>
+          </div>
+        </div>
+        <span className="status-chip status-chip--ai">
+          <Sparkles size={13} aria-hidden="true" />
+          AI 生成
+        </span>
+      </div>
+      <ul className="chat-list" ref={listRef} aria-live="polite">
         {entries.length === 0 && (
           <li className="chat-empty">
-            和桌宠聊聊天吧～（DeepSeek 已接入，第 7–10 周完善人格与记忆）
+            <span className="chat-empty__character" aria-hidden="true">
+              <StarIsleVisual />
+            </span>
+            <strong>想和我聊什么？</strong>
+            <p>今天的小事、突然冒出的想法，都可以告诉我。</p>
           </li>
         )}
-        {entries.map((m) => (
-          <li key={m.id} className={`chat-msg ${m.role}`}>
-            <span className="chat-bubble">{m.text || '…'}</span>
+        {entries.map((message) => (
+          <li key={message.id} className={`chat-msg ${message.role}`}>
+            {message.role === 'pet' && (
+              <span className="chat-msg__avatar" aria-hidden="true">
+                <StarIsleVisual variant="head" />
+              </span>
+            )}
+            <span className="chat-bubble">
+              {message.text || (
+                <span className="typing-dots" aria-label="星屿正在回复">
+                  •••
+                </span>
+              )}
+            </span>
           </li>
         ))}
       </ul>
-      {error && <p className="notice">{error}</p>}
+      {error && (
+        <p className="notice notice--warning" role="status">
+          {error}
+        </p>
+      )}
       <form className="chat-input-row" onSubmit={send}>
+        <label className="sr-only" htmlFor="cloud-chat-input">
+          给星屿发消息
+        </label>
         <input
+          id="cloud-chat-input"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(event) => setInput(event.target.value)}
           placeholder="说点什么…（Enter 发送）"
           maxLength={2000}
           disabled={streaming}
         />
-        <button type="submit" disabled={!input.trim() || streaming || !historyLoaded}>
-          {streaming ? '…' : '发送'}
+        <button
+          type="submit"
+          aria-label="发送"
+          title="发送"
+          disabled={!input.trim() || streaming || !historyLoaded}
+        >
+          <Send size={17} aria-hidden="true" />
         </button>
       </form>
-    </div>
+    </main>
   );
 }

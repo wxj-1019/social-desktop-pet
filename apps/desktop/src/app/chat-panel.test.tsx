@@ -139,6 +139,30 @@ describe('ChatPanel（云端聊天 → chatEvent 联动）', () => {
     expect(screen.getByText('云端暂不可用，已切换本地回应')).not.toBeNull();
   });
 
+  it('流式回复期间头部头像进入说话态，完成后恢复', async () => {
+    installFakePet();
+    let releaseStream!: () => void;
+    vi.spyOn(api, 'chatStream').mockImplementation(async (_msg, handlers) => {
+      await new Promise<void>((resolve) => {
+        releaseStream = resolve;
+      });
+      handlers.onDone({ dialogue: '答完了', emotion: 'warm', actionIntent: 'nod', intensity: 1 });
+    });
+
+    render(<ChatPanel />);
+    fireEvent.change(screen.getByPlaceholderText(/说点什么/), { target: { value: '你好' } });
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await act(async () => {});
+
+    const avatar = document.querySelector('.character-presence__avatar .star-isle');
+    expect(avatar?.getAttribute('data-speaking')).toBe('true');
+
+    releaseStream();
+    await act(async () => {});
+    expect(avatar?.getAttribute('data-speaking')).toBe('false');
+  });
+
   it('window.pet 缺失（纯 web）→ 跳过 chatEvent，聊天仍可用', async () => {
     delete (window as unknown as { pet?: unknown }).pet;
     vi.spyOn(api, 'chatStream').mockImplementation(async (_msg, handlers) => {

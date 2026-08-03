@@ -1,35 +1,69 @@
-/**
- * 好友页 —— 6.3 邀请 + 9.4 送礼 + 拜访 + 9.5 事件流（MVP 极简版）。
- */
+/** 好友页：邀请、送礼、拜访与实时动态。 */
+import { Copy, Gift, RefreshCw, Send, Sparkles, UsersRound } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, apiBase, getAccessToken, type Friend, type SyncEvent } from '../lib/api/client.js';
 import { RealtimeClient, toWsUrl } from '../lib/realtime.js';
+import { StarIsleVisual } from '../pet/star-isle-visual.js';
 
 interface FriendsPageProps {
   userId: string;
 }
 
-/** 已处理过的深链 payload（模块级 Set：同一 token 只接受一次；跨组件重挂载仍去重） */
 const seenDeepLinkPayloads = new Set<string>();
-
-/** 已消费过的送礼事件 id（模块级 Set：跨组件重挂载不重复触发桌宠反应） */
 const seenGiftEventIds = new Set<string>();
 
-/** 手工断言 gift.snack_sent payload（unknown → 三个字段必须为 string；非法跳过） */
+const snackLabels: Record<string, string> = {
+  snack_cookie: '小饼干',
+  snack_candy: '水果糖',
+  snack_tea: '暖茶点',
+};
+
+const visitLabels: Record<string, string> = {
+  wave: '挥手问好',
+  share_snack: '分享点心',
+  leave_message: '留句话',
+};
+
 function parseGiftPayload(
   payload: unknown,
 ): { giftId: string; snackId: string; fromUserId: string } | null {
   if (typeof payload !== 'object' || payload === null) return null;
-  const p = payload as Record<string, unknown>;
+  const parsed = payload as Record<string, unknown>;
   if (
-    typeof p.giftId !== 'string' ||
-    typeof p.snackId !== 'string' ||
-    typeof p.fromUserId !== 'string'
+    typeof parsed.giftId !== 'string' ||
+    typeof parsed.snackId !== 'string' ||
+    typeof parsed.fromUserId !== 'string'
   ) {
     return null;
   }
-  return { giftId: p.giftId, snackId: p.snackId, fromUserId: p.fromUserId };
+  return {
+    giftId: parsed.giftId,
+    snackId: parsed.snackId,
+    fromUserId: parsed.fromUserId,
+  };
+}
+
+function eventLabel(entry: SyncEvent, friends: Friend[]): string {
+  const payload = entry.event.payload as Record<string, unknown> | null;
+  const friendId =
+    payload && typeof payload.fromUserId === 'string'
+      ? payload.fromUserId
+      : payload && typeof payload.friendUserId === 'string'
+        ? payload.friendUserId
+        : null;
+  const friendName = friends.find((friend) => friend.userId === friendId)?.nickname ?? '好友';
+
+  switch (entry.event.type) {
+    case 'gift.snack_sent':
+      return `${friendName} 送来了一份小点心`;
+    case 'friend.added':
+      return `你和 ${friendName} 成为了好友`;
+    case 'visit.created':
+      return `${friendName} 来星屿看看你`;
+    default:
+      return '你们之间有一条新动态';
+  }
 }
 
 export function FriendsPage({ userId }: FriendsPageProps) {
@@ -37,7 +71,11 @@ export function FriendsPage({ userId }: FriendsPageProps) {
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [events, setEvents] = useState<SyncEvent[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeTone, setNoticeTone] = useState<'success' | 'error'>('success');
   const [lastSeq, setLastSeq] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [copied, setCopied] = useState(false);
   const friendsRef = useRef<Friend[]>([]);
 
   useEffect(() => {
@@ -46,9 +84,12 @@ export function FriendsPage({ userId }: FriendsPageProps) {
 
   const refreshFriends = useCallback(async () => {
     try {
+      setLoadError(false);
       setFriends(await api.friends());
     } catch {
-      /* 列表刷新失败不阻塞 */
+      setLoadError(true);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -56,15 +97,14 @@ export function FriendsPage({ userId }: FriendsPageProps) {
     try {
       const page = await api.sync(lastSeq);
       if (page.events.length > 0) {
-        setEvents((prev) => [...prev, ...page.events].slice(-20));
+        setEvents((previous) => [...previous, ...page.events].slice(-20));
         setLastSeq(page.nextInboxSeq);
       }
     } catch {
-      /* sync 失败静默，下次再试 */
+      // 实时连接或下一次轮询会继续补齐。
     }
   }, [lastSeq]);
 
-  // 首次加载 + 兜底轮询（30s；低延迟事件走 WS，9.2/9.4）
   useEffect(() => {
     void refreshFriends();
     void pullSync();
@@ -72,34 +112,30 @@ export function FriendsPage({ userId }: FriendsPageProps) {
     return () => clearInterval(timer);
   }, [refreshFriends, pullSync]);
 
-  // 9.2/9.4：WS 实时事件（inbox.delivered → 立即 sync；重连 → 补缺）
   useEffect(() => {
     const base = apiBase();
     if (!base) return;
     const client = new RealtimeClient(toWsUrl(base), getAccessToken, {
-      onEvent: (e) => {
-        if (e.type === 'inbox.delivered') {
+      onEvent: (event) => {
+        if (event.type === 'inbox.delivered') {
           void pullSync();
           void refreshFriends();
         }
       },
-      onReconnected: () => void pullSync(), // 9.7 重连后拉取缺失 Inbox
+      onReconnected: () => void pullSync(),
     });
     client.connect();
     return () => client.close();
-  }, [pullSync]);
+  }, [pullSync, refreshFriends]);
 
-  // 9.4 送礼事件 → 主进程桌宠社交反应（好友送礼 → 星屿开心/吃点心）。
-  // 消费点唯一：events 状态统一处理（初始 pullSync、WS 触发、30s 轮询都汇入这里），
-  // 模块级 Set 按 eventId 去重，跨组件重挂载不重复触发；window.pet 缺失时静默降级。
   useEffect(() => {
     for (const entry of events) {
       if (entry.event.type !== 'gift.snack_sent') continue;
       if (seenGiftEventIds.has(entry.event.eventId)) continue;
       seenGiftEventIds.add(entry.event.eventId);
       const payload = parseGiftPayload(entry.event.payload);
-      if (!payload) continue; // 非法 payload 跳过
-      const from = friendsRef.current.find((f) => f.userId === payload.fromUserId);
+      if (!payload) continue;
+      const from = friendsRef.current.find((friend) => friend.userId === payload.fromUserId);
       window.pet?.petRuntime?.socialEvent({
         type: 'gift.snack_sent',
         giftId: payload.giftId,
@@ -110,117 +146,178 @@ export function FriendsPage({ userId }: FriendsPageProps) {
     }
   }, [events]);
 
-  // 6.3 深链：接受邀请（登录完成后由主进程恢复转发）
-  // C1：除推送订阅外，挂载时主动拉取主进程待投递 payload（deeplink:consume-pending）——
-  // 推送可能早于本组件挂载（登录完成瞬间 / 面板首次创建时渲染进程尚未订阅）。
   useEffect(() => {
     const handleDeepLink = (payload: string): void => {
-      if (seenDeepLinkPayloads.has(payload)) return; // 推送/拉取双路径去重
+      if (seenDeepLinkPayloads.has(payload)) return;
       seenDeepLinkPayloads.add(payload);
       if (payload === 'NEED_SIGN_IN') {
-        setNotice('请先登录，再点击邀请链接');
+        showNotice('请先登录，再打开好友邀请。', 'error');
         return;
       }
       void (async () => {
         try {
           await api.acceptInvite(payload);
-          setNotice('邀请接受成功，好友已添加 🎉');
+          showNotice('邀请已接受，你们成为好友啦。');
           await refreshFriends();
-        } catch (e) {
-          setNotice((e as Error).message);
+        } catch (caught) {
+          showNotice((caught as Error).message, 'error');
         }
       })();
     };
-    const off = window.pet.onDeepLink((payload) => handleDeepLink(payload));
+    const off = window.pet.onDeepLink(handleDeepLink);
     void window.pet.consumeDeepLinkPayload().then((payload) => {
       if (payload) handleDeepLink(payload);
     });
     return off;
   }, [refreshFriends]);
 
+  function showNotice(message: string, tone: 'success' | 'error' = 'success') {
+    setNotice(message);
+    setNoticeTone(tone);
+  }
+
   async function createInvite() {
     try {
       const created = await api.createInvite();
       setInviteLink(`pet://invite?token=${created.token}`);
-      setNotice('邀请链接已生成，复制发给好友');
-    } catch (e) {
-      setNotice((e as Error).message);
+      setCopied(false);
+      showNotice('邀请链接准备好了。');
+    } catch (caught) {
+      showNotice((caught as Error).message, 'error');
+    }
+  }
+
+  async function copyInvite() {
+    if (!inviteLink) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+      showNotice('邀请链接已复制，可以发给好友了。');
+    } catch {
+      showNotice('复制失败，请选中链接后手动复制。', 'error');
     }
   }
 
   async function sendGift(friend: Friend, snackId: string) {
     try {
-      const snackLabel: Record<string, string> = {
-        snack_cookie: '小饼干 🍪',
-        snack_candy: '糖果 🍬',
-        snack_tea: '茶点 🍵',
-      };
-      const result = await api.sendGift(friend.userId, snackId, crypto.randomUUID());
-      setNotice(
-        `已给 ${friend.nickname} 送了${snackLabel[snackId] ?? '点心'} (event ${result.eventId.slice(0, 8)})`,
-      );
-    } catch (e) {
-      setNotice((e as Error).message);
+      await api.sendGift(friend.userId, snackId, crypto.randomUUID());
+      showNotice(`已给 ${friend.nickname} 送去${snackLabels[snackId] ?? '小点心'}。`);
+    } catch (caught) {
+      showNotice((caught as Error).message, 'error');
     }
   }
 
   async function sendVisit(friend: Friend, type: 'wave' | 'share_snack' | 'leave_message') {
     try {
-      const visitLabel: Record<string, string> = {
-        wave: '挥手拜访 👋',
-        share_snack: '分享点心 🍪',
-        leave_message: '留言 💬',
-      };
-      const result = await api.sendVisit(friend.userId, type);
-      setNotice(
-        `已${visitLabel[type] ?? '拜访'} ${friend.nickname} (visit ${result.visitId.slice(0, 8)})`,
-      );
-    } catch (e) {
-      setNotice((e as Error).message);
+      await api.sendVisit(friend.userId, type);
+      showNotice(`已向 ${friend.nickname} 发出“${visitLabels[type] ?? '去拜访'}”。`);
+    } catch (caught) {
+      showNotice((caught as Error).message, 'error');
     }
   }
 
   return (
-    <div className="friends-page">
-      <h2>好友</h2>
-      <button onClick={createInvite}>创建邀请链接</button>
+    <main className="friends-page" aria-labelledby="friends-title">
+      <div className="view-heading">
+        <div className="view-heading__identity">
+          <span className="view-heading__avatar" aria-hidden="true">
+            <StarIsleVisual variant="head" />
+          </span>
+          <div>
+            <p className="eyebrow">星屿小圈子</p>
+            <h2 id="friends-title">好友</h2>
+          </div>
+        </div>
+        <button className="secondary-button" onClick={() => void createInvite()}>
+          <UsersRound size={16} aria-hidden="true" />
+          邀请好友
+        </button>
+      </div>
+
       {inviteLink && (
-        <p className="invite-link">
-          邀请链接：<code>{inviteLink}</code>
+        <div className="invite-link">
+          <span>专属邀请链接</span>
+          <div>
+            <code title={inviteLink}>{inviteLink}</code>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="复制邀请链接"
+              title="复制邀请链接"
+              onClick={() => void copyInvite()}
+            >
+              <Copy size={16} aria-hidden="true" />
+            </button>
+          </div>
+          {copied && <small>已复制</small>}
+        </div>
+      )}
+
+      {notice && (
+        <p className={`notice notice--${noticeTone}`} role="status" aria-live="polite">
+          {notice}
         </p>
       )}
-      {notice && <p className="notice">{notice}</p>}
 
-      <ul className="friend-list">
-        {friends.length === 0 && <li className="empty">还没有好友——把邀请链接发给朋友吧</li>}
-        {friends.map((f) => (
-          <FriendActions
-            key={f.userId}
-            friend={f}
-            userId={userId}
-            onGift={sendGift}
-            onVisit={sendVisit}
-          />
-        ))}
-      </ul>
+      {loading ? (
+        <div className="friends-state" role="status">
+          <span className="soft-loader" aria-hidden="true" />
+          <p>正在看看谁在线上…</p>
+        </div>
+      ) : loadError ? (
+        <div className="friends-state">
+          <p>暂时没能连上好友列表。</p>
+          <button className="secondary-button" onClick={() => void refreshFriends()}>
+            <RefreshCw size={15} aria-hidden="true" />
+            再试一次
+          </button>
+        </div>
+      ) : (
+        <ul className="friend-list">
+          {friends.length === 0 && (
+            <li className="friends-state friends-state--empty">
+              <span className="friends-empty__character" aria-hidden="true">
+                <StarIsleVisual />
+              </span>
+              <strong>小圈子还空着</strong>
+              <p>邀请一位好友，一起给星屿送点心、串串门。</p>
+            </li>
+          )}
+          {friends.map((friend) => (
+            <FriendActions
+              key={friend.userId}
+              friend={friend}
+              userId={userId}
+              onGift={sendGift}
+              onVisit={sendVisit}
+            />
+          ))}
+        </ul>
+      )}
 
-      <h3>最近事件（sync）</h3>
-      <ul className="event-list">
-        {events.length === 0 && <li className="empty">暂无事件</li>}
-        {events.map((e) => (
-          <li key={e.inboxSeq}>
-            <code>#{e.inboxSeq}</code> {e.event.type}
-            <span className="event-time">
-              {new Date(e.event.serverTimestamp).toLocaleTimeString()}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
+      <details className="activity-feed">
+        <summary>
+          最近动态 <span>{events.length}</span>
+        </summary>
+        <ul className="event-list">
+          {events.length === 0 && <li className="empty">还没有新动态</li>}
+          {[...events].reverse().map((entry) => (
+            <li key={entry.inboxSeq}>
+              <span>{eventLabel(entry, friends)}</span>
+              <time dateTime={entry.event.serverTimestamp}>
+                {new Date(entry.event.serverTimestamp).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </time>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </main>
   );
 }
 
-/** 单个好友行：昵称 + 礼物类型选择 + 拜访类型选择 */
 function FriendActions({
   friend,
   userId,
@@ -237,27 +334,58 @@ function FriendActions({
 
   return (
     <li className="friend-item">
-      <span>
-        {friend.nickname}
-        {friend.userId === userId ? '（我）' : ''}
-      </span>
+      <div className="friend-identity">
+        <span className="friend-avatar" aria-hidden="true">
+          {friend.nickname.slice(0, 1).toUpperCase()}
+        </span>
+        <div>
+          <strong>{friend.nickname}</strong>
+          <span>{friend.userId === userId ? '这是你' : '可以互送心意'}</span>
+        </div>
+      </div>
       <div className="friend-actions">
-        <select value={snack} onChange={(e) => setSnack(e.target.value)} aria-label="点心类型">
-          <option value="snack_cookie">🍪 饼干</option>
-          <option value="snack_candy">🍬 糖果</option>
-          <option value="snack_tea">🍵 茶点</option>
-        </select>
-        <button onClick={() => void onGift(friend, snack)}>送</button>
-        <select
-          value={visitType}
-          onChange={(e) => setVisitType(e.target.value as typeof visitType)}
-          aria-label="拜访类型"
-        >
-          <option value="wave">👋 挥手</option>
-          <option value="share_snack">🍪 分享</option>
-          <option value="leave_message">💬 留言</option>
-        </select>
-        <button onClick={() => void onVisit(friend, visitType)}>拜访</button>
+        <label>
+          <span>
+            <Gift size={14} aria-hidden="true" />
+            送点心
+          </span>
+          <select
+            value={snack}
+            onChange={(event) => setSnack(event.target.value)}
+            aria-label="点心类型"
+          >
+            <option value="snack_cookie">小饼干</option>
+            <option value="snack_candy">水果糖</option>
+            <option value="snack_tea">暖茶点</option>
+          </select>
+          <button
+            aria-label={`送点心给 ${friend.nickname}`}
+            onClick={() => void onGift(friend, snack)}
+          >
+            <Send size={15} aria-hidden="true" />
+          </button>
+        </label>
+        <label>
+          <span>
+            <Sparkles size={14} aria-hidden="true" />
+            去拜访
+          </span>
+          <select
+            value={visitType}
+            onChange={(event) => setVisitType(event.target.value as typeof visitType)}
+            aria-label="拜访类型"
+          >
+            <option value="wave">挥手问好</option>
+            <option value="share_snack">分享点心</option>
+            <option value="leave_message">留句话</option>
+          </select>
+          <button
+            aria-label={`拜访 ${friend.nickname}`}
+            onClick={() => void onVisit(friend, visitType)}
+          >
+            <Send size={15} aria-hidden="true" />
+          </button>
+        </label>
       </div>
     </li>
   );

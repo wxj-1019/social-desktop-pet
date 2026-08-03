@@ -92,23 +92,24 @@ describe('AppPanel · panel.onNavigate 消费（I1）', () => {
     await act(async () => {}); // 冲刷 session.init
 
     // 默认好友 tab
-    expect(await screen.findByRole('button', { name: '创建邀请链接' })).not.toBeNull();
+    expect(await screen.findByRole('button', { name: '邀请好友' })).not.toBeNull();
 
     act(() => fake.navigate('chat'));
     expect(screen.getByPlaceholderText(/说点什么/)).not.toBeNull();
 
     act(() => fake.navigate('friends'));
-    expect(screen.getByRole('button', { name: '创建邀请链接' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: '邀请好友' })).not.toBeNull();
   });
 
   it('panel:navigate login → signed_out（登录页）', async () => {
     const fake = installFakePet(ACTIVE_PROFILE);
     render(<AppPanel />);
     await act(async () => {});
-    await screen.findByRole('button', { name: '创建邀请链接' });
+    await screen.findByRole('button', { name: '邀请好友' });
 
     act(() => fake.navigate('login'));
-    expect(screen.getByRole('heading', { name: '登录' })).not.toBeNull();
+    expect(screen.getByRole('heading', { name: '欢迎回来' })).not.toBeNull();
+    expect(document.querySelector('.app-tabs')).toBeNull();
     expect(document.querySelector('.login-page')).not.toBeNull();
   });
 

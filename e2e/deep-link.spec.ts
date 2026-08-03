@@ -54,7 +54,7 @@ async function login(page: Page, email: string, password: string): Promise<void>
   await expect(page.locator('.login-page')).toBeVisible({ timeout: 15_000 });
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
-  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await page.getByRole('button', { name: '登录并去找星屿', exact: true }).click();
   await expect(page.locator('.friends-page')).toBeVisible({ timeout: 15_000 });
 }
 
@@ -74,7 +74,7 @@ test('inviter（fresh 账号）创建邀请链接（供 acceptor 深链接受）
     await page.waitForLoadState('domcontentloaded');
     await login(page, inviterEmail, PASSWORD);
 
-    await page.getByRole('button', { name: '创建邀请链接' }).click();
+    await page.getByRole('button', { name: '邀请好友' }).click();
     const link = await page.locator('.invite-link code').innerText();
     inviteToken = link.split('token=')[1] ?? '';
     expect(inviteToken.length).toBeGreaterThan(20);

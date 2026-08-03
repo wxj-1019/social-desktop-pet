@@ -34,7 +34,7 @@ test('登录 → 聊天 tab → SSE 流式回复', async () => {
   await expect(page.locator('.login-page')).toBeVisible({ timeout: 15_000 });
   await page.locator('input[type="email"]').fill('alice@test.local');
   await page.locator('input[type="password"]').fill('password123');
-  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await page.getByRole('button', { name: '登录并去找星屿', exact: true }).click();
   await expect(page.locator('.friends-page')).toBeVisible({ timeout: 15_000 });
 
   // 切到聊天 tab
@@ -44,10 +44,8 @@ test('登录 → 聊天 tab → SSE 流式回复', async () => {
   // 发送消息 → 收到流式回复（真实模型或骨架降级，均为非空回复）
   await page.locator('.chat-input-row input').fill('你好呀');
   await page.getByRole('button', { name: '发送' }).click();
-  // 进入流式：按钮文字变为 '…'
-  await expect(page.getByRole('button', { name: '…' })).toBeVisible({ timeout: 15_000 });
-  // 对话完成信号：按钮从 '…' 恢复为 '发送'（发送后输入框清空，按钮按设计保持
-  // disabled，不能断言 toBeEnabled——完成信号是文字恢复，即 onDone 已触发）
+  // 流式占位消息出现后，等待云端或本地兜底完成。
+  await expect(page.locator('.chat-msg.pet').last()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('button', { name: '发送' })).toBeVisible({ timeout: 60_000 });
   // 本次回复气泡（最后一条 pet，排除历史消息）已被 token 填充为非空
   await expect(page.locator('.chat-msg.pet').last().locator('.chat-bubble')).not.toHaveText('…', {

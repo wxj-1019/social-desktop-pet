@@ -5,6 +5,7 @@ import { AppPanel } from './app/app.js';
 import { PetExperience } from './pet/pet-experience.js';
 import { PocApp } from './poc/poc-app.js';
 import './styles.css';
+import './app/panel.css';
 
 const el = document.getElementById('root');
 if (!el) throw new Error('#root not found');

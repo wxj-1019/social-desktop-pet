@@ -6,6 +6,7 @@
  * （start → done，source: local_chat）；动作由 Main petRuntime 驱动，
  * 不再在 renderer 用 setTimeout 模拟 CHATTING。window.pet 缺失时跳过事件。
  */
+import { HardDrive, Send } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import {
@@ -14,6 +15,7 @@ import {
   localReply,
   type ChatMessage,
 } from '../lib/local-mode.js';
+import { StarIsleVisual } from '../pet/star-isle-visual.js';
 
 interface LocalChatProps {
   onLoginClick: () => void;
@@ -53,35 +55,62 @@ export function LocalChat({ onLoginClick }: LocalChatProps) {
   }
 
   return (
-    <div className="local-chat">
-      <div className="local-banner">
-        🏠 本地模式 —— 数据只存在这台电脑；
-        <button className="link-button" onClick={onLoginClick}>
-          登录后解锁好友/礼物/云端记忆
-        </button>
+    <main className="local-chat" aria-labelledby="local-chat-title">
+      <div className="chat-heading chat-heading--character">
+        <div className="character-presence">
+          <div className="character-presence__avatar" aria-hidden="true">
+            <StarIsleVisual variant="head" />
+          </div>
+          <div className="character-presence__copy">
+            <h2 id="local-chat-title">星屿</h2>
+            <p>不联网也能陪你</p>
+          </div>
+        </div>
+        <span className="status-chip">
+          <HardDrive size={13} aria-hidden="true" />
+          仅此设备
+        </span>
       </div>
-      <ul className="chat-list">
+      <ul className="chat-list" aria-live="polite">
         {history.length === 0 && (
-          <li className="chat-empty">和我聊聊天吧～（本地模式：不用登录，先体验）</li>
+          <li className="chat-empty">
+            <span className="chat-empty__character" aria-hidden="true">
+              <StarIsleVisual />
+            </span>
+            <strong>先从一句你好开始吧</strong>
+            <p>这些对话只会留在这台电脑里。</p>
+          </li>
         )}
-        {history.map((m, i) => (
-          <li key={i} className={`chat-msg ${m.role}`}>
-            <span className="chat-bubble">{m.text}</span>
+        {history.map((message, index) => (
+          <li key={index} className={`chat-msg ${message.role}`}>
+            {message.role === 'pet' && (
+              <span className="chat-msg__avatar" aria-hidden="true">
+                <StarIsleVisual variant="head" />
+              </span>
+            )}
+            <span className="chat-bubble">{message.text}</span>
           </li>
         ))}
         <div ref={bottomRef} />
       </ul>
+      <button className="local-login-prompt" onClick={onLoginClick}>
+        登录后解锁好友与云端记忆
+      </button>
       <form className="chat-input-row" onSubmit={send}>
+        <label className="sr-only" htmlFor="local-chat-input">
+          给星屿发消息
+        </label>
         <input
+          id="local-chat-input"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(event) => setInput(event.target.value)}
           placeholder="说点什么…（Enter 发送）"
           maxLength={200}
         />
-        <button type="submit" disabled={!input.trim()}>
-          发送
+        <button type="submit" aria-label="发送" title="发送" disabled={!input.trim()}>
+          <Send size={17} aria-hidden="true" />
         </button>
       </form>
-    </div>
+    </main>
   );
 }

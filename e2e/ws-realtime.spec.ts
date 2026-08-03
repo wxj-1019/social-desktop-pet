@@ -74,5 +74,5 @@ test('alice 送礼 → bob 的 WS 实时收到事件（10s 内，非 30s 轮询�
   expect(giftRes.ok).toBe(true);
 
   // 10s 内事件流出现 gift.snack_sent（WS 推送；30s 轮询尚未到点）
-  await expect(page.locator('.event-list')).toContainText('gift.snack_sent', { timeout: 10_000 });
+  await expect(page.locator('.event-list')).toContainText('送来了一份小点心', { timeout: 10_000 });
 });
