@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // 与 window-controller.test.ts 一致：electron 在 Node 下只导出路径字符串，必须 mock。
-// 测试全部注入端口（createTray/buildMenu/loadIcon/win/handlers），默认实现不会被调用。
+// 测试全部注入端口（createTray/buildMenu/loadIcon/popupMenu/handlers），默认实现不会被调用。
 vi.mock('electron', () => ({
   Menu: { buildFromTemplate: vi.fn() },
   Tray: vi.fn(),
@@ -23,6 +23,7 @@ interface TrayHarness {
   tray: TrayLike;
   options: TrayControllerOptions;
   menus: TrayMenuItem[][];
+  popups: Array<{ menu: MenuLike; win: unknown }>;
   doubleClicks: (() => void)[];
 }
 
@@ -36,6 +37,7 @@ function makeHarness(iconAvailable = true): TrayHarness {
     onQuit: vi.fn(),
   };
   const menus: TrayMenuItem[][] = [];
+  const popups: Array<{ menu: MenuLike; win: unknown }> = [];
   const doubleClicks: (() => void)[] = [];
   const tray: TrayLike = {
     setToolTip: vi.fn(),
@@ -50,10 +52,10 @@ function makeHarness(iconAvailable = true): TrayHarness {
       return {} as MenuLike;
     }),
     loadIcon: vi.fn(() => ({ isEmpty: () => !iconAvailable }) as ImageLike),
-    win: vi.fn(() => null),
+    popupMenu: vi.fn((menu: MenuLike, win: unknown) => void popups.push({ menu, win })),
     handlers,
   };
-  return { handlers, tray, options, menus, doubleClicks };
+  return { handlers, tray, options, menus, popups, doubleClicks };
 }
 
 function makeController(harness: TrayHarness): TrayController {
@@ -332,5 +334,48 @@ describe('TrayController.destroy', () => {
 
     // destroy 后再 refresh 不抛错
     expect(() => controller.refresh()).not.toThrow();
+  });
+});
+
+describe('TrayController.popupContextMenu（桌宠右键菜单）', () => {
+  it('pops the same menu items as the tray, attached to the given window', () => {
+    const harness = makeHarness(true);
+    const controller = makeController(harness);
+    controller.create('/a.png');
+
+    const win = { id: 1 };
+    controller.popupContextMenu(win as never);
+
+    // 弹出前用当前状态重新构建菜单（与托盘 refresh 同源）
+    expect(harness.menus.length).toBeGreaterThanOrEqual(2);
+    const popupItems = harness.menus.at(-1) ?? [];
+    expect(popupItems.some((i) => i.label === '打开聊天')).toBe(true);
+    expect(popupItems.some((i) => i.label === '隐藏桌宠')).toBe(true);
+    expect(popupItems.some((i) => i.label === '完全退出')).toBe(true);
+    expect(harness.popups).toHaveLength(1);
+    expect(harness.popups[0]?.win).toBe(win);
+  });
+
+  it('popup menu actions route through dispatch（与托盘行为一致）', () => {
+    const harness = makeHarness(true);
+    const controller = makeController(harness);
+    controller.create('/a.png');
+    controller.popupContextMenu({ id: 1 } as never);
+
+    const popupItems = harness.menus.at(-1) ?? [];
+    const chat = popupItems.find((i) => i.label === '打开聊天');
+    chat?.click?.();
+    expect(harness.handlers.onOpenPanel).toHaveBeenCalledWith('chat');
+
+    const quit = popupItems.find((i) => i.label === '完全退出');
+    quit?.click?.();
+    expect(harness.handlers.onQuit).toHaveBeenCalled();
+  });
+
+  it('is inert before the tray is created', () => {
+    const harness = makeHarness(true);
+    const controller = makeController(harness);
+    controller.popupContextMenu({ id: 1 } as never);
+    expect(harness.popups).toHaveLength(0);
   });
 });

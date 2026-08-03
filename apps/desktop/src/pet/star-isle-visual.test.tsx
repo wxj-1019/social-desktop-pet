@@ -80,6 +80,15 @@ describe('StarIsleVisual（原创分层 SVG 星屿）', () => {
     expect(html).toContain('data-reduced-motion="true"');
   });
 
+  it('reflects intensity on the root svg (动画幅度档位)', () => {
+    const html = renderToStaticMarkup(
+      <StarIsleVisual state={{ ...DEFAULT_VISUAL_STATE, intensity: 3 }} />,
+    );
+    expect(html).toContain('data-intensity="3"');
+    const defaultHtml = renderToStaticMarkup(<StarIsleVisual />);
+    expect(defaultHtml).toContain('data-intensity="1"');
+  });
+
   it('defaults to idle/warm when no state prop is given', () => {
     const html = renderToStaticMarkup(<StarIsleVisual />);
     expect(html).toContain('data-motion="idle"');
@@ -116,5 +125,23 @@ describe('StarIsleVisual（原创分层 SVG 星屿）', () => {
     expect(html).toContain('data-part="tail-star"');
     expect(html).toContain('data-part="head"');
     expect(html).toContain('data-reduced-motion="false"');
+  });
+
+  it('head variant uses a square head-focused viewBox (面板头像取景)', () => {
+    const html = renderToStaticMarkup(<StarIsleVisual variant="head" />);
+    expect(html).toContain('viewBox="50 64 220 220"');
+    expect(html).toContain('preserveAspectRatio="xMidYMid meet"');
+  });
+
+  it('generates unique gradient ids for co-located instances (面板多头像共存)', () => {
+    const html = renderToStaticMarkup(
+      <>
+        <StarIsleVisual />
+        <StarIsleVisual variant="head" />
+      </>,
+    );
+    const ids = [...html.matchAll(/id="fur-grad-([^"]+)"/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
   });
 });

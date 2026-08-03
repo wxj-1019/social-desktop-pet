@@ -150,6 +150,8 @@ void app.whenReady().then(async () => {
   // ---- 8.4 穿透（Main 端）：窗口 + 托盘 snapshot 同步 ----
   // 唯一穿透入口；tray 的 dispatch('show') 也会先经 onSetPassThrough(false) 回到这里。
   const setPassThroughFromMain = (enabled: boolean): void => {
+    // 拖动中切换穿透会让窗口跟着光标"鬼畜"：先解除拖动状态
+    if (enabled) drag?.cancel();
     const win = alivePetWindow();
     if (win) setPassThrough(win, enabled);
     tray?.setPassThroughForced(enabled);
@@ -195,8 +197,11 @@ void app.whenReady().then(async () => {
     deliverPanelMessage(panelHandle.win, view, deeplinkPayload);
   };
   const closePanel = (): void => panelHandle?.hide();
+  // 桌宠右键菜单（8.2）：弹出与托盘同源的原生菜单（打开聊天/好友、穿透、
+  // 勿扰、隐藏/显示、退出），动作与勾选状态与托盘完全一致
   const showContextMenu = (): void => {
-    // Task 10：自定义右键菜单未实现；桌宠右键交互由托盘承载（8.2）
+    const win = alivePetWindow();
+    if (win) tray?.popupContextMenu(win);
   };
 
   // ---- 桌宠窗创建 + 生命周期接线（崩溃重建 / 渲染就绪启动运行时）----
@@ -337,12 +342,12 @@ void app.whenReady().then(async () => {
 
   // 8.2 托盘（Task 10：注入端口默认用 Electron 原生；图标 assets:tray 生成）
   tray = new TrayController({
-    win: () => petWindow,
     handlers: {
       onOpenPanel: (view) => openPanel(view),
       onSetDnd: (enabled) => syncDnd(enabled),
       onSetPassThrough: setPassThroughFromMain,
       onHide: () => {
+        drag?.cancel(); // 隐藏前解除进行中的拖动，避免残留会话
         alivePetWindow()?.hide();
         runtime?.setHidden(true);
       },

@@ -63,8 +63,8 @@ export interface TrayControllerOptions {
   buildMenu?(items: TrayMenuItem[]): MenuLike;
   /** 从磁盘加载图标（默认 nativeImage.createFromPath；isEmpty() 判断可用性） */
   loadIcon?(path: string): ImageLike;
-  /** 取桌宠窗口（show 时聚焦；hide/show 动作由 Main handlers 处理） */
-  win(): BrowserWindow | null;
+  /** 弹出原生菜单（默认 menu.popup({ window })；测试注入收集调用） */
+  popupMenu?(menu: MenuLike, win: BrowserWindow): void;
   /** 用户动作回调（Main 接 runtime / 窗口） */
   handlers: TrayHandlers;
 }
@@ -72,12 +72,13 @@ export interface TrayControllerOptions {
 /** 生产默认端口：直接用 Electron 原生 Tray/Menu/nativeImage */
 function defaultOptions(): Pick<
   Required<TrayControllerOptions>,
-  'createTray' | 'buildMenu' | 'loadIcon'
+  'createTray' | 'buildMenu' | 'loadIcon' | 'popupMenu'
 > {
   return {
     createTray: (icon) => new Tray(icon as NativeImage) as unknown as TrayLike,
     buildMenu: (items) => Menu.buildFromTemplate(items as MenuItemConstructorOptions[]),
     loadIcon: (path) => nativeImage.createFromPath(path),
+    popupMenu: (menu, win) => (menu as Menu).popup({ window: win }),
   };
 }
 
@@ -87,9 +88,9 @@ export class TrayController {
   private passThrough = false;
   private dnd = false;
   private readonly options: Required<
-    Pick<TrayControllerOptions, 'createTray' | 'buildMenu' | 'loadIcon'>
+    Pick<TrayControllerOptions, 'createTray' | 'buildMenu' | 'loadIcon' | 'popupMenu'>
   > &
-    Pick<TrayControllerOptions, 'win' | 'handlers'>;
+    Pick<TrayControllerOptions, 'handlers'>;
 
   constructor(options: TrayControllerOptions) {
     this.options = {
@@ -132,6 +133,15 @@ export class TrayController {
   setDndForced(enabled: boolean): void {
     this.dnd = enabled;
     this.refresh();
+  }
+
+  /**
+   * 桌宠右键菜单：与托盘共用同一菜单项与 dispatch（穿透/勿扰勾选、动作
+   * 行为天然与托盘一致）。tray 未创建（启动早期）时静默跳过。
+   */
+  popupContextMenu(win: BrowserWindow): void {
+    if (!this.tray) return;
+    this.options.popupMenu(this.options.buildMenu(this.buildMenuItems()), win);
   }
 
   /** 唯一动作入口：菜单回调 / double-click 全部收敛到这里 */
