@@ -62,6 +62,14 @@ describe('StarIsleVisual（原创分层 SVG 星屿）', () => {
     expect(html).toContain('star-isle__headshine');
   });
 
+  it('splits hind feet into independent parts for walk animation', () => {
+    const html = renderToStaticMarkup(<StarIsleVisual state={DEFAULT_VISUAL_STATE} />);
+    expect(html).toContain('data-part="foot-left"');
+    expect(html).toContain('data-part="foot-right"');
+    expect(html).toContain('class="star-isle__foot star-isle__foot-left"');
+    expect(html).toContain('class="star-isle__foot star-isle__foot-right"');
+  });
+
   it('reflects motion and expression on the root svg', () => {
     const html = renderToStaticMarkup(
       <StarIsleVisual

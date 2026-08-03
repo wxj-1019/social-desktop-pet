@@ -75,7 +75,7 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
         <rect data-hit-rect x="22" y="100" width="88" height="160" rx="20" />
       </g>
 
-      {/* 圆润身体 + 后足 */}
+      {/* 圆润身体（不含后足；后足独立成组，走路循环对角步态动画不参与 body 呼吸形变） */}
       <g data-part="body" data-hit="body" className="star-isle__body">
         <ellipse
           cx="140"
@@ -87,6 +87,12 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
           strokeWidth={STROKE.width}
         />
         <ellipse cx="140" cy="252" rx="32" ry="24" fill="#e4edfc" />
+        {/* 透明命中区（身体 + 前肢范围） */}
+        <rect data-hit-rect x="86" y="194" width="108" height="97" rx="24" />
+      </g>
+
+      {/* 后足（独立组：走路循环对角步态动画；不参与 body 呼吸形变） */}
+      <g data-part="foot-left" className="star-isle__foot star-isle__foot-left">
         <ellipse
           cx="98"
           cy="284"
@@ -96,6 +102,8 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
           stroke={STROKE.color}
           strokeWidth={STROKE.width}
         />
+      </g>
+      <g data-part="foot-right" className="star-isle__foot star-isle__foot-right">
         <ellipse
           cx="182"
           cy="284"
@@ -105,8 +113,6 @@ export function StarIsleVisual({ state = DEFAULT_VISUAL_STATE }: StarIsleVisualP
           stroke={STROKE.color}
           strokeWidth={STROKE.width}
         />
-        {/* 透明命中区（身体 + 前肢范围） */}
-        <rect data-hit-rect x="86" y="194" width="108" height="97" rx="24" />
       </g>
 
       {/* 头：浅蓝圆润头 + 双耳（在头部组内，随头部动画联动）+ 额间刘海 + 光冠 + 五官 */}
