@@ -15,7 +15,7 @@ function makeRuntime(visuals: PetVisualCommand[], snapshots: PetRuntimeSnapshot[
 }
 
 describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
-  it('boots to IDLE, broadcasts happy stretch; wander loop keeps it from degrading', () => {
+  it('boots to IDLE, broadcasts happy stretch, then degrades to SITTING after the activity window', () => {
     vi.useFakeTimers();
     const snapshots: PetRuntimeSnapshot[] = [];
     const visuals: PetVisualCommand[] = [];
@@ -29,11 +29,10 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     vi.advanceTimersByTime(1_200);
     expect(visuals).toContainEqual({ type: 'motion', motion: 'idle', intensity: 1 });
 
-    // 溜达每 30-90s 循环重挂：IDLE 连续时长 < 180s，永不降级 SITTING/SLEEPING
-    // （机器级降级逻辑由 pet-state 单测覆盖，此层不再断言降级）
-    vi.advanceTimersByTime(1_000_000);
-    expect(snapshots.some((s) => s.state === 'WALKING')).toBe(true);
-    expect(snapshots.some((s) => s.state === 'SITTING' || s.state === 'SLEEPING')).toBe(false);
+    // 活动窗口（150s）过后停止溜达，空闲降级可达：最坏末轮溜达结束 ≤245s，+180s → SITTING（500s 内不会到 SLEEPING）
+    vi.advanceTimersByTime(500_000 - 1_200);
+    expect(snapshots.at(-1)?.state).toBe('SITTING');
+    expect(visuals).toContainEqual({ type: 'motion', motion: 'sit', intensity: 1 });
 
     runtime.stop();
     expect(vi.getTimerCount()).toBe(0);
@@ -117,6 +116,26 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     vi.advanceTimersByTime(90_000);
     expect(runtime.snapshot.state).toBe('QUIET');
     expect(snapshots.every((s) => s.state !== 'WALKING')).toBe(true);
+
+    runtime.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('interaction refreshes the activity window (wander continues after touch)', () => {
+    vi.useFakeTimers();
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const visuals: PetVisualCommand[] = [];
+    // 固定随机值 → 溜达延迟 60s、持续 4s（30s + r*60s / 3s + r*2s），轮次可精确预期：60/124/188/252s
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+
+    // 130s 触摸刷新活动窗口（延至 280s）：若不刷新，150s 后不再挂溜达，第 4 轮（252s）不会触发
+    vi.advanceTimersByTime(130_000);
+    runtime.handleInteraction({ kind: 'head_touch' });
+    vi.advanceTimersByTime(150_000);
+    expect(snapshots.filter((s) => s.state === 'WALKING').length).toBeGreaterThanOrEqual(4);
+    randomSpy.mockRestore();
 
     runtime.stop();
     expect(vi.getTimerCount()).toBe(0);

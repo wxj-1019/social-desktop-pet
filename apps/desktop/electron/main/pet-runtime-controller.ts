@@ -39,6 +39,8 @@ const WANDER_MIN_DELAY_MS = 30_000;
 const WANDER_MAX_DELAY_MS = 90_000;
 const WANDER_DURATION_MIN_MS = 3_000;
 const WANDER_DURATION_MAX_MS = 5_000;
+/** 活动窗口：距最近一次用户/系统活动超过该时长后停止溜达，让空闲降级（SITTING）可达 */
+const WANDER_STOP_IDLE_MS = 150_000;
 
 /** 点心名称映射（送礼气泡显示文案；未知 id 回退"点心"） */
 export function snackLabel(snackId: string): string {
@@ -90,6 +92,8 @@ export class PetRuntimeController {
   private hidden = false;
   private started = false;
   private stopped = false;
+  /** 最近一次用户/系统活动时刻（活动窗口起点；溜达仅在窗口内挂起） */
+  private lastActivityAt = 0;
 
   constructor(options: PetRuntimeOptions) {
     this.options = options;
@@ -104,6 +108,7 @@ export class PetRuntimeController {
   start(): void {
     if (this.stopped || this.started) return;
     this.started = true;
+    this.lastActivityAt = this.nowMs();
     this.enterModeState('boot');
     this.emitSnapshot();
     this.emitVisual({ type: 'motion', motion: 'happy', intensity: 1 }); // 伸懒腰开场（7.2）
@@ -149,6 +154,7 @@ export class PetRuntimeController {
 
   handleInteraction(interaction: PetInteraction): void {
     if (this.stopped) return;
+    this.lastActivityAt = this.nowMs();
     let intent: ActionIntent;
     switch (interaction.kind) {
       case 'head_touch':
@@ -176,6 +182,7 @@ export class PetRuntimeController {
 
   handleChat(event: PetChatEvent): void {
     if (this.stopped) return;
+    this.lastActivityAt = this.nowMs();
     switch (event.phase) {
       case 'start':
         this.handleChatStart(event);
@@ -198,6 +205,7 @@ export class PetRuntimeController {
    */
   handleSocialEvent(event: PetSocialEvent): void {
     if (this.stopped) return;
+    this.lastActivityAt = this.nowMs();
     if (this.machine.current === 'QUIET' || this.machine.current === 'HIDDEN') return;
 
     // 表情是情绪，不经动作审批（9.4 收到礼物的第一反应）
@@ -363,9 +371,15 @@ export class PetRuntimeController {
     this.armWanderTimer();
   }
 
+  /** 当前时间（与 state machine 同一时钟源：options.now 注入或 Date.now） */
+  private nowMs(): number {
+    return this.options.now?.() ?? Date.now();
+  }
+
   /** 挂起溜达开始定时器（30-90s 随机；已挂起/隐藏时不重复挂） */
   private armWanderTimer(): void {
     if (this.stopped || this.hidden || this.wanderTimer !== null) return;
+    if (this.nowMs() - this.lastActivityAt > WANDER_STOP_IDLE_MS) return; // 久置无活动：停止溜达，让空闲降级可达
     const delay =
       WANDER_MIN_DELAY_MS + Math.floor(Math.random() * (WANDER_MAX_DELAY_MS - WANDER_MIN_DELAY_MS));
     this.wanderTimer = this.setTimeoutFn(() => {
