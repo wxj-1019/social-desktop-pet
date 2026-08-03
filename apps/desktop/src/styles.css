@@ -304,12 +304,20 @@ body,
   height: 100%;
   display: block;
   overflow: visible;
+  /* 生命感缓动：弹性过冲（弹跳/挥动/惊吓）与惯性（摆动甩出后缓回） */
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-inert: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* 所有部件默认以自身包围盒为变换原点，便于纯 CSS 动画 */
+/* 所有部件默认以自身包围盒为变换原点，便于纯 CSS 动画。
+   transition 仅覆盖"动画↔静态"切换（animation 运行期间不生效），
+   让 motion 切换时部件平滑回位而非硬跳；opacity 保留表情淡入淡出 */
 .star-isle [class*='star-isle__'] {
   transform-box: fill-box;
   transform-origin: center;
+  transition:
+    transform 0.18s ease-out,
+    opacity 0.22s ease;
 }
 
 /* 透明命中区：接收指针事件但不参与视觉（fill 由 SVG 属性透明） */
@@ -527,22 +535,31 @@ body,
 }
 
 /* 关键帧：只动 transform/opacity，禁止布局属性 */
+/* 呼吸：吸气快（ease-out）、呼气慢（ease-in）——像活物的呼吸节律 */
 @keyframes star-isle-breathe {
-  0%,
-  100% {
+  0% {
     transform: scaleY(1);
+    animation-timing-function: ease-out;
   }
   50% {
     transform: scaleY(1.025);
+    animation-timing-function: ease-in;
   }
-}
-@keyframes star-isle-breathe-slow {
-  0%,
   100% {
     transform: scaleY(1);
   }
+}
+@keyframes star-isle-breathe-slow {
+  0% {
+    transform: scaleY(1);
+    animation-timing-function: ease-out;
+  }
   50% {
     transform: scaleY(1.03);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: scaleY(1);
   }
 }
 @keyframes star-isle-blink {
@@ -556,54 +573,74 @@ body,
     transform: scaleY(0.08);
   }
 }
-/* 尾巴非对称摆：快摆到位（30%）、慢速回摆（70% 占空比），尾部惯性感 */
+/* 尾巴非对称摆：快摆甩出（ease-out）、惯性缓回（--ease-inert），尾部惯性感 */
 @keyframes star-isle-tail {
-  0%,
-  100% {
+  0% {
     transform: rotate(0deg);
+    animation-timing-function: ease-out;
   }
   30% {
     transform: rotate(9deg);
+    animation-timing-function: var(--ease-inert);
   }
-}
-/* 开心：高频小摆（幅度收敛） */
-@keyframes star-isle-tail-happy {
-  0%,
   100% {
     transform: rotate(0deg);
-  }
-  30% {
-    transform: rotate(7deg);
-  }
-}
-/* 走路随步：幅度最小 */
-@keyframes star-isle-tail-walk {
-  0%,
-  100% {
-    transform: rotate(0deg);
-  }
-  30% {
-    transform: rotate(5deg);
   }
 }
 /* 难过：尾巴下垂慢摆（向下压后轻微回摆） */
 @keyframes star-isle-tail-sad {
-  0%,
-  100% {
+  0% {
     transform: rotate(-4deg);
+    animation-timing-function: ease-in-out;
   }
   50% {
     transform: rotate(-1deg);
+    animation-timing-function: ease-in-out;
+  }
+  100% {
+    transform: rotate(-4deg);
   }
 }
 /* 尾端星：同向摆动但延迟 0.15s（余韵感），幅度为尾巴的约 60% */
 @keyframes star-isle-tail-star {
-  0%,
-  100% {
+  0% {
     transform: rotate(0deg);
+    animation-timing-function: ease-out;
   }
   30% {
     transform: rotate(5.5deg);
+    animation-timing-function: var(--ease-inert);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+/* 开心尾巴：高频小摆（幅度收敛，30% 快摆到位） */
+@keyframes star-isle-tail-happy {
+  0% {
+    transform: rotate(0deg);
+    animation-timing-function: ease-out;
+  }
+  30% {
+    transform: rotate(7deg);
+    animation-timing-function: var(--ease-inert);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+/* 走路随步尾巴：幅度最小、与步伐同频 */
+@keyframes star-isle-tail-walk {
+  0% {
+    transform: rotate(0deg);
+    animation-timing-function: ease-out;
+  }
+  30% {
+    transform: rotate(5deg);
+    animation-timing-function: var(--ease-inert);
+  }
+  100% {
+    transform: rotate(0deg);
   }
 }
 @keyframes star-isle-talk {
@@ -627,16 +664,27 @@ body,
   }
 }
 
-/* 全身 bob：整只同步上下起伏（rig 纯平移，无旋转干扰；25/75% 为每步抬脚点） */
+/* 全身 bob：快抬（ease-out）慢落（ease-in）——每步"蹬起-踏落"有节奏差，
+   不再均匀正弦上下（rig 纯平移，无旋转干扰） */
 @keyframes star-isle-walk-bob {
-  0%,
-  50%,
-  100% {
+  0% {
     transform: translateY(0);
+    animation-timing-function: ease-out;
   }
-  25%,
+  25% {
+    transform: translateY(-3px);
+    animation-timing-function: ease-in;
+  }
+  50% {
+    transform: translateY(0);
+    animation-timing-function: ease-out;
+  }
   75% {
     transform: translateY(-3px);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: translateY(0);
   }
 }
 /* 行走身体：纯轻摆（bob 由 rig 承担，避免 rotate+translateY 组合吃掉位移） */
@@ -659,23 +707,31 @@ body,
     transform: rotate(-2deg) translateY(1px);
   }
 }
-/* 前肢交替划动（左右正负角拆分）：前划 + 微抬 */
+/* 前肢交替划动（左右正负角拆分）：快抬慢落 + 前划 */
 @keyframes star-isle-paw-step-left {
-  0%,
-  100% {
+  0% {
     transform: rotate(0deg) translateY(0);
+    animation-timing-function: ease-out;
   }
   50% {
     transform: rotate(-8deg) translateY(3px);
+    animation-timing-function: ease-in;
   }
-}
-@keyframes star-isle-paw-step-right {
-  0%,
   100% {
     transform: rotate(0deg) translateY(0);
   }
+}
+@keyframes star-isle-paw-step-right {
+  0% {
+    transform: rotate(0deg) translateY(0);
+    animation-timing-function: ease-out;
+  }
   50% {
     transform: rotate(8deg) translateY(3px);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: rotate(0deg) translateY(0);
   }
 }
 /* 后足对角步态：与对侧前肢同相（左后足随右前肢，右后足随左前肢） */
@@ -719,13 +775,26 @@ body,
 }
 
 /* 开心：轻弹跳 */
+/* 开心蹦跳：弹性过冲抬起 + 触地小回弹（两段弹跳更有生命感） */
 @keyframes star-isle-bounce {
-  0%,
+  0% {
+    transform: translateY(0);
+    animation-timing-function: var(--ease-spring);
+  }
+  35% {
+    transform: translateY(-8px);
+    animation-timing-function: ease-in;
+  }
+  55% {
+    transform: translateY(0);
+    animation-timing-function: ease-out;
+  }
+  70% {
+    transform: translateY(-3px);
+    animation-timing-function: ease-in;
+  }
   100% {
     transform: translateY(0);
-  }
-  40% {
-    transform: translateY(-7px);
   }
 }
 
@@ -784,25 +853,34 @@ body,
     opacity: 1;
   }
 }
+/* 挥手：弹性甩出（过冲至 -18°）再收回 */
 @keyframes star-isle-wave {
-  0%,
+  0% {
+    transform: rotate(0deg);
+    animation-timing-function: var(--ease-spring);
+  }
+  50% {
+    transform: rotate(-18deg);
+    animation-timing-function: ease-in-out;
+  }
   100% {
     transform: rotate(0deg);
   }
-  50% {
-    transform: rotate(-16deg);
-  }
 }
+/* 惊讶：弹性弹开（过冲）再回落 */
 @keyframes star-isle-surprised {
-  0%,
-  100% {
+  0% {
     transform: scale(1);
+    animation-timing-function: var(--ease-spring);
   }
   35% {
     transform: scale(1.05, 0.96);
   }
   70% {
     transform: scale(1.07, 1.04);
+  }
+  100% {
+    transform: scale(1);
   }
 }
 
