@@ -5,6 +5,7 @@ import { PetRuntimeController } from './pet-runtime-controller.js';
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 function makeRuntime(visuals: PetVisualCommand[], snapshots: PetRuntimeSnapshot[]) {
@@ -33,6 +34,11 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     vi.advanceTimersByTime(500_000 - 1_200);
     expect(snapshots.at(-1)?.state).toBe('SITTING');
     expect(visuals).toContainEqual({ type: 'motion', motion: 'sit', intensity: 1 });
+
+    // SITTING 连续 600s → SLEEPING（窗口已过，溜达不再重挂，确定性）
+    vi.advanceTimersByTime(610_000);
+    expect(snapshots.at(-1)?.state).toBe('SLEEPING');
+    expect(visuals).toContainEqual({ type: 'motion', motion: 'sleep', intensity: 1 });
 
     runtime.stop();
     expect(vi.getTimerCount()).toBe(0);
@@ -126,7 +132,7 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     const snapshots: PetRuntimeSnapshot[] = [];
     const visuals: PetVisualCommand[] = [];
     // 固定随机值 → 溜达延迟 60s、持续 4s（30s + r*60s / 3s + r*2s），轮次可精确预期：60/124/188/252s
-    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const runtime = makeRuntime(visuals, snapshots);
     runtime.start();
 
@@ -135,7 +141,6 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     runtime.handleInteraction({ kind: 'head_touch' });
     vi.advanceTimersByTime(150_000);
     expect(snapshots.filter((s) => s.state === 'WALKING').length).toBeGreaterThanOrEqual(4);
-    randomSpy.mockRestore();
 
     runtime.stop();
     expect(vi.getTimerCount()).toBe(0);

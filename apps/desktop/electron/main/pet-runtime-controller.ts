@@ -398,8 +398,9 @@ export class PetRuntimeController {
     this.machine.transition('WALKING', 'wander_start');
     const decision = this.requestAction({ intent: 'walk', source: 'system' });
     if (!decision.approved) {
-      // 理论不达（WALKING 白名单含 walk）；防御性回退
+      // walk 冷却中（聊天输出可能刚用过 walk）等真实拒绝源：本轮跳过，不挂 end 定时器
       this.machine.transition('IDLE', 'wander_abort');
+      return;
     }
     this.emitSnapshot();
     this.wanderEndTimer = this.setTimeoutFn(
