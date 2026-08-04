@@ -65,10 +65,16 @@ export function ChatPanel() {
     })();
   }, []);
 
-  // 新消息滚动到底部
+  // 新消息滚动到底部（只在用户已在底部时自动滚动，不抢用户上滚查看历史；
+  // 流式时用 'auto' 避免 smooth 动画每 token 重启）
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [entries]);
+    const el = listRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (nearBottom) {
+      el.scrollTo({ top: el.scrollHeight, behavior: streaming ? 'auto' : 'smooth' });
+    }
+  }, [entries, streaming]);
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
@@ -157,10 +163,7 @@ export function ChatPanel() {
       <div className="chat-heading chat-heading--character">
         <div className="character-presence">
           <div className="character-presence__avatar" aria-hidden="true">
-            <StarIsleVisual
-              variant="head"
-              state={{ ...DEFAULT_VISUAL_STATE, speaking: streaming }}
-            />
+            <StarIsleVisual state={{ ...DEFAULT_VISUAL_STATE, speaking: streaming }} />
           </div>
           <div className="character-presence__copy">
             <h2 id="cloud-chat-title">星屿</h2>
@@ -172,8 +175,13 @@ export function ChatPanel() {
           AI 生成
         </span>
       </div>
-      <ul className="chat-list" ref={listRef} aria-live="polite">
-        {entries.length === 0 && (
+      <ul className="chat-list" ref={listRef} role="log" aria-label="对话记录">
+        {!historyLoaded && (
+          <li className="chat-empty" aria-hidden="true">
+            <span className="soft-loader" />
+          </li>
+        )}
+        {historyLoaded && entries.length === 0 && (
           <li className="chat-empty">
             <span className="chat-empty__character" aria-hidden="true">
               <StarIsleVisual />
@@ -186,7 +194,7 @@ export function ChatPanel() {
           <li key={message.id} className={`chat-msg ${message.role}`}>
             {message.role === 'pet' && (
               <span className="chat-msg__avatar" aria-hidden="true">
-                <StarIsleVisual variant="head" />
+                <StarIsleVisual />
               </span>
             )}
             <span className="chat-bubble">
@@ -214,7 +222,6 @@ export function ChatPanel() {
           onChange={(event) => setInput(event.target.value)}
           placeholder="说点什么…（Enter 发送）"
           maxLength={2000}
-          disabled={streaming}
         />
         <button
           type="submit"

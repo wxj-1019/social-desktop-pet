@@ -46,8 +46,10 @@ export function StarIsleVisual({
     tail: `tail-grad-${uid}`,
     halo: `halo-glow-${uid}`,
   } as const;
-  // head 取景：构图框变换后的头部区域（含耳尖与下巴），居中方形裁切
-  const viewBox = variant === 'head' ? '50 64 220 220' : '0 0 320 380';
+  // head 取景：以头椭圆（浅蓝 #cbdaf5）为主体的紧凑方形裁切。
+  // 头椭圆 cx=140 cy=158 rx=64 ry=58 → 取 x=80-200, y=90-210 区间，
+  // 聚焦浅蓝头部主体，避免深色耳朵/刘海在小尺寸下占比过大显黑
+  const viewBox = variant === 'head' ? '80 90 120 120' : '0 0 320 380';
   const aspect = variant === 'head' ? 'xMidYMid meet' : 'xMidYMax meet';
   return (
     <svg
@@ -87,8 +89,13 @@ export function StarIsleVisual({
       </defs>
 
       {/* 构图框：放大 1.2 倍并下移，脚底精确贴到窗口底边（meet 缩放下脚距底 0px），
-          头顶留出气泡区（此前角色只占窗口约 65%、底部悬空且偏左） */}
-      <g className="star-isle__frame" transform="translate(-2 22) scale(1.2)">
+          头顶留出气泡区（此前角色只占窗口约 65%、底部悬空且偏左）。
+          仅 full variant 应用——head variant 的 viewBox 已是定制取景框，
+          再放大/移动会把内容推出取景范围（黑色剪影） */}
+      <g
+        className="star-isle__frame"
+        transform={variant === 'full' ? 'translate(-2 22) scale(1.2)' : undefined}
+      >
         {/* 背后棉花糖光环（角色底层背景，不参与命中） */}
         <circle className="star-isle__halo" cx="140" cy="196" r="132" fill={`url(#${grad.halo})`} />
         <circle className="star-isle__halo" cx="140" cy="150" r="84" fill={`url(#${grad.halo})`} />

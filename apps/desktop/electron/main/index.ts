@@ -155,6 +155,10 @@ void app.whenReady().then(async () => {
     const win = alivePetWindow();
     if (win) setPassThrough(win, enabled);
     tray?.setPassThroughForced(enabled);
+    // 穿透状态给用户即时反馈：一次性气泡提示（穿透后仍可经托盘/右键恢复）
+    if (enabled) {
+      runtime?.showBubble('穿透已开启，点击会穿过我。托盘或右键可以恢复');
+    }
   };
 
   // ---- 勿扰（DND）：Main 唯一入口，统一 runtime / 档案 / 托盘快照 ----

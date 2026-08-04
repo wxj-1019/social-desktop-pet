@@ -150,7 +150,7 @@ describe('StarIsleVisual（原创分层 SVG 星屿）', () => {
 
   it('head variant uses a square head-focused viewBox (面板头像取景)', () => {
     const html = renderToStaticMarkup(<StarIsleVisual variant="head" />);
-    expect(html).toContain('viewBox="50 64 220 220"');
+    expect(html).toContain('viewBox="80 90 120 120"');
     expect(html).toContain('preserveAspectRatio="xMidYMid meet"');
   });
 

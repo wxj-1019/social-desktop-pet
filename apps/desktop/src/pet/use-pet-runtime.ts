@@ -113,6 +113,23 @@ export function usePetRuntime(): PetRuntimeController {
         if (disposed) return;
         setProfile(next);
         rendererRef.current?.setReducedMotion(next.reducedMotion);
+        // 首次运行引导：未标记过 onboarding 时给 3 条提示气泡（经 chatEvent 走真实链路）
+        if (!localStorage.getItem('pet:onboarded')) {
+          const hints = [
+            '你好呀，我是星屿！可以摸摸我的头～',
+            '拖我可以移动，右键有菜单哦',
+            '双击我可以打开聊天面板',
+          ];
+          let delay = 800;
+          for (const hint of hints) {
+            const text = hint;
+            setTimeout(() => {
+              if (!disposed) applyCommand({ type: 'bubble', text });
+            }, delay);
+            delay += 2_500;
+          }
+          localStorage.setItem('pet:onboarded', '1');
+        }
       });
     }
 

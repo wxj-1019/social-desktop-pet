@@ -171,9 +171,20 @@ export function FriendsPage({ userId }: FriendsPageProps) {
     return off;
   }, [refreshFriends]);
 
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   function showNotice(message: string, tone: 'success' | 'error' = 'success') {
     setNotice(message);
     setNoticeTone(tone);
+    // 成功通知 4s 后自动消失（错误保持可见，用户需要看到）
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = null;
+    if (tone === 'success') {
+      noticeTimerRef.current = setTimeout(() => {
+        setNotice(null);
+        noticeTimerRef.current = null;
+      }, 4_000);
+    }
   }
 
   async function createInvite() {
@@ -221,7 +232,7 @@ export function FriendsPage({ userId }: FriendsPageProps) {
       <div className="view-heading">
         <div className="view-heading__identity">
           <span className="view-heading__avatar" aria-hidden="true">
-            <StarIsleVisual variant="head" />
+            <StarIsleVisual />
           </span>
           <div>
             <p className="eyebrow">星屿小圈子</p>

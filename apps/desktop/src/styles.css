@@ -86,6 +86,22 @@ body,
   pointer-events: all;
 }
 
+/* 可交互反馈：hover 显示可抓取光标，hover 时耳朵/尾巴微动；
+   拖动时切 grabbing（pet-experience 的 .pet-dragging 类由 JSX 切换） */
+.pet-experience [data-hit] {
+  cursor: grab;
+}
+.pet-experience.pet-dragging [data-hit] {
+  cursor: grabbing;
+}
+.pet-experience [data-hit]:hover .star-isle__ear {
+  transform: rotate(3deg);
+  transition: transform 0.18s ease-out;
+}
+.pet-experience [data-hit]:hover .star-isle__tail {
+  animation-duration: 1.4s;
+}
+
 /* 表情切换（睁/闭眼、张嘴）使用透明度过渡，避免硬切跳变 */
 .star-isle__eye-open,
 .star-isle__eye-closed,

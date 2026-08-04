@@ -17,6 +17,7 @@ import type { PetInteraction } from '@pet/protocol';
 import {
   Component,
   useRef,
+  useState,
   type ComponentType,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -63,6 +64,7 @@ export function PetExperience({
   }>({ start: null, hit: null, dragging: false });
   const lastClickAtRef = useRef<number | null>(null);
   const schedulerRef = useRef<ReturnType<typeof createDragMoveScheduler> | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const screenSample = (e: {
     screenX: number;
@@ -74,13 +76,20 @@ export function PetExperience({
     return { x: screenX, y: screenY, at: e.timeStamp };
   };
 
-  /** 结束进行中的拖动（dragEnd + 取消节流 + 复位手势） */
+  /** 结束进行中的拖动（dragEnd + 取消节流 + 复位手势 + 落地回 idle） */
   const endActiveDrag = () => {
     const runtime = window.pet?.petRuntime;
     const gesture = gestureRef.current;
     if (gesture?.dragging && runtime) {
       runtime.dragEnd();
       schedulerRef.current?.cancel();
+      setIsDragging(false);
+      // 落地回常态：拖动时给了惊讶（shake_head），松手后用 chatEvent done 回 idle
+      window.pet?.petRuntime?.chatEvent({
+        phase: 'done',
+        source: 'local_chat',
+        output: { dialogue: '', emotion: 'warm', actionIntent: 'nod', intensity: 1 },
+      });
     }
     gestureRef.current = { start: null, hit: null, dragging: false };
   };
@@ -119,7 +128,10 @@ export function PetExperience({
       const distance = Math.hypot(sample.x - gesture.start.x, sample.y - gesture.start.y);
       if (distance >= 6) {
         gesture.dragging = true;
+        setIsDragging(true);
         runtime.dragStart({ x: sample.x, y: sample.y });
+        // 拖动时给惊讶表情（摇头）——用户看到"被拎起来了"
+        runtime.interaction({ kind: 'tail_touch' });
         if (!schedulerRef.current) {
           schedulerRef.current = createDragMoveScheduler((point) => {
             const runtimeNow = window.pet?.petRuntime;
@@ -179,7 +191,7 @@ export function PetExperience({
 
   return (
     <div
-      className="pet-experience"
+      className={isDragging ? 'pet-experience pet-dragging' : 'pet-experience'}
       data-testid="pet-experience"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

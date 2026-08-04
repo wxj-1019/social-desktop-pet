@@ -182,7 +182,8 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     expect(visuals).toContainEqual({ type: 'motion', motion: 'touch', intensity: 1 });
 
     runtime.handleInteraction({ kind: 'body_touch' });
-    expect(visuals).toContainEqual({ type: 'motion', motion: 'idle', intensity: 1 });
+    // 身体点击给一个小开心跳（cheer），此前 intent='idle' 完全无反应
+    expect(visuals).toContainEqual({ type: 'motion', motion: 'happy', intensity: 1 });
 
     runtime.handleInteraction({ kind: 'tail_touch' });
     expect(visuals).toContainEqual({ type: 'motion', motion: 'surprised', intensity: 1 });

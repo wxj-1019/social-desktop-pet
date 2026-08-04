@@ -59,7 +59,7 @@ export function LocalChat({ onLoginClick }: LocalChatProps) {
       <div className="chat-heading chat-heading--character">
         <div className="character-presence">
           <div className="character-presence__avatar" aria-hidden="true">
-            <StarIsleVisual variant="head" />
+            <StarIsleVisual />
           </div>
           <div className="character-presence__copy">
             <h2 id="local-chat-title">星屿</h2>
@@ -71,7 +71,7 @@ export function LocalChat({ onLoginClick }: LocalChatProps) {
           仅此设备
         </span>
       </div>
-      <ul className="chat-list" aria-live="polite">
+      <ul className="chat-list" role="log" aria-label="对话记录">
         {history.length === 0 && (
           <li className="chat-empty">
             <span className="chat-empty__character" aria-hidden="true">
@@ -85,7 +85,7 @@ export function LocalChat({ onLoginClick }: LocalChatProps) {
           <li key={index} className={`chat-msg ${message.role}`}>
             {message.role === 'pet' && (
               <span className="chat-msg__avatar" aria-hidden="true">
-                <StarIsleVisual variant="head" />
+                <StarIsleVisual />
               </span>
             )}
             <span className="chat-bubble">{message.text}</span>

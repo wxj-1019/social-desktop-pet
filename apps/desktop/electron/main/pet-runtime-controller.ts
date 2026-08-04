@@ -87,6 +87,8 @@ export class PetRuntimeController {
   private bootTimeout: ReturnType<typeof globalThis.setTimeout> | null = null;
   private wanderTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   private wanderEndTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  /** 互动动作回归常态的定时器（摸头/惊讶/说话后 ~2s 回 idle，不再一直循环动作） */
+  private settleTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   private online = true;
   private dnd = false;
   private hidden = false;
@@ -142,6 +144,12 @@ export class PetRuntimeController {
     if (this.dnd === enabled) return;
     this.dnd = enabled;
     if (this.stopped) return;
+    // 勿扰状态给用户即时反馈：一次性气泡提示（之后气泡被 isBubbleAllowed 抑制）
+    if (enabled) {
+      this.emitVisual({ type: 'bubble', text: '勿扰模式已开启，我先安静一会儿' });
+    } else {
+      this.emitVisual({ type: 'bubble', text: '我回来啦～' });
+    }
     this.reconcileMode(true);
   }
 
@@ -150,6 +158,22 @@ export class PetRuntimeController {
     this.hidden = hidden;
     if (this.stopped) return;
     this.reconcileMode(true);
+  }
+
+  /** 互动动作后 ~2s 自动回到当前状态对应的常态（idle/sit/sleep），不再一直循环动作 */
+  private armSettleTimer(): void {
+    if (this.settleTimer) {
+      this.clearTimeoutFn(this.settleTimer);
+      this.settleTimer = null;
+    }
+    this.settleTimer = this.setTimeoutFn(() => {
+      this.settleTimer = null;
+      this.emitVisual({
+        type: 'motion',
+        motion: stateToMotion(this.machine.current),
+        intensity: 1,
+      });
+    }, 2_000);
   }
 
   handleInteraction(interaction: PetInteraction): void {
@@ -161,7 +185,8 @@ export class PetRuntimeController {
         intent = 'touch';
         break;
       case 'body_touch':
-        intent = 'idle';
+        // 身体点击：给一个小开心跳（此前 intent='idle' 完全无反应）
+        intent = 'cheer';
         break;
       case 'tail_touch':
         intent = 'shake_head';
@@ -177,6 +202,10 @@ export class PetRuntimeController {
         motion: actionIntentToMotion(intent),
         intensity: 1,
       });
+      this.armSettleTimer();
+    } else if (decision.reason === 'cooldown') {
+      // 冷却期兜底：重复摸头不再完全忽略，给一个低成本反馈（眨眼/表情）
+      this.emitVisual({ type: 'expression', expression: 'warm' });
     }
   }
 
@@ -271,6 +300,7 @@ export class PetRuntimeController {
         motion: actionIntentToMotion(output.actionIntent),
         intensity: normalizeIntensity(output.intensity),
       });
+      this.armSettleTimer();
     }
     if (this.isBubbleAllowed()) {
       this.emitVisual({ type: 'bubble', text: output.dialogue.slice(-160) });
@@ -295,6 +325,11 @@ export class PetRuntimeController {
   /** 气泡仅在非勿扰 / 非隐藏时允许（7.3） */
   private isBubbleAllowed(): boolean {
     return !this.hidden && !this.dnd;
+  }
+
+  /** 公开入口：给桌宠发一条提示气泡（用于勿扰/穿透等状态切换的用户反馈） */
+  showBubble(text: string): void {
+    this.emitVisual({ type: 'bubble', text });
   }
 
   private emitSnapshot(): void {

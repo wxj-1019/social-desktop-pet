@@ -8,9 +8,10 @@ import { FriendsPage } from './friends.js';
 import { LocalChat } from './local-chat.js';
 import { LoginPage, type AuthResult } from './login.js';
 import { PanelBrand } from './panel-brand.js';
+import { SettingsPage } from './settings.js';
 
 type SessionPhase = 'booting' | 'signed_out' | 'local' | 'active';
-type ActiveTab = 'friends' | 'chat';
+type ActiveTab = 'friends' | 'chat' | 'settings';
 
 /** 主应用面板：会话状态机驱动登录、本地聊天与已登录界面。 */
 export function AppPanel() {
@@ -114,11 +115,25 @@ export function AppPanel() {
   return (
     <div className="pet-stage pet-stage--app">
       <PanelHeader nickname={user?.nickname} onLogout={onLogout} />
-      <nav className="app-tabs" role="tablist" aria-label="面板页面">
+      <nav
+        className="app-tabs"
+        role="tablist"
+        aria-label="面板页面"
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            const tabs: ActiveTab[] = ['friends', 'chat', 'settings'];
+            const current = tabs.indexOf(tab);
+            const next = e.key === 'ArrowLeft' ? current - 1 : current + 1;
+            if (next >= 0 && next < tabs.length) setTab(tabs[next]!);
+          }
+        }}
+      >
         <button
           className={tab === 'friends' ? 'tab active' : 'tab'}
           role="tab"
+          id="tab-friends"
           aria-selected={tab === 'friends'}
+          aria-controls="panel-friends"
           onClick={() => setTab('friends')}
         >
           好友
@@ -126,13 +141,33 @@ export function AppPanel() {
         <button
           className={tab === 'chat' ? 'tab active' : 'tab'}
           role="tab"
+          id="tab-chat"
           aria-selected={tab === 'chat'}
+          aria-controls="panel-chat"
           onClick={() => setTab('chat')}
         >
           聊天
         </button>
+        <button
+          className={tab === 'settings' ? 'tab active' : 'tab'}
+          role="tab"
+          id="tab-settings"
+          aria-selected={tab === 'settings'}
+          aria-controls="panel-settings"
+          onClick={() => setTab('settings')}
+        >
+          设置
+        </button>
       </nav>
-      {tab === 'friends' ? <FriendsPage userId={user?.userId ?? ''} /> : <ChatPanel />}
+      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+        {tab === 'friends' ? (
+          <FriendsPage userId={user?.userId ?? ''} />
+        ) : tab === 'chat' ? (
+          <ChatPanel />
+        ) : (
+          <SettingsPage />
+        )}
+      </div>
     </div>
   );
 }
@@ -144,6 +179,26 @@ function PanelHeader({
   nickname?: string;
   onLogout?: () => Promise<void>;
 }) {
+  const menuRef = useRef<HTMLDetailsElement | null>(null);
+
+  // 账号菜单：Escape 或点击外部时关闭（原生 details 不处理这些）
+  useEffect(() => {
+    const menu = menuRef.current;
+    if (!menu) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') menu.open = false;
+    };
+    const onClickOutside = (e: MouseEvent) => {
+      if (menu.open && !menu.contains(e.target as Node)) menu.open = false;
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('click', onClickOutside);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('click', onClickOutside);
+    };
+  }, []);
+
   return (
     <header className="app-header">
       {/* 纯文字标：各视图自带角色头部（聊天角色区/好友头像），避免上下双层头像重复 */}
@@ -153,7 +208,7 @@ function PanelHeader({
       </div>
       <div className="app-header__actions">
         {onLogout && (
-          <details className="account-menu">
+          <details className="account-menu" ref={menuRef}>
             <summary className="icon-button" aria-label="账号菜单" title="账号菜单">
               <UserRound size={17} aria-hidden="true" />
             </summary>
