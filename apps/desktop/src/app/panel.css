@@ -12,7 +12,7 @@
   --panel-soft: #fff0f5;
   --panel-soft-blue: #eef2fb;
   --panel-text: #352d3a;
-  --panel-text-muted: #746976;
+  --panel-text-muted: #5b505e;
   --panel-border: #eadce3;
   --panel-accent: #b83f68;
   --panel-accent-hover: #a7355c;
@@ -362,7 +362,7 @@
 
 .login-form input::placeholder,
 .chat-input-row input::placeholder {
-  color: #a99da5;
+  color: #7d7079;
 }
 
 .login-form input:focus,
@@ -1099,12 +1099,12 @@
 
 .chat-empty {
   display: flex;
-  min-height: 180px;
+  min-height: 170px;
   flex: 1;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 20px 24px;
+  padding: 16px 24px;
   color: var(--panel-text-muted);
   text-align: center;
 }
