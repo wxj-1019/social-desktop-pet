@@ -37,8 +37,8 @@ test('登录 → 聊天 tab → SSE 流式回复', async () => {
   await page.getByRole('button', { name: '登录并去找星屿', exact: true }).click();
   await expect(page.locator('.friends-page')).toBeVisible({ timeout: 15_000 });
 
-  // 切到聊天 tab
-  await page.getByRole('button', { name: '聊天' }).click();
+  // 切到聊天 tab（tablist 内 role=tab，见 app.tsx tabs ARIA）
+  await page.getByRole('tab', { name: '聊天' }).click();
   await expect(page.locator('.chat-panel')).toBeVisible();
 
   // 发送消息 → 收到流式回复（真实模型或骨架降级，均为非空回复）

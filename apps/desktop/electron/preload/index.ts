@@ -85,6 +85,9 @@ const api = {
     setDnd: (enabled: boolean) => ipcRenderer.send('pet:set-dnd', { enabled }),
     setPassThrough: (enabled: boolean) => ipcRenderer.send('pet:set-pass-through', { enabled }),
     showContextMenu: () => ipcRenderer.send('pet:show-context-menu'),
+    /** 面板 → 桌宠一次性气泡（记忆"已记住"等提示；走 main 侧 showBubble） */
+    showBubble: (text: string) =>
+      ipcRenderer.send('pet:show-bubble', { type: 'bubble', text } satisfies PetVisualCommand),
   },
   /** 8.2 面板：打开/关闭/导航（navigate 结果广播回 onNavigate） */
   panel: {

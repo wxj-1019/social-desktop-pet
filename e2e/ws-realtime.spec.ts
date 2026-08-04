@@ -56,7 +56,8 @@ test('alice 送礼 → bob 的 WS 实时收到事件（10s 内，非 30s 轮询�
   await expect(page.locator('.login-page')).toBeVisible({ timeout: 15_000 });
   await page.locator('input[type="email"]').fill('bob@test.local');
   await page.locator('input[type="password"]').fill('password123');
-  await page.getByRole('button', { name: '登录', exact: true }).click();
+  // 提交按钮是"登录并去找星屿"；"登录"是登录/注册切换（登录页改版后）
+  await page.getByRole('button', { name: '登录并去找星屿', exact: true }).click();
   await expect(page.locator('.friends-page')).toBeVisible({ timeout: 15_000 });
 
   // node 侧：alice 登录 → 给 bob 送点心（幂等键唯一）

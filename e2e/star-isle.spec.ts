@@ -62,6 +62,9 @@ test('交互：摸头触发 touch 动作；双击身体打开聊天面板', asyn
   // 面板窗（surface=panel，懒创建）出现且落在登录页（无后端）
   const panel = await app.panelWindow();
   await expect(panel.locator('.login-page')).toBeVisible({ timeout: 15_000 });
+
+  // 关掉面板：面板锚定在宠物旁，可能盖住宠物窗口，干扰后续拖拽测试的鼠标事件
+  await panel.evaluate(() => window.pet?.panel?.close());
 });
 
 test('拖动：拖拽后窗口移动，restart() 后位置持久化还原', async () => {
@@ -195,23 +198,18 @@ test('reduced-motion：档案开启减弱动态后星屿响应', async () => {
   });
 });
 
-test('溜达：90s 内出现过 walk 动作（弱断言，随机性未观察到则跳过）', async () => {
+test('溜达：45s 内出现过 walk 动作（弱断言，随机性未观察到则跳过）', async () => {
   const pet = await app.petWindow();
   const isle = pet.getByRole('img', { name: '星尾狐猫星屿' });
-  const seenWalk = await isle.evaluate(
-    (el) =>
-      new Promise<boolean>((resolve) => {
-        const deadline = Date.now() + 90_000;
-        const timer = setInterval(() => {
-          if (el.getAttribute('data-motion') === 'walk') {
-            clearInterval(timer);
-            resolve(true);
-          } else if (Date.now() > deadline) {
-            clearInterval(timer);
-            resolve(false);
-          }
-        }, 500);
-      }),
-  );
-  test.skip(!seenWalk, '90s 内未观察到溜达（随机性，跳过）');
+  // 观察窗口 < 测试超时（playwright.config testTimeout=60s），否则超时而非跳过；
+  // 轮询全程在测试侧进行，宠物页意外关闭时按"未观察到"处理（catch → 跳过）
+  const seenWalk = await expect
+    .poll(async () => (await isle.getAttribute('data-motion').catch(() => null)) === 'walk', {
+      timeout: 45_000,
+      intervals: [500, 500],
+    })
+    .toBe(true)
+    .then(() => true)
+    .catch(() => false);
+  test.skip(!seenWalk, '45s 内未观察到溜达（随机性，跳过）');
 });

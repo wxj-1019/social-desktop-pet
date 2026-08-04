@@ -93,3 +93,31 @@ export const MemoryCandidateSchema = z.object({
   sensitivity: z.enum(['low', 'medium', 'high']),
 });
 export type MemoryCandidate = z.infer<typeof MemoryCandidateSchema>;
+
+/** 待用户确认的记忆（D-3 分级确认 HITL 中断点；服务端 memory_confirmations 表） */
+export const MemoryConfirmationSchema = z.object({
+  confirmationId: z.string().uuid(),
+  category: MemoryCategorySchema,
+  value: z.string().max(2000),
+  importance: ImportanceSchema,
+  sourceType: MemorySourceTypeSchema,
+  sensitivity: z.enum(['low', 'medium', 'high']),
+  sourceTurnIds: z.array(z.string().uuid()),
+  createdAt: z.string().datetime(),
+});
+export type MemoryConfirmation = z.infer<typeof MemoryConfirmationSchema>;
+
+/** 最近自动保存的记忆摘要（"已记住"提示用） */
+export const SavedMemoryBriefSchema = z.object({
+  memoryId: z.string().uuid(),
+  value: z.string().max(2000),
+  savedAt: z.string().datetime(),
+});
+export type SavedMemoryBrief = z.infer<typeof SavedMemoryBriefSchema>;
+
+/** GET /memories/summary 响应：待确认列表 + 60s 内自动保存的最近条目 */
+export const MemorySummarySchema = z.object({
+  pending: z.array(MemoryConfirmationSchema),
+  recentlySaved: z.array(SavedMemoryBriefSchema),
+});
+export type MemorySummary = z.infer<typeof MemorySummarySchema>;

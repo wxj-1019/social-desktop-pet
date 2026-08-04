@@ -16,6 +16,7 @@ import { SessionManager, type SessionStore } from './auth/session.js';
 import { migrate } from './db/migrate.js';
 import { createPool } from './db/pool.js';
 import { PgDevicesStore, PgSessionStore, PgUsersStore } from './db/stores.js';
+import { PgMemoryExtractStore } from './lib/memory-store.js';
 import { RealtimeServer } from './realtime/ws.js';
 import { createAuthRouter, type AuthDeps } from './routes/auth.js';
 import { createBusinessRouter, type BusinessDeps } from './routes/business.js';
@@ -36,6 +37,8 @@ export interface AppDeps {
   realtime: RealtimeServer;
   /** 模型客户端（10.1；无则 chat 降级骨架回复） */
   llm?: BusinessDeps['llm'];
+  /** 记忆存储（10.6；无则跳过异步记忆抽取与确认数据层） */
+  memoryStore?: BusinessDeps['memoryStore'];
   /** 本地 e2e 专用：注册测试数据重置端点（仅 PET_DEV_RESET=true 时开启，生产无此端点） */
   devReset?: boolean;
 }
@@ -53,6 +56,10 @@ export function buildApp(deps: AppDeps) {
       await deps.pool.query('delete from gift_events');
       await deps.pool.query('delete from chat_usage');
       await deps.pool.query('delete from user_inbox');
+      // 记忆表（10.6）：确认队列/审计/已存记忆，供 memory e2e 反复执行
+      await deps.pool.query('delete from memory_confirmations');
+      await deps.pool.query('delete from memory_audit_log');
+      await deps.pool.query('delete from private_memories');
       return c.json({ ok: true });
     });
   }
@@ -65,6 +72,7 @@ export function buildApp(deps: AppDeps) {
     jwt: deps.jwt,
     realtime: deps.realtime,
     llm: deps.llm,
+    memoryStore: deps.memoryStore,
   });
   app.route('/', business);
 
@@ -96,6 +104,9 @@ export async function main(): Promise<void> {
   }
   const llm = llmConfig ? createOpenAiCompatibleClient(llmConfig) : undefined;
 
+  // ---- 记忆存储（10.6 落库/检索/审计；RLS 纵深防御在 store 事务内 set claims）----
+  const memoryStore = new PgMemoryExtractStore(pool);
+
   const app = buildApp({
     pool,
     jwt,
@@ -105,6 +116,7 @@ export async function main(): Promise<void> {
     devices,
     realtime,
     llm,
+    memoryStore,
     devReset: process.env['PET_DEV_RESET'] === 'true',
   });
 

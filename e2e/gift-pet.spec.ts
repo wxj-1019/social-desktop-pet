@@ -62,7 +62,8 @@ test('好友送礼 → 星屿开心（happy 动作 + 气泡文案）', async () 
   await expect(panel.locator('.login-page')).toBeVisible({ timeout: 15_000 });
   await panel.locator('input[type="email"]').fill('bob@test.local');
   await panel.locator('input[type="password"]').fill('password123');
-  await panel.getByRole('button', { name: '登录', exact: true }).click();
+  // 提交按钮是"登录并去找星屿"；"登录"是登录/注册切换（登录页改版后）
+  await panel.getByRole('button', { name: '登录并去找星屿', exact: true }).click();
   await expect(panel.locator('.friends-page')).toBeVisible({ timeout: 15_000 });
 
   // 历史送礼事件（此前 e2e 运行残留于 bob inbox）会在挂载时被消费，
@@ -85,10 +86,11 @@ test('好友送礼 → 星屿开心（happy 动作 + 气泡文案）', async () 
   expect(giftRes.ok).toBe(true);
 
   // 星屿开心：happy 动作（cheer 审批通过后播放，动画期间 data-motion 保持）
-  await expect(isle).toHaveAttribute('data-motion', 'happy', { timeout: 15_000 });
+  // 窗口放宽到 45s：全量套件跑时 WS 可能重连（事件经 30s 轮询兜底迟到）
+  await expect(isle).toHaveAttribute('data-motion', 'happy', { timeout: 45_000 });
 
   // 开心表情（情绪不经动作审批，稳定出现且不随冷却消退）
-  await expect(isle).toHaveAttribute('data-expression', 'happy', { timeout: 15_000 });
+  await expect(isle).toHaveAttribute('data-expression', 'happy', { timeout: 45_000 });
 
   // 送礼气泡：含点心名（小饼干）；气泡可能被后续指令顶掉，用 poll 容错
   await expect
@@ -98,7 +100,7 @@ test('好友送礼 → 星屿开心（happy 动作 + 气泡文案）', async () 
           .locator('.pet-speech')
           .textContent()
           .catch(() => null)) ?? '',
-      { timeout: 15_000, message: '送礼后星屿未出现送礼气泡' },
+      { timeout: 45_000, message: '送礼后星屿未出现送礼气泡' },
     )
     .toContain('小饼干');
 });

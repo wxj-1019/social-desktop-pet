@@ -1,0 +1,243 @@
+/**
+ * 记忆路由 —— 10.6 / D-3 分级确认的 HITL 收口。
+ *
+ * GET  /memories/summary            → 待确认列表 + 60s 内自动保存（"已记住"提示）
+ * POST /memories/confirm            → 确认卡"记住"（可携带修改后的 value）
+ * POST /memories/reject             → 确认卡"仅本次聊天"
+ * POST /memories/:memoryId/invalidate → 撤销自动保存（D-3 已记住·撤销）
+ *
+ * 全部事务内 set_config('request.jwt.claims')（应用层校验 owner + RLS 兜底），
+ * 写操作同步记 memory_audit_log（11.2）。
+ */
+import { MemoryConfirmationSchema, SavedMemoryBriefSchema } from '@pet/protocol';
+import { type Hono } from 'hono';
+import type pg from 'pg';
+
+import type { JwtService } from '../auth/jwt.js';
+import { rlsClaimsJson } from '../db/pool.js';
+
+import type { BusinessVariables } from './business.js';
+import { requireAuth } from './business.js';
+
+export interface MemoryRoutesDeps {
+  pool: pg.Pool;
+  jwt: JwtService;
+}
+
+/** 自动保存提示窗口：最近 60s 落库的 active 记忆（客户端轮询时差分去重） */
+const RECENTLY_SAVED_WINDOW_SEC = 60;
+const RECENTLY_SAVED_LIMIT = 5;
+
+export function registerMemoriesRoutes(
+  app: Hono<{ Variables: BusinessVariables }>,
+  deps: MemoryRoutesDeps,
+): void {
+  const auth = requireAuth(deps.jwt);
+
+  // 待确认 + 最近自动保存（10.6/D-3；"已记住"提示数据源）
+  app.get('/memories/summary', auth, async (c) => {
+    const userId = c.get('userId');
+    const client = await deps.pool.connect();
+    try {
+      await client.query('begin');
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        rlsClaimsJson(userId),
+      ]);
+      const { rows: pendingRows } = await client.query(
+        `select confirmation_id, category, value, importance, source_type, sensitivity,
+                source_turn_ids, created_at
+         from memory_confirmations
+         where owner_user_id = $1 and status = 'pending'
+         order by created_at asc`,
+        [userId],
+      );
+      const { rows: savedRows } = await client.query(
+        `select memory_id, value, created_at
+         from private_memories
+         where owner_user_id = $1 and memory_status = 'active'
+           and created_at > now() - make_interval(secs => $2)
+         order by created_at desc
+         limit $3`,
+        [userId, RECENTLY_SAVED_WINDOW_SEC, RECENTLY_SAVED_LIMIT],
+      );
+      await client.query('commit');
+
+      const pending = pendingRows.map((r) =>
+        MemoryConfirmationSchema.parse({
+          confirmationId: String(r.confirmation_id),
+          category: String(r.category),
+          value: String(r.value),
+          importance: Number(r.importance),
+          sourceType: String(r.source_type),
+          sensitivity: String(r.sensitivity),
+          sourceTurnIds: (r.source_turn_ids ?? []).map(String),
+          createdAt: (r.created_at as Date).toISOString(),
+        }),
+      );
+      const recentlySaved = savedRows.map((r) =>
+        SavedMemoryBriefSchema.parse({
+          memoryId: String(r.memory_id),
+          value: String(r.value),
+          savedAt: (r.created_at as Date).toISOString(),
+        }),
+      );
+      return c.json({ pending, recentlySaved });
+    } catch (e) {
+      await client.query('rollback');
+      return c.json({ error: (e as Error).message }, 500);
+    } finally {
+      client.release();
+    }
+  });
+
+  // 确认"记住"（可带修改后的 value；编辑过 → source_type=user_confirmed）
+  app.post('/memories/confirm', auth, async (c) => {
+    const userId = c.get('userId');
+    const { confirmationId, value } = (await c.req.json()) as {
+      confirmationId?: string;
+      value?: string;
+    };
+    if (typeof confirmationId !== 'string' || confirmationId.length === 0) {
+      return c.json({ error: '缺少 confirmationId' }, 400);
+    }
+    const edited = typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+    if (edited !== null && edited.length > 2000) {
+      return c.json({ error: 'value 过长（≤2000）' }, 400);
+    }
+
+    const client = await deps.pool.connect();
+    try {
+      await client.query('begin');
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        rlsClaimsJson(userId),
+      ]);
+      const { rows } = await client.query(
+        `select confirmation_id, category, value, importance, source_type, sensitivity, source_turn_ids
+         from memory_confirmations
+         where confirmation_id = $1 and owner_user_id = $2 and status = 'pending'
+         for update`,
+        [confirmationId, userId],
+      );
+      const confirm = rows[0];
+      if (!confirm) {
+        await client.query('rollback');
+        return c.json({ error: 'confirmation 不存在或已处理' }, 410);
+      }
+
+      const finalValue = edited ?? String(confirm.value);
+      // 编辑过 → 用户在确认卡确认（10.5 sourceType 语义）
+      const sourceType = edited !== null ? 'user_confirmed' : String(confirm.source_type);
+      const { rows: memRows } = await client.query(
+        `insert into private_memories (
+           owner_user_id, category, value, source_turn_ids, confidence, user_confirmed,
+           sensitivity, visibility, purpose, importance, memory_status, source_type, namespace
+         ) values ($1, $2, $3, $4, 1, true, $5, 'private', 'private_chat', $6, 'active', $7, $8)
+         returning memory_id`,
+        [
+          userId,
+          String(confirm.category),
+          finalValue,
+          (confirm.source_turn_ids ?? []).map(String),
+          String(confirm.sensitivity),
+          Number(confirm.importance),
+          sourceType,
+          'star-isle:private_chat',
+        ],
+      );
+      const memoryId = String(memRows[0]?.memory_id);
+      await client.query(
+        `update memory_confirmations set status = 'confirmed' where confirmation_id = $1`,
+        [confirmationId],
+      );
+      await client.query(
+        `insert into memory_audit_log (owner_user_id, action, memory_id, value, source_turn_ids)
+         values ($1, 'user_confirmed', $2, $3, $4)`,
+        [userId, memoryId, finalValue, (confirm.source_turn_ids ?? []).map(String)],
+      );
+      await client.query('commit');
+      return c.json({ memoryId });
+    } catch (e) {
+      await client.query('rollback');
+      return c.json({ error: (e as Error).message }, 500);
+    } finally {
+      client.release();
+    }
+  });
+
+  // "仅本次聊天"：拒绝该候选（D-3；不落库）
+  app.post('/memories/reject', auth, async (c) => {
+    const userId = c.get('userId');
+    const { confirmationId } = (await c.req.json()) as { confirmationId?: string };
+    if (typeof confirmationId !== 'string' || confirmationId.length === 0) {
+      return c.json({ error: '缺少 confirmationId' }, 400);
+    }
+    const client = await deps.pool.connect();
+    try {
+      await client.query('begin');
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        rlsClaimsJson(userId),
+      ]);
+      const { rows } = await client.query(
+        `select value, source_turn_ids from memory_confirmations
+         where confirmation_id = $1 and owner_user_id = $2 and status = 'pending'
+         for update`,
+        [confirmationId, userId],
+      );
+      if (!rows[0]) {
+        await client.query('rollback');
+        return c.json({ error: 'confirmation 不存在或已处理' }, 410);
+      }
+      await client.query(
+        `update memory_confirmations set status = 'rejected' where confirmation_id = $1`,
+        [confirmationId],
+      );
+      await client.query(
+        `insert into memory_audit_log (owner_user_id, action, value, source_turn_ids)
+         values ($1, 'user_rejected', $2, $3)`,
+        [userId, String(rows[0].value), (rows[0].source_turn_ids ?? []).map(String)],
+      );
+      await client.query('commit');
+      return c.json({ ok: true });
+    } catch (e) {
+      await client.query('rollback');
+      return c.json({ error: (e as Error).message }, 500);
+    } finally {
+      client.release();
+    }
+  });
+
+  // 撤销自动保存（D-3"已记住·撤销"；10.5 置失效不删除）
+  app.post('/memories/:memoryId/invalidate', auth, async (c) => {
+    const userId = c.get('userId');
+    const memoryId = c.req.param('memoryId');
+    const client = await deps.pool.connect();
+    try {
+      await client.query('begin');
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        rlsClaimsJson(userId),
+      ]);
+      const { rows } = await client.query(
+        `update private_memories set memory_status = 'invalidated', updated_at = now()
+         where memory_id = $1 and owner_user_id = $2 and memory_status = 'active'
+         returning value, source_turn_ids`,
+        [memoryId, userId],
+      );
+      if (!rows[0]) {
+        await client.query('rollback');
+        return c.json({ error: '记忆不存在或已撤销' }, 404);
+      }
+      await client.query(
+        `insert into memory_audit_log (owner_user_id, action, memory_id, value, source_turn_ids)
+         values ($1, 'invalidate', $2, $3, $4)`,
+        [userId, memoryId, String(rows[0].value), (rows[0].source_turn_ids ?? []).map(String)],
+      );
+      await client.query('commit');
+      return c.json({ ok: true });
+    } catch (e) {
+      await client.query('rollback');
+      return c.json({ error: (e as Error).message }, 500);
+    } finally {
+      client.release();
+    }
+  });
+}

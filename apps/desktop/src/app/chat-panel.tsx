@@ -15,7 +15,7 @@
  * - 历史加载完成前禁用发送（加载失败也放开）
  * - 网络/模型异常 try/catch 兜底，streaming 永不卡死
  */
-import type { ModelOutput } from '@pet/protocol';
+import type { MemoryConfirmation, ModelOutput, SavedMemoryBrief } from '@pet/protocol';
 import { Send, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -23,6 +23,8 @@ import { api } from '../lib/api/client.js';
 import { localReply } from '../lib/local-mode.js';
 import { DEFAULT_VISUAL_STATE } from '../pet/pet-renderer.js';
 import { StarIsleVisual } from '../pet/star-isle-visual.js';
+
+import { MemoryConfirmCard } from './memory-confirm-card.js';
 
 interface ChatEntry {
   id: string;
@@ -33,13 +35,97 @@ interface ChatEntry {
 /** update chatEvent 节流窗口（100ms） */
 const UPDATE_THROTTLE_MS = 100;
 
+/** 异步记忆抽取完成前的轮询：最多 4 次 × 2s（图内一次 LLM 调用约 2–4s） */
+const MEMORY_POLL_ATTEMPTS = 4;
+const MEMORY_POLL_INTERVAL_MS = 2_000;
+/** "已记住"提示展示窗口（含撤销入口） */
+const SAVED_NOTICE_MS = 6_000;
+
+/** 提示文本截断长度（气泡/通知不刷屏） */
+function shorten(text: string, max = 40): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
 export function ChatPanel() {
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingConfirmations, setPendingConfirmations] = useState<MemoryConfirmation[]>([]);
+  const [savedNotice, setSavedNotice] = useState<SavedMemoryBrief | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
+  /** 已提示过的自动保存（差分去重：同一条只提示一次） */
+  const seenSavedIdsRef = useRef<Set<string>>(new Set());
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollAbortRef = useRef<boolean>(false);
+
+  /** "已记住"通知（4s 自动消失，含撤销入口）+ 桌宠气泡 */
+  function showSavedNotice(saved: SavedMemoryBrief) {
+    setSavedNotice(saved);
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    savedTimerRef.current = setTimeout(() => setSavedNotice(null), SAVED_NOTICE_MS);
+    window.pet?.petRuntime?.showBubble(`已记住：${shorten(saved.value, 24)}`);
+  }
+
+  /** 拉取记忆摘要：待确认卡 + 差分最近自动保存（notifyNewSaved=false 时不弹提示） */
+  async function refreshMemory(notifyNewSaved: boolean) {
+    try {
+      const summary = await api.memorySummary();
+      setPendingConfirmations(summary.pending);
+      if (notifyNewSaved) {
+        for (const saved of summary.recentlySaved) {
+          if (seenSavedIdsRef.current.has(saved.memoryId)) continue;
+          seenSavedIdsRef.current.add(saved.memoryId);
+          showSavedNotice(saved);
+        }
+      }
+    } catch {
+      /* 未登录/网络异常：记忆提示静默 */
+    }
+  }
+
+  /** 聊天完成后异步轮询（等待服务端 memory-extract 图跑完） */
+  async function pollMemoryAfterChat() {
+    for (let attempt = 0; attempt < MEMORY_POLL_ATTEMPTS; attempt++) {
+      await new Promise((r) => setTimeout(r, MEMORY_POLL_INTERVAL_MS));
+      if (pollAbortRef.current) return;
+      await refreshMemory(true);
+    }
+  }
+
+  /** 确认卡"记住"（可带修改值） */
+  async function confirmMemory(confirmationId: string, value?: string) {
+    try {
+      await api.confirmMemory(confirmationId, value);
+      setPendingConfirmations((prev) => prev.filter((c) => c.confirmationId !== confirmationId));
+      window.pet?.petRuntime?.showBubble('记住啦～');
+    } catch {
+      setError('记忆确认失败，请重试');
+    }
+  }
+
+  /** 确认卡"仅本次聊天" */
+  async function rejectMemory(confirmationId: string) {
+    try {
+      await api.rejectMemory(confirmationId);
+      setPendingConfirmations((prev) => prev.filter((c) => c.confirmationId !== confirmationId));
+      window.pet?.petRuntime?.showBubble('好，这次不记');
+    } catch {
+      setError('操作失败，请重试');
+    }
+  }
+
+  /** "已记住"撤销（D-3：10.5 置失效不删除） */
+  async function undoSaved(memoryId: string) {
+    try {
+      await api.invalidateMemory(memoryId);
+    } catch {
+      /* 撤销失败保持现状即可 */
+    }
+    seenSavedIdsRef.current.delete(memoryId);
+    setSavedNotice(null);
+  }
 
   // 挂载时恢复对话历史（10.x：服务端持久化，跨设备可续）
   useEffect(() => {
@@ -63,6 +149,13 @@ export function ChatPanel() {
         setHistoryLoaded(true);
       }
     })();
+    // 存量待确认（登录后；不弹"已记住"提示）
+    void refreshMemory(false);
+    pollAbortRef.current = false;
+    return () => {
+      pollAbortRef.current = true;
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    };
   }, []);
 
   // 新消息滚动到底部（只在用户已在底部时自动滚动，不抢用户上滚查看历史；
@@ -145,6 +238,8 @@ export function ChatPanel() {
             );
             window.pet?.petRuntime?.chatEvent({ phase: 'done', source: 'cloud_ai', output });
             setStreaming(false);
+            // 10.6：异步记忆抽取在服务端进行，轮询等结果（确认卡 / "已记住"提示）
+            void pollMemoryAfterChat();
           },
           onError: () => {
             fallbackToLocal();
@@ -211,6 +306,31 @@ export function ChatPanel() {
         <p className="notice notice--warning" role="status">
           {error}
         </p>
+      )}
+      {savedNotice && (
+        <p className="notice notice--success" role="status">
+          已记住：{shorten(savedNotice.value)}
+          <button
+            type="button"
+            className="notice__action"
+            onClick={() => void undoSaved(savedNotice.memoryId)}
+          >
+            撤销
+          </button>
+        </p>
+      )}
+      {pendingConfirmations.length > 0 && (
+        <section className="memory-confirm-area" aria-label="星屿想记住这些">
+          <p className="memory-confirm-area__title">星屿想记住这些，你愿意吗？</p>
+          {pendingConfirmations.map((confirmation) => (
+            <MemoryConfirmCard
+              key={confirmation.confirmationId}
+              confirmation={confirmation}
+              onConfirm={confirmMemory}
+              onReject={rejectMemory}
+            />
+          ))}
+        </section>
       )}
       <form className="chat-input-row" onSubmit={send}>
         <label className="sr-only" htmlFor="cloud-chat-input">

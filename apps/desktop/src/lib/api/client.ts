@@ -6,8 +6,8 @@
  * - refresh token：只存在于主进程 safeStorage（经 window.pet.session 刷新）
  * - 401 → 调 session.refresh() → 重试一次；失败则登出回登录页
  */
-import type { ModelOutput } from '@pet/protocol';
-import { ModelOutputSchema } from '@pet/protocol';
+import type { MemorySummary, ModelOutput } from '@pet/protocol';
+import { MemorySummarySchema, ModelOutputSchema } from '@pet/protocol';
 
 import { parseSseChunks } from './sse.js';
 export interface MeResult {
@@ -244,5 +244,37 @@ export const api = {
       content: m.content,
       at: m.at,
     }));
+  },
+  /** GET /memories/summary：待确认记忆 + 最近自动保存（10.6/D-3"已记住"提示） */
+  async memorySummary(): Promise<MemorySummary> {
+    const res = await apiFetch('/memories/summary');
+    const body = (await jsonOrThrow(res)) as unknown;
+    return MemorySummarySchema.parse(body);
+  },
+  /** POST /memories/confirm：确认卡"记住"（可携带修改后的 value，编辑过 → user_confirmed） */
+  async confirmMemory(confirmationId: string, value?: string): Promise<{ memoryId: string }> {
+    const res = await apiFetch('/memories/confirm', {
+      method: 'POST',
+      body: JSON.stringify({
+        confirmationId,
+        ...(value !== undefined && value.length > 0 ? { value } : {}),
+      }),
+    });
+    return (await jsonOrThrow(res)) as { memoryId: string };
+  },
+  /** POST /memories/reject：确认卡"仅本次聊天"（D-3） */
+  async rejectMemory(confirmationId: string): Promise<{ ok: true }> {
+    const res = await apiFetch('/memories/reject', {
+      method: 'POST',
+      body: JSON.stringify({ confirmationId }),
+    });
+    return (await jsonOrThrow(res)) as { ok: true };
+  },
+  /** POST /memories/:memoryId/invalidate：撤销自动保存（10.5 置失效不删除） */
+  async invalidateMemory(memoryId: string): Promise<{ ok: true }> {
+    const res = await apiFetch(`/memories/${encodeURIComponent(memoryId)}/invalidate`, {
+      method: 'POST',
+    });
+    return (await jsonOrThrow(res)) as { ok: true };
   },
 };

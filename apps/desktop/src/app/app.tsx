@@ -209,7 +209,7 @@ function PanelHeader({
       <div className="app-header__actions">
         {onLogout && (
           <details className="account-menu" ref={menuRef}>
-            <summary className="icon-button" aria-label="账号菜单" title="账号菜单">
+            <summary className="icon-button" role="button" aria-label="账号菜单" title="账号菜单">
               <UserRound size={17} aria-hidden="true" />
             </summary>
             <div className="account-menu__popover">

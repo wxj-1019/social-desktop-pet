@@ -123,3 +123,74 @@ describe('api.chatStream done 帧 → 完整 ModelOutput', () => {
     expect(onError).not.toHaveBeenCalled();
   });
 });
+
+describe('api 记忆接口（10.6 / D-3 确认队列）', () => {
+  function jsonResponse(body: unknown): Response {
+    return new Response(JSON.stringify(body), { status: 200 });
+  }
+
+  it('memorySummary 解析 pending + recentlySaved 契约字段', async () => {
+    vi.stubGlobal('window', { pet: { getApiBase: async () => 'http://api.test' } });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          pending: [
+            {
+              confirmationId: '99999999-9999-4999-8999-999999999999',
+              category: 'fact',
+              value: '我有糖尿病',
+              importance: 7,
+              sourceType: 'user_stated',
+              sensitivity: 'high',
+              sourceTurnIds: ['11111111-1111-4111-8111-111111111111'],
+              createdAt: '2026-08-03T10:00:00.000Z',
+            },
+          ],
+          recentlySaved: [
+            {
+              memoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              value: '我喜欢抹茶',
+              savedAt: '2026-08-03T10:00:30.000Z',
+            },
+          ],
+        }),
+      ),
+    );
+
+    const summary = await api.memorySummary();
+    expect(summary.pending[0]?.confirmationId).toBe('99999999-9999-4999-8999-999999999999');
+    expect(summary.pending[0]?.sensitivity).toBe('high');
+    expect(summary.recentlySaved[0]?.value).toBe('我喜欢抹茶');
+  });
+
+  it('confirmMemory 可携带修改值（POST /memories/confirm）', async () => {
+    vi.stubGlobal('window', { pet: { getApiBase: async () => 'http://api.test' } });
+    const fetchMock = vi.fn(async () => jsonResponse({ memoryId: 'm-9' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await api.confirmMemory('c-1', '我有二型糖尿病');
+    expect(result.memoryId).toBe('m-9');
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/memories/confirm');
+    expect(JSON.parse(String(init.body))).toEqual({
+      confirmationId: 'c-1',
+      value: '我有二型糖尿病',
+    });
+  });
+
+  it('rejectMemory / invalidateMemory 走对应端点', async () => {
+    vi.stubGlobal('window', { pet: { getApiBase: async () => 'http://api.test' } });
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.rejectMemory('c-2');
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/memories/reject');
+    expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body))).toEqual({
+      confirmationId: 'c-2',
+    });
+
+    await api.invalidateMemory('m-1');
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/memories/m-1/invalidate');
+  });
+});

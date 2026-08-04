@@ -17,6 +17,7 @@ import {
   PetInteractionSchema,
   PetProfileSchema,
   PetSocialEventSchema,
+  PetVisualCommandSchema,
 } from '@pet/protocol';
 import type { PanelOpen, PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
 import { ipcMain, screen } from 'electron';
@@ -204,6 +205,13 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
     deps.setPassThrough(enabled);
   });
   registerOn(deps, 'pet:show-context-menu', 'pet', () => deps.showContextMenu());
+  // 面板 → 桌宠气泡（记忆"已记住"/确认提示；复用 PetVisualCommandSchema.bubble 契约）
+  registerOn(deps, 'pet:show-bubble', ['pet', 'panel'], (_win, payload) => {
+    const cmd = parseIpcPayload(PetVisualCommandSchema, payload);
+    if (cmd.type === 'bubble' && cmd.text !== null && cmd.text !== '') {
+      runtime.showBubble(cmd.text);
+    }
+  });
 
   // ---- 拖动（8.5）：仅 pet ----
   registerOn(deps, 'pet:drag-start', 'pet', (win, payload) =>

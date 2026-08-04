@@ -11,7 +11,7 @@
  * 不用 EventSource——后者无法带 Authorization header）。
  */
 import { buildChatFlow, initialChatFlowState } from '@pet/ai-graph';
-import type { GraphEvent, LlmClient } from '@pet/ai-graph';
+import type { GraphEvent, LlmClient, MemoryExtractStore } from '@pet/ai-graph';
 import { LIMITS } from '@pet/config';
 import { type Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
@@ -19,6 +19,7 @@ import { streamSSE } from 'hono/streaming';
 import type pg from 'pg';
 
 import type { JwtService } from '../auth/jwt.js';
+import { runMemoryExtract } from '../lib/run-memory-extract.js';
 
 import type { BusinessVariables } from './business.js';
 import { requireAuth } from './business.js';
@@ -27,6 +28,8 @@ export interface ChatDeps {
   jwt: JwtService;
   pool: pg.Pool;
   llm?: LlmClient;
+  /** 记忆存储（10.6；无则跳过异步记忆抽取） */
+  memoryStore?: MemoryExtractStore;
 }
 
 /** 图实例缓存（compile 一次，全进程复用；llm 注入一次） */
@@ -170,10 +173,24 @@ export function registerChatRoutes(
             dialogue,
             emotion: finalState.modelOutput?.emotion ?? 'neutral',
             actionIntent: finalState.modelOutput?.actionIntent ?? 'idle',
+            intensity: finalState.modelOutput?.intensity ?? 1,
           }),
         });
         // 对话历史落库（10.x：user 消息 + assistant 回复；保留期 11.4）
         await saveChatMessages(deps.pool, userId, id, message, dialogue);
+
+        // 10.6 异步记忆抽取（fire-and-forget：不阻塞已流式的回复；失败仅记日志）
+        if (finalState.memoryExtractTriggered && deps.memoryStore) {
+          void runMemoryExtract({
+            pool: deps.pool,
+            userId,
+            threadId: id,
+            store: deps.memoryStore,
+            llm: deps.llm,
+          }).catch((e) => {
+            console.warn('[memory] 抽取失败：', (e as Error).message);
+          });
+        }
       } catch (e) {
         await stream.writeSSE({
           event: 'error',

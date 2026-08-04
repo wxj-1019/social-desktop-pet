@@ -55,6 +55,7 @@ export const IPC_ALLOWLIST = [
   'pet:set-dnd', // 勿扰开关
   'pet:set-pass-through', // 整窗穿透
   'pet:show-context-menu', // 桌宠右键菜单
+  'pet:show-bubble', // 面板 → 桌宠气泡（记忆"已记住"等提示）
   'panel:open', // 面板打开（8.2）
   'panel:close',
   'panel:navigate', // 面板内导航

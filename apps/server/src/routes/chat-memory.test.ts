@@ -1,0 +1,115 @@
+/**
+ * chat → 异步记忆抽取触发测试（10.6）。
+ * POST /chat 流式完成后（memoryExtractTriggered=true 且注入 memoryStore）应
+ * fire-and-forget 跑真实 runMemoryExtract 全链（规则抽取 → 去重 → 落库到注入的
+ * mock store）；无 memoryStore 时跳过抽取。
+ */
+import { Hono } from 'hono';
+import { describe, expect, it, vi } from 'vitest';
+
+import { JwtService } from '../auth/jwt.js';
+
+import type { BusinessVariables } from './business.js';
+import { registerChatRoutes } from './chat.js';
+
+const jwt = new JwtService({ secret: 'test-secret' });
+const USER_ID = 'user-1';
+const TURN_ID = '11111111-1111-4111-8111-111111111111';
+
+function makePool() {
+  const client = {
+    query: vi.fn(async (sql: string) => {
+      const first = sql.trim().toLowerCase();
+      // 每日预算记账（12.7）：request_count 1 → 未超限
+      if (first.startsWith('insert into chat_usage')) return { rows: [{ request_count: 1 }] };
+      return { rows: [] };
+    }),
+    release: vi.fn(),
+  };
+  const pool = {
+    connect: vi.fn(async () => client),
+    // saveChatMessages（insert）与 runMemoryExtract（select 最近 user turn）共用
+    query: vi.fn(async (sql: string) => {
+      const first = sql.trim().toLowerCase();
+      if (first.startsWith('select message_id, content from chat_messages')) {
+        return { rows: [{ message_id: TURN_ID, content: '我喜欢抹茶。' }] };
+      }
+      return { rows: [] };
+    }),
+  };
+  return { pool, client };
+}
+
+/** mock 记忆存储：记录落库调用（真实图 → 注入 store 的边界） */
+function makeMemoryStore() {
+  return {
+    findSimilar: vi.fn(async () => []),
+    persistMemory: vi.fn(async () => ({ memoryId: 'mem-1' })),
+    invalidateMemory: vi.fn(async () => undefined),
+    createConfirmation: vi.fn(async () => ({ confirmationId: 'conf-1' })),
+    logAudit: vi.fn(async () => undefined),
+  };
+}
+
+async function postChat(app: Hono<{ Variables: BusinessVariables }>, message: string) {
+  const token = await jwt.sign({ sub: USER_ID, deviceId: 'dev-1' });
+  const res = await app.request('/chat', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ message, threadId: 't-1' }),
+  });
+  // 泵完整 SSE 流（streamSSE 回调在流消费时执行）
+  await res.text();
+  return res;
+}
+
+describe('POST /chat 触发异步记忆抽取（10.6）', () => {
+  it('流式完成后全链抽取：规则命中 → store.persistMemory 落库（owner + source_turn_ids）', async () => {
+    const { pool } = makePool();
+    const memoryStore = makeMemoryStore();
+    const honoApp = new Hono<{ Variables: BusinessVariables }>();
+    registerChatRoutes(honoApp, {
+      jwt,
+      pool: pool as never,
+      memoryStore: memoryStore as never,
+    });
+
+    const res = await postChat(honoApp, '我喜欢抹茶。');
+
+    expect(res.status).toBe(200);
+    // 抽取异步 fire-and-forget：等它跑完（全微任务链，无定时器）
+    await vi.waitFor(() => expect(memoryStore.findSimilar).toHaveBeenCalled());
+    expect(memoryStore.persistMemory).toHaveBeenCalledTimes(1);
+    expect(memoryStore.persistMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerUserId: USER_ID,
+        value: '我喜欢抹茶',
+        category: 'preference',
+        sourceTurnIds: [TURN_ID],
+      }),
+    );
+    // 审计（11.2）：auto_save 必记
+    expect(memoryStore.logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'auto_save' }),
+    );
+    // 对话消息已落库（saveChatMessages 在触发前执行）
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining('insert into chat_messages'),
+      expect.anything(),
+    );
+  });
+
+  it('未注入 memoryStore → 跳过抽取（不查 owner turns）', async () => {
+    const { pool } = makePool();
+    const honoApp = new Hono<{ Variables: BusinessVariables }>();
+    registerChatRoutes(honoApp, { jwt, pool: pool as never });
+
+    const res = await postChat(honoApp, '我喜欢抹茶。');
+    expect(res.status).toBe(200);
+
+    const memorySelects = pool.query.mock.calls.filter(([sql]) =>
+      String(sql).includes('select message_id, content from chat_messages'),
+    );
+    expect(memorySelects).toHaveLength(0);
+  });
+});
