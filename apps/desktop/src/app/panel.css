@@ -601,19 +601,22 @@
 
 /* 关键修复：tabpanel 包装层是 grid 第三行的 item，必须参与收缩约束——
    否则聊天历史一多会把整个视图（含头部/tab 栏）顶出窗口（min-height: auto 默认值） */
+/* 子视图填满 tabpanel：tabpanel 是 grid 拉伸的 item，其高度对百分比 height
+   不构成"确定"上下文 → height:100% 会解析失效（聊天历史一多把头部顶出、
+   内容少时子视图只占内容高不占满）。改为 flex 容器 + 子视图 flex:1 拉伸，
+   无百分比依赖。 */
 .pet-stage--app > [role='tabpanel'] {
   min-height: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
-
-/* 子视图填满 tabpanel：block 子元素默认高度 auto，grid 的 1fr 行会按内容
-   max-content 撑破（chat-list 历史一多 → 头部被顶出）。height:100% 让
-   各视图内部的 minmax(0,1fr) 行基于固定容器高度收缩。 */
 .pet-stage--app > [role='tabpanel'] > .chat-panel,
 .pet-stage--app > [role='tabpanel'] > .friends-page,
 .pet-stage--app > [role='tabpanel'] > .settings-page,
 .pet-stage--app > [role='tabpanel'] > .memories-page {
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .friends-page {
