@@ -79,10 +79,13 @@ body,
     opacity 0.22s ease;
 }
 
-/* 透明命中区：仅桌宠窗（PetExperience）接收指针事件——
-   面板头像内的星屿命中矩形不抢事件（panel.css 已设 pointer-events: none） */
-.pet-experience [data-hit-rect] {
+/* 透明命中区：fill 必须全局透明（SVG 默认 fill 是黑色——
+   面板头像内的星屿同样需要，否则出现黑块）；
+   指针事件仅桌宠窗（PetExperience）接收——面板头像容器已设 pointer-events: none */
+.star-isle [data-hit-rect] {
   fill: transparent;
+}
+.pet-experience [data-hit-rect] {
   pointer-events: all;
 }
 
