@@ -65,6 +65,51 @@ describe('chat-flow graph', () => {
     expect(result.memoryExtractTriggered).toBe(false);
   });
 
+  it('危机三级固定话术（11.8）：high 附本地化资源、medium 软转介、low 温和关怀', async () => {
+    const run = async (level: 'low' | 'medium' | 'high') => {
+      const crisisClassify: NodeFn<ChatFlowState> = async () => ({
+        inputClassification: { categories: ['self_harm'], crisisLevel: level, confidence: 0.9 },
+      });
+      const graph = new StateGraph<ChatFlowState>()
+        .addNode('auth', authNode)
+        .addNode('classify_input', crisisClassify)
+        .addNode('retrieve_memory', retrieveMemoryNodeFactory())
+        .addNode('crisis_response', crisisResponseNode)
+        .addEdge(START, 'auth')
+        .addEdge('auth', 'classify_input')
+        .addConditionalEdge('classify_input', (s) =>
+          s.inputClassification?.crisisLevel && s.inputClassification.crisisLevel !== 'none'
+            ? 'crisis_response'
+            : 'retrieve_memory',
+        )
+        .addEdge('retrieve_memory', END)
+        .addEdge('crisis_response', END)
+        .compile();
+      const state = initialChatFlowState({
+        threadId: `crisis-${level}`,
+        userId: 'u1',
+        deviceId: 'd1',
+        userMessage: '...',
+        scenario: 'private_chat',
+      });
+      return graph.invoke(state, { threadId: `crisis-${level}` });
+    };
+
+    const high = await run('high');
+    expect(high.crisisLevel).toBe('high');
+    expect(high.responseText).toContain('12356');
+    expect(high.responseText).toContain('120');
+    expect(high.responseText).toContain('不承诺替你保密');
+    expect(high.responseText).not.toContain('scaffold');
+
+    const medium = await run('medium');
+    expect(medium.responseText).toContain('12356');
+    expect(medium.responseText).toContain('信任的人');
+
+    const low = await run('low');
+    expect(low.responseText).toContain('我听到你说的了');
+  });
+
   it('emits node_start/node_end spans for observability (11.2)', async () => {
     const graph = buildChatFlow();
     const events: string[] = [];

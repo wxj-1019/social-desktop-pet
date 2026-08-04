@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import type pg from 'pg';
 
 import { createOpenAiCompatibleClient, llmConfigFromEnv } from './ai/llm.js';
@@ -20,6 +21,7 @@ import { PgMemoryExtractStore } from './lib/memory-store.js';
 import { RealtimeServer } from './realtime/ws.js';
 import { createAuthRouter, type AuthDeps } from './routes/auth.js';
 import { createBusinessRouter, type BusinessDeps } from './routes/business.js';
+import { registerWaitlistRoutes } from './routes/waitlist.js';
 
 function env(name: string): string {
   const v = process.env[name];
@@ -68,6 +70,10 @@ export function buildApp(deps: AppDeps) {
 
   const auth = createAuthRouter(deps);
   app.route('/auth', auth);
+
+  // 4.3 Waitlist 公开报名：landing 是独立 vite app（跨源 POST 需要 CORS，仅此路由放开）
+  app.use('/waitlist', cors());
+  registerWaitlistRoutes(app, { pool: deps.pool });
 
   const business = createBusinessRouter({
     pool: deps.pool,

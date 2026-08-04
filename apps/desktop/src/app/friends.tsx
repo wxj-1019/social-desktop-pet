@@ -3,6 +3,7 @@ import { Copy, Gift, RefreshCw, Send, Sparkles, UsersRound } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, apiBase, getAccessToken, type Friend, type SyncEvent } from '../lib/api/client.js';
+import { syncAfter } from '../lib/inbox-cursor.js';
 import { RealtimeClient, toWsUrl } from '../lib/realtime.js';
 import { StarIsleVisual } from '../pet/star-isle-visual.js';
 
@@ -95,10 +96,11 @@ export function FriendsPage({ userId }: FriendsPageProps) {
 
   const pullSync = useCallback(async () => {
     try {
-      const page = await api.sync(lastSeq);
-      if (page.events.length > 0) {
-        setEvents((previous) => [...previous, ...page.events].slice(-20));
-        setLastSeq(page.nextInboxSeq);
+      // 9.5 慢路径补齐：循环分页直到追上最新（断线 72h+/序列缺口时一次性补游标）
+      const { items, nextInboxSeq } = await syncAfter(lastSeq);
+      if (items.length > 0) {
+        setEvents((previous) => [...previous, ...items].slice(-20));
+        setLastSeq(nextInboxSeq);
       }
     } catch {
       // 实时连接或下一次轮询会继续补齐。

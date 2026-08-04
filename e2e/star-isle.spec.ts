@@ -10,6 +10,9 @@
  * 取安全下限 8000（约实测值 1/3），仅用来证明"角色真实画出来了"而非空窗/白屏/
  * 渲染错误降级——阈值远低于角色实际像素量，DPR/字号差异不会误杀。
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { expect, test } from '@playwright/test';
 
 import { launchPetApp } from './helpers/electron-app.js';
@@ -95,8 +98,24 @@ test('拖动：拖拽后窗口移动，restart() 后位置持久化还原', asyn
   const after = (await app.windowState('pet')) as PetWindowState;
   expect(after.bounds.x !== before.bounds.x || after.bounds.y !== before.bounds.y).toBe(true);
 
-  // 给 moved 事件 + positionStore.save 留出写盘时间
-  await pet.waitForTimeout(800);
+  // 等位置落盘（drag-end IPC → 同步写 pet-position.json；文件是持久化的真相）。
+  // 之前用固定 800ms 等待，全量套件负载下 drag-end IPC 可能更晚 → restart 时未落盘
+  // → 恢复回默认位置，断言误报。
+  await expect
+    .poll(
+      () => {
+        try {
+          const raw = JSON.parse(
+            readFileSync(join(app.userDataDir, 'pet-position.json'), 'utf-8'),
+          ) as { anchorX?: number };
+          return raw.anchorX !== undefined;
+        } catch {
+          return false;
+        }
+      },
+      { timeout: 10_000, message: '拖拽位置未写入 pet-position.json' },
+    )
+    .toBe(true);
 
   // 重启（复用同一 userDataDir）→ 位置按持久化的 anchor 恢复
   await app.restart();

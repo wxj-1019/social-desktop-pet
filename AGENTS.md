@@ -83,12 +83,11 @@ pnpm dev:server          # 自动应用未执行的 migrations（幂等）
 
 - **向量检索臂**：`recallMemories`（memory-store.ts）已实现权限过滤 + FTS 臂；10.7 RRF 融合/时间衰减/importance 打分在 `memory-retrieval.ts` 纯函数完成；向量臂 SQL 就绪（HNSW + `embedding <=> query`），待嵌入服务（模型密钥 + 历史回填）后启用
 - **输出审核**：`moderateOutputNode` 直接放行（11.2 第四道输出侧记忆泄漏校验未实现）
-- **危机响应话术**：`crisisResponseNode` 为占位文案（11.8 固定协议，V-13 分类器就绪后补）
-- **分类器**：危机预筛为规则版（2026-08-02，crisis-rules.ts）；V-13 自建中文分类器就绪后替换
+- **分类器**：危机预筛为规则版（2026-08-02，crisis-rules.ts）；V-13 自建中文分类器就绪后替换（11.8 三级固定危机话术已落地，含 12356/120/110）
 - **10.3 路由分级**：`buildContextNode` 的 routing 仍 L1 scaffold（L0–L3 判定留后续）
 - `routes/auth.ts` 密码哈希 scrypt → 生产前换 argon2 + 邮件 OTP（13.2 事务邮件）
 - Live2D Cubism SDK 集成 —— 待 V-1 许可确认后引入
 - RLS 羁绊记忆成员校验完整策略 —— 后续 migration
-- 客户端 /sync 循环分页（`lib/inbox-cursor.ts` 空实现）与 landing waitlist 提交（模拟）—— 第 11-14 周
+- 13.2 邀请邮件（waitlist 落库 + 限流已就绪，发信需邮件供应商）
 
 详见设计稿 14.2 实施路线与决策清单 V 类验证项。

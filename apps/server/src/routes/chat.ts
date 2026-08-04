@@ -179,7 +179,8 @@ export function registerChatRoutes(
           threadId: id,
           emit,
         });
-        const dialogue = finalState.modelOutput?.dialogue ?? '';
+        // 危机路径没有 modelOutput：回退 responseText（11.8 固定协议文案）
+        const dialogue = finalState.modelOutput?.dialogue ?? finalState.responseText ?? '';
         await stream.writeSSE({
           event: 'done',
           data: JSON.stringify({

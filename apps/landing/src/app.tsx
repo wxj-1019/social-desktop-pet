@@ -1,28 +1,43 @@
 /**
- * Waitlist 落地页 —— 第 0–1 周交付物。
- * 收集邮箱 → 提交到后端 Edge Function（第 11–14 周接入）或临时 Supabase 表。
- * 设计稿 4.3 传播循环：生成邀请卡 → 好友网页预览 → 安装。
+ * Waitlist 落地页 —— 第 0–1 周交付物（4.3 传播循环入口）。
+ * 收集邮箱 → POST /waitlist（自建后端 D-13；13.2 邀请邮件待邮件供应商接入）。
+ * 开发默认连本机后端，部署时经 VITE_WAITLIST_API 指向线上 API。
  */
 import { useState } from 'react';
 
 type SubmitState = 'idle' | 'submitting' | 'done' | 'error';
 
+/** 后端 API 基址（landing 独立部署，跨源请求由服务端 /waitlist CORS 放开） */
+const WAITLIST_API = import.meta.env.VITE_WAITLIST_API ?? 'http://127.0.0.1:8787';
+
 export function App() {
   const [email, setEmail] = useState('');
   const [state, setState] = useState<SubmitState>('idle');
+  const [errorText, setErrorText] = useState('');
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setErrorText('请输入有效邮箱地址。');
       setState('error');
       return;
     }
     setState('submitting');
     try {
-      // TODO(第11-14周): POST 到 waitlist Edge Function（写 waitlist 表 + 触发邀请邮件）
-      await new Promise((r) => setTimeout(r, 600)); // 骨架阶段模拟
+      const res = await fetch(`${WAITLIST_API}/waitlist`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      if (res.status === 409) {
+        // 已在名单：按成功展示（避免让用户以为报名失败）
+        setState('done');
+        return;
+      }
+      if (!res.ok) throw new Error(`waitlist ${res.status}`);
       setState('done');
     } catch {
+      setErrorText('报名暂时失败，请稍后再试。');
       setState('error');
     }
   }
@@ -55,7 +70,7 @@ export function App() {
             <button type="submit" disabled={state === 'submitting'}>
               {state === 'submitting' ? '提交中…' : '加入等待名单'}
             </button>
-            {state === 'error' && <p className="error">请输入有效邮箱地址。</p>}
+            {state === 'error' && <p className="error">{errorText}</p>}
           </form>
         )}
 

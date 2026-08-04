@@ -153,19 +153,29 @@ export const approveActionNode: NodeFn<ChatFlowState> = async (
   };
 };
 
-/** 11.8 危机三级响应（脱离角色 + 固定策略 + 引导现实资源） */
+/**
+ * 11.8 危机三级响应（脱离角色 + 固定策略 + 引导现实资源）。
+ * 固定文案原则：不提供方法、不承诺绝对保密、不自动报警；
+ * high 附本地化资源（12356 全国心理援助热线；紧急 120/110），
+ * medium 软转介，low 角色内温和关怀（低侵入，高召回可接受）。
+ * 本地化资源库按地区切换留 V-13 实施。
+ */
+const CRISIS_RESPONSES: Record<'low' | 'medium' | 'high', string> = {
+  low: '我听到你说的了。如果愿意，可以多和我说说；需要的时候，也可以和信任的人聊聊。',
+  medium:
+    '听起来你现在很难受。我不是专业的心理帮助，但你此刻的感受值得被认真对待——试着联系一个你信任的人，或拨打免费心理援助热线（12356 全国心理援助热线）。',
+  high: '我很担心你，此刻你的安全最重要。请立即联系你信任的人，或拨打 12356 全国心理援助热线；如有紧急危险，请拨打 120 / 110。我不承诺替你保密这些内容——照顾你是第一位的。',
+};
+
 export const crisisResponseNode: NodeFn<ChatFlowState> = async (
   state,
   _ctx,
 ): Promise<Partial<ChatFlowState>> => {
-  // TODO(第7-10周): 按危机级别（low/medium/high）执行固定策略
-  //   high = 固定危机协议 + 本地化资源库（V-13）
-  //   不提供方法、不承诺绝对保密、不自动报警（11.8）
   const raw = state.inputClassification?.crisisLevel ?? state.moderation?.crisisLevel ?? 'low';
   const level: 'low' | 'medium' | 'high' = raw === 'none' ? 'low' : raw;
   return {
     crisisLevel: level,
-    responseText: '(scaffold: crisis protocol placeholder)',
+    responseText: CRISIS_RESPONSES[level],
     memoryExtractTriggered: false, // 危机场景不抽取记忆
   };
 };
