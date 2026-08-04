@@ -1,13 +1,15 @@
 /**
- * Auth 路由 —— 注册/登录/刷新/撤销（自建 Auth，9.8）。
- * 骨架：密码哈希用 node:crypto scrypt（自建实现，无需外部依赖）；
- * 生产前替换为 argon2（V-9 后评估）并加入邮件 OTP（13.2 事务邮件）。
+ * Auth 路由 —— 注册/登录/刷新/撤销/邮箱 OTP（自建 Auth，9.8 / 13.2）。
+ * 密码哈希：argon2id（@node-rs/argon2，OWASP 推荐）；旧 scrypt 格式登录时
+ * 校验通过自动升级写回（平滑迁移）。邮箱 OTP 登录（13.2 事务邮件）：
+ * POST /auth/otp/request → 邮件 6 位验证码（sha256 落库，60s 冷却）；
+ * POST /auth/otp/login → 校验通过直接登录（同 password login 会话语义）。
  */
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-
 import { Hono } from 'hono';
 
 import type { JwtService } from '../auth/jwt.js';
+import type { OtpService } from '../auth/otp.js';
+import { hashPasswordArgon2, verifyPassword } from '../auth/password.js';
 import { SessionRotationError } from '../auth/session.js';
 import type { SessionManager, SessionStore } from '../auth/session.js';
 
@@ -19,28 +21,28 @@ export interface AuthDeps {
   users: {
     findByEmail(email: string): Promise<{ id: string; passwordHash: string } | null>;
     create(email: string, passwordHash: string): Promise<string>;
+    /** 登录时旧哈希升级写回（argon2 迁移；可选注入） */
+    updatePassword?(userId: string, passwordHash: string): Promise<void>;
   };
   devices: {
     /** 注册设备并激活（9.8：激活新设备撤销旧设备会话）；nickname 仅首次注册生效 */
     register(userId: string, deviceId: string, platform: string, nickname: string): Promise<void>;
   };
+  /** 邮箱 OTP（13.2 事务邮件；未注入则 /otp/* 返回 501） */
+  otp?: OtpService;
 }
 
 export function createAuthRouter(deps: AuthDeps): Hono {
   const app = new Hono();
-
-  function hashPassword(password: string, salt: string): string {
-    return scryptSync(password, salt, 64).toString('hex');
-  }
 
   app.post('/register', async (c) => {
     const { email, password, deviceId, platform, nickname } = await c.req.json();
     if (typeof email !== 'string' || typeof password !== 'string' || password.length < 8) {
       return c.json({ error: 'email/password 非法' }, 400);
     }
-    const salt = randomBytes(16).toString('hex');
-    // 存储格式：salt(32 hex) + scrypt hash(128 hex)；login 时按此拆分
-    const userId = await deps.users.create(email, salt + hashPassword(password, salt));
+    // argon2id 哈希（PHC 格式；OWASP 推荐替代旧 scrypt）
+    const passwordHash = await hashPasswordArgon2(password);
+    const userId = await deps.users.create(email, passwordHash);
     // 默认昵称 = email 前缀（6.x 注册流程接入后由用户设置）
     const defaultNickname =
       typeof nickname === 'string' && nickname.length > 0
@@ -59,10 +61,13 @@ export function createAuthRouter(deps: AuthDeps): Hono {
     const { email, password, deviceId, platform } = await c.req.json();
     const user = await deps.users.findByEmail(String(email));
     if (!user) return c.json({ error: 'invalid credentials' }, 401);
-    const [salt, hash] = [user.passwordHash.slice(0, 32), user.passwordHash.slice(32)];
-    const candidate = hashPassword(String(password), salt);
-    if (!timingSafeEqual(Buffer.from(candidate, 'hex'), Buffer.from(hash, 'hex'))) {
-      return c.json({ error: 'invalid credentials' }, 401);
+    const { ok, needsUpgrade } = await verifyPassword(String(password), user.passwordHash);
+    if (!ok) return c.json({ error: 'invalid credentials' }, 401);
+    // 旧 scrypt 哈希校验通过 → 自动升级为 argon2id（平滑迁移）
+    if (needsUpgrade && deps.users.updatePassword) {
+      await deps.users
+        .updatePassword(user.id, await hashPasswordArgon2(String(password)))
+        .catch((e) => console.warn('[auth] 密码哈希升级写回失败：', (e as Error).message));
     }
     const devId = String(deviceId);
     // login 时 profile 已存在（on conflict do nothing）；昵称不变
@@ -94,6 +99,58 @@ export function createAuthRouter(deps: AuthDeps): Hono {
     const { refreshToken } = await c.req.json();
     await deps.sessions.revokeToken(String(refreshToken));
     return c.json({ ok: true });
+  });
+
+  // ---- 13.2 邮箱 OTP 登录（事务邮件；未注入 OtpService → 501） ----
+
+  /** 基础邮箱校验（与 waitlist 同规则：形如 a@b.c，≤254 字符） */
+  const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  // 发送验证码：未注册邮箱 404；60s 冷却 429；pending 上限 429
+  app.post('/otp/request', async (c) => {
+    if (!deps.otp) return c.json({ error: 'otp_disabled' }, 501);
+    const { email } = (await c.req.json().catch(() => ({}))) as { email?: string };
+    if (typeof email !== 'string' || email.length === 0 || email.length > 254) {
+      return c.json({ error: 'email 非法' }, 400);
+    }
+    if (!EMAIL_PATTERN.test(email)) return c.json({ error: 'email 格式非法' }, 400);
+    const normalized = email.toLowerCase();
+    const user = await deps.users.findByEmail(normalized);
+    if (!user) return c.json({ error: 'email_not_registered' }, 404);
+
+    const result = await deps.otp.request(normalized);
+    if (result.status === 'cooldown') {
+      return c.json({ error: 'rate_limit', retryAfterSec: result.retryAfterSec }, 429);
+    }
+    if (result.status === 'too_many_pending') {
+      return c.json({ error: 'too_many_pending' }, 429);
+    }
+    return c.json({ ok: true, ...(result.devCode ? { devCode: result.devCode } : {}) });
+  });
+
+  // 验证码登录：校验通过 → 与密码登录同会话语义（9.8 设备激活/会话轮换）
+  app.post('/otp/login', async (c) => {
+    if (!deps.otp) return c.json({ error: 'otp_disabled' }, 501);
+    const { email, code, deviceId, platform } = (await c.req.json().catch(() => ({}))) as {
+      email?: string;
+      code?: string;
+      deviceId?: string;
+      platform?: string;
+    };
+    if (typeof email !== 'string' || typeof code !== 'string' || code.length !== 6) {
+      return c.json({ error: 'email/code 非法' }, 400);
+    }
+    const normalized = email.toLowerCase();
+    const verify = await deps.otp.verify(normalized, code);
+    if (!verify.ok) return c.json({ error: 'invalid_otp' }, 401);
+    const user = await deps.users.findByEmail(normalized);
+    if (!user) return c.json({ error: 'email_not_registered' }, 404);
+
+    const devId = String(deviceId);
+    await deps.devices.register(user.id, devId, String(platform ?? 'windows'), '');
+    const refreshToken = await deps.sessions.createRefreshToken(user.id, devId);
+    const accessToken = await deps.jwt.sign({ sub: user.id, deviceId: devId });
+    return c.json({ accessToken, refreshToken, userId: user.id });
   });
 
   return app;

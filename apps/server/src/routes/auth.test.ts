@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { JwtService } from '../auth/jwt.js';
+import { OtpService, type OtpCodeStore } from '../auth/otp.js';
+import { isArgon2Hash } from '../auth/password.js';
 import {
   SessionManager,
   SessionRotationError,
@@ -105,5 +107,187 @@ describe('auth refresh route', () => {
     expect(onError).toHaveBeenCalledWith(failure, expect.anything());
     expect(response.status).toBe(500);
     expect(await response.text()).not.toContain('refresh_invalid');
+  });
+});
+
+describe('auth register/login（argon2 密码哈希）', () => {
+  it('register 落库 argon2 PHC 哈希（非旧 scrypt 拼接）', async () => {
+    const deps = makeDeps();
+    const create = vi.mocked(deps.users.create);
+    const app = createAuthRouter(deps);
+
+    const res = await app.request('/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        email: 'a@b.com',
+        password: 'password123',
+        deviceId: 'dev-1',
+        platform: 'windows',
+      }),
+    });
+    expect(res.status).toBe(201);
+    const [email, passwordHash] = create.mock.calls[0] as [string, string];
+    expect(email).toBe('a@b.com');
+    expect(isArgon2Hash(passwordHash)).toBe(true);
+    expect(passwordHash).toContain('$argon2id$');
+    expect(passwordHash.length).toBeGreaterThan(60);
+  });
+
+  it('login：argon2 哈希校验通过 → 会话；密码错误 → 401', async () => {
+    const deps = makeDeps();
+    const { hashPasswordArgon2 } = await import('../auth/password.js');
+    const stored = await hashPasswordArgon2('password123');
+    deps.users.findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: stored }));
+    const app = createAuthRouter(deps);
+
+    const ok = await app.request('/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com', password: 'password123', deviceId: 'dev-1' }),
+    });
+    expect(ok.status).toBe(200);
+    const body = (await ok.json()) as { accessToken: string; refreshToken: string };
+    expect(body.accessToken).toBeTruthy();
+    expect(body.refreshToken).toBeTruthy();
+
+    const bad = await app.request('/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com', password: 'wrong-pass', deviceId: 'dev-1' }),
+    });
+    expect(bad.status).toBe(401);
+  });
+
+  it('旧 scrypt 哈希登录 → 校验通过 + updatePassword 自动升级为 argon2', async () => {
+    const deps = makeDeps();
+    const { randomBytes, scryptSync } = await import('node:crypto');
+    const salt = randomBytes(16).toString('hex');
+    const legacy = salt + scryptSync('password123', salt, 64).toString('hex');
+    deps.users.findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: legacy }));
+    deps.users.updatePassword = vi.fn(async () => undefined);
+    const app = createAuthRouter(deps);
+
+    const res = await app.request('/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com', password: 'password123', deviceId: 'dev-1' }),
+    });
+    expect(res.status).toBe(200);
+    const [userId, newHash] = vi.mocked(deps.users.updatePassword!).mock.calls[0] as [
+      string,
+      string,
+    ];
+    expect(userId).toBe('u1');
+    expect(isArgon2Hash(newHash)).toBe(true);
+  });
+});
+
+describe('auth 邮箱 OTP（13.2）', () => {
+  /** 内存 OTP store（复用 OtpService 真逻辑走通 request→login 全链路） */
+  function makeOtpService(): OtpService {
+    const rows = new Map<string, { codeHash: string; attempts: number; expiresAt: Date }>();
+    let seq = 0;
+    const store: OtpCodeStore = {
+      create: async (_email, codeHash, expiresAt) => {
+        rows.set(String(_email), { codeHash, attempts: 0, expiresAt });
+        void seq;
+      },
+      findLatest: async (email) => {
+        const row = rows.get(email);
+        return row
+          ? {
+              otpId: `otp-${++seq}`,
+              codeHash: row.codeHash,
+              attempts: row.attempts,
+              expiresAt: row.expiresAt,
+              consumedAt: null,
+            }
+          : null;
+      },
+      countPending: async () => 0,
+      incrementAttempts: async (_otpId) => undefined,
+      consumeIfUnused: async () => true,
+      cleanup: async () => undefined,
+    };
+    return new OtpService(store, undefined, { devCodeInResponse: true });
+  }
+
+  it('request（未注册邮箱 → 404）；已注册 → 带 devCode；login 全链路出 token', async () => {
+    const deps = makeDeps();
+    deps.users.findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: 'x' }));
+    deps.otp = makeOtpService();
+    const app = createAuthRouter(deps);
+
+    // 未注册邮箱（findByEmail null）→ 404
+    deps.users.findByEmail = vi.fn(async () => null);
+    const missing = await app.request('/otp/request', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'nobody@b.com' }),
+    });
+    expect(missing.status).toBe(404);
+
+    // 已注册 → 200 + devCode
+    deps.users.findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: 'x' }));
+    const request = await app.request('/otp/request', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com' }),
+    });
+    expect(request.status).toBe(200);
+    const { devCode } = (await request.json()) as { devCode: string };
+    expect(devCode).toMatch(/^\d{6}$/);
+
+    // devCode 登录 → access/refresh token（与密码登录同语义）
+    const login = await app.request('/otp/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com', code: devCode, deviceId: 'dev-otp' }),
+    });
+    expect(login.status).toBe(200);
+    const body = (await login.json()) as {
+      accessToken: string;
+      refreshToken: string;
+      userId: string;
+    };
+    expect(body.accessToken).toBeTruthy();
+    expect(body.refreshToken).toBeTruthy();
+    expect(body.userId).toBe('u1');
+  });
+
+  it('错误验证码 → 401；未注入 OtpService → 501', async () => {
+    const deps = makeDeps();
+    deps.users.findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: 'x' }));
+    deps.otp = makeOtpService();
+    const app = createAuthRouter(deps);
+
+    const bad = await app.request('/otp/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com', code: '000000', deviceId: 'dev-1' }),
+    });
+    expect(bad.status).toBe(401);
+
+    const depsNoOtp = makeDeps();
+    const appNoOtp = createAuthRouter(depsNoOtp);
+    const disabled = await appNoOtp.request('/otp/request', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com' }),
+    });
+    expect(disabled.status).toBe(501);
+  });
+
+  it('邮箱格式非法 → 400', async () => {
+    const deps = makeDeps();
+    deps.otp = makeOtpService();
+    const app = createAuthRouter(deps);
+    const res = await app.request('/otp/request', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'not-an-email' }),
+    });
+    expect(res.status).toBe(400);
   });
 });

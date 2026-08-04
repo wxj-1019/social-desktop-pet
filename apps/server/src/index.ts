@@ -14,8 +14,10 @@ import type pg from 'pg';
 import { createOpenAiCompatibleEmbeddingClient, embeddingConfigFromEnv } from './ai/embedding.js';
 import { createOpenAiCompatibleClient, llmConfigFromEnv } from './ai/llm.js';
 import { JwtService } from './auth/jwt.js';
+import { OtpService } from './auth/otp.js';
 import { SessionManager, type SessionStore } from './auth/session.js';
 import { migrate } from './db/migrate.js';
+import { PgOtpStore } from './db/otp-store.js';
 import { createPool } from './db/pool.js';
 import { PgDevicesStore, PgSessionStore, PgUsersStore } from './db/stores.js';
 import { createNoopMailProvider, createSmtpMailProvider, smtpConfigFromEnv } from './lib/mail.js';
@@ -23,7 +25,7 @@ import { PgMemoryExtractStore } from './lib/memory-store.js';
 import { RealtimeServer } from './realtime/ws.js';
 import { createAuthRouter, type AuthDeps } from './routes/auth.js';
 import { createBusinessRouter, type BusinessDeps } from './routes/business.js';
-import { registerWaitlistRoutes } from './routes/waitlist.js';
+import { registerWaitlistRoutes, type WaitlistDeps } from './routes/waitlist.js';
 
 function env(name: string): string {
   const v = process.env[name];
@@ -45,6 +47,10 @@ export interface AppDeps {
   memoryStore?: BusinessDeps['memoryStore'];
   /** 记忆检索存储（10.7；与 memoryStore 同一实例） */
   retrievalStore?: BusinessDeps['retrievalStore'];
+  /** 13.2 邮箱 OTP 登录服务（未注入则 /auth/otp/* 返回 501） */
+  otp?: AuthDeps['otp'];
+  /** 13.2 事务邮件（waitlist 确认；SMTP 配置就绪发真实邮件，否则降级日志） */
+  mail?: WaitlistDeps['mail'];
   /** 本地 e2e 专用：注册测试数据重置端点（仅 PET_DEV_RESET=true 时开启，生产无此端点） */
   devReset?: boolean;
 }
@@ -75,14 +81,10 @@ export function buildApp(deps: AppDeps) {
 
   // 4.3 Waitlist 公开报名：landing 是独立 vite app（跨源 POST 需要 CORS，仅此路由放开）
   app.use('/waitlist', cors());
-  // 13.2 事务邮件：SMTP 配置就绪发真实邮件，否则降级日志（不阻塞注册）
-  const smtpConfig = smtpConfigFromEnv();
-  if (smtpConfig) {
-    console.info(`[server] 邮件已启用：${smtpConfig.host}:${smtpConfig.port}`);
-  }
+  // 13.2 事务邮件：复用 main() 里构造的 mailProvider（SMTP 或降级日志）
   registerWaitlistRoutes(app, {
     pool: deps.pool,
-    mail: smtpConfig ? createSmtpMailProvider(smtpConfig) : createNoopMailProvider(),
+    mail: deps.mail,
   });
 
   const business = createBusinessRouter({
@@ -112,6 +114,19 @@ export async function main(): Promise<void> {
   const sessions = new SessionManager(store);
   const users = new PgUsersStore(pool);
   const devices = new PgDevicesStore(pool);
+
+  // ---- 13.2 邮箱 OTP（事务邮件；devCode 仅限开发环境返回，生产绝不开启）----
+  const mailProvider = (() => {
+    const smtp = smtpConfigFromEnv();
+    if (smtp) {
+      console.info(`[server] 邮件已启用：${smtp.host}:${smtp.port}`);
+      return createSmtpMailProvider(smtp);
+    }
+    return createNoopMailProvider();
+  })();
+  const otp = new OtpService(new PgOtpStore(pool), mailProvider, {
+    devCodeInResponse: env('PET_DEV_OTP_CODE_IN_RESPONSE') === 'true',
+  });
 
   // ---- 自建 Realtime（9.2/9.4）----
   const realtime = new RealtimeServer(jwt);
@@ -146,6 +161,8 @@ export async function main(): Promise<void> {
     llm,
     memoryStore,
     retrievalStore: memoryStore, // 同一实例实现双接口（10.7 检索）
+    otp, // 13.2 邮箱 OTP 登录
+    mail: mailProvider, // 13.2 事务邮件（waitlist 确认）
     devReset: process.env['PET_DEV_RESET'] === 'true',
   });
 

@@ -138,6 +138,14 @@ export class PgUsersStore {
     );
     return String(rows[0]?.id);
   }
+
+  /** 登录时旧格式哈希升级写回（scrypt → argon2id 平滑迁移） */
+  async updatePassword(userId: string, passwordHash: string): Promise<void> {
+    await this.pool.query('update auth.users set password_hash = $2 where id = $1', [
+      userId,
+      passwordHash,
+    ]);
+  }
 }
 
 export class PgDevicesStore {

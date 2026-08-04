@@ -32,7 +32,7 @@ ai-social-desktop-pet/
 | 改记忆中心页（查看/修改/删除/来源）             | `apps/desktop/src/app/memories.tsx` + `apps/server/src/routes/memories.ts`（GET /memories、edit）                | 11.3                     |
 | 加一张表 / 改 RLS / 索引                        | `apps/server/migrations/`（新 migration，0003 起自建兼容层）                                                     | 9.9 / 11.2               |
 | 加/改一个 HTTP 路由（礼物/拜访/邀请/sync/chat） | `apps/server/src/routes/*.ts`                                                                                    | 9.4 / 6.x                |
-| 改登录/刷新/设备撤销（9.8 撤销双保险）          | `apps/server/src/auth/*`（jwt + session）                                                                        | 9.8                      |
+| 改登录/刷新/设备撤销/密码哈希/OTP（9.8 / 13.2） | `apps/server/src/auth/*`（jwt + session + password + otp）+ `routes/auth.ts`                                     | 9.8 / 13.2               |
 | 改在线状态/收件箱投递/心跳                      | `apps/server/src/realtime/ws.ts`                                                                                 | 9.2 / 9.4                |
 | 改桌宠窗口/穿透/托盘/更新                       | `apps/desktop/electron/main/*`                                                                                   | 8.1–8.7                  |
 | 改星屿外观/动作/交互（SVG 角色、动画、气泡）    | `apps/desktop/src/pet/*`（star-isle-visual.tsx 等）                                                              | 星屿设计稿               |
@@ -85,8 +85,7 @@ pnpm dev:server          # 自动应用未执行的 migrations（幂等）
 - **向量检索臂**：embedding provider 已接入（`apps/server/src/ai/embedding.ts`，EMBEDDING_* 环境变量，OpenAI 兼容协议）；persistMemory 落库 embedding、recallMemories 查询向量生成、`pnpm --filter @pet/server backfill-embeddings` 历史回填（幂等）；未配置密钥时自动降级 FTS-only（RRF 单臂语义不变）
 - **输出审核**：规则版已落地（`moderation-rules.ts`：PII/敏感细节拦截 → blocked_reply 阻断路径）；注入 `OutputModerator` 走 12.5 免费 Moderation（含 allowlist 语义核对）的供应商实现待密钥接入
 - **分类器**：危机预筛为规则版（2026-08-02，crisis-rules.ts）；V-13 自建中文分类器就绪后替换（11.8 三级固定危机话术已落地，含 12356/120/110；10.3 路由分级同为规则版 route-rules.ts）
-- `routes/auth.ts` 密码哈希 scrypt → 生产前换 argon2 + 邮件 OTP（13.2 事务邮件）
 - Live2D Cubism SDK 集成 —— 待 V-1 许可确认后引入
-- 13.2 邀请邮件：MailProvider 抽象 + SMTP 实现已接入（waitlist 报名确认邮件；SMTP_* 环境变量，未配置降级日志）；正式邀请流程（pending → invited 状态机）待产品确认
+- 13.2 邀请邮件：MailProvider 抽象 + SMTP 实现已接入（waitlist 报名确认 + 邮箱 OTP 登录，`/auth/otp/request` + `/auth/otp/login`，验证码 sha256 落库/15min TTL/5 次尝试/60s 冷却；`PET_DEV_OTP_CODE_IN_RESPONSE` 仅本地开发返回验证码）；正式邀请流程（pending → invited 状态机）待产品确认
 
 详见设计稿 14.2 实施路线与决策清单 V 类验证项。
