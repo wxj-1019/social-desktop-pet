@@ -28,7 +28,8 @@ ai-social-desktop-pet/
 | 改路由策略（L0–L3/Safety）                      | `chat-flow.ts` 的条件边 + `packages/config/src/routing.ts`                                                       | 10.3                     |
 | 改记忆抽取/去重/确认                            | `packages/ai-graph/src/graphs/memory-extract.ts`                                                                 | 10.6                     |
 | 改记忆确认 API / 确认卡 UI / "已记住"提示       | `apps/server/src/routes/memories.ts` + `apps/desktop/src/app/memory-confirm-card.tsx`                            | 10.6 / D-3               |
-| 改检索算法（hybrid/RRF/时间衰减）               | `chat-flow-nodes.ts` 的 `retrieveMemoryNode`                                                                     | 10.7                     |
+| 改检索算法（hybrid/RRF/时间衰减）               | `packages/ai-graph/src/graphs/memory-retrieval.ts` + `apps/server/src/lib/memory-store.ts`（recallMemories）     | 10.7                     |
+| 改记忆中心页（查看/修改/删除/来源）             | `apps/desktop/src/app/memories.tsx` + `apps/server/src/routes/memories.ts`（GET /memories、edit）                | 11.3                     |
 | 加一张表 / 改 RLS / 索引                        | `apps/server/migrations/`（新 migration，0003 起自建兼容层）                                                     | 9.9 / 11.2               |
 | 加/改一个 HTTP 路由（礼物/拜访/邀请/sync/chat） | `apps/server/src/routes/*.ts`                                                                                    | 9.4 / 6.x                |
 | 改登录/刷新/设备撤销（9.8 撤销双保险）          | `apps/server/src/auth/*`（jwt + session）                                                                        | 9.8                      |
@@ -80,10 +81,11 @@ pnpm dev:server          # 自动应用未执行的 migrations（幂等）
 
 ## 尚未实现（框架阶段留 stub）
 
-- **记忆检索未接通**：`retrieveMemoryNode`（chat-flow-nodes.ts）仍是空实现（10.7 hybrid 检索：权限过滤 → pgvector + FTS → RRF）——记忆写入闭环已通（抽取→注入过滤→去重→分级确认→落库），读侧（检索 + 记忆中心页）是下一步
+- **向量检索臂**：`recallMemories`（memory-store.ts）已实现权限过滤 + FTS 臂；10.7 RRF 融合/时间衰减/importance 打分在 `memory-retrieval.ts` 纯函数完成；向量臂 SQL 就绪（HNSW + `embedding <=> query`），待嵌入服务（模型密钥 + 历史回填）后启用
 - **输出审核**：`moderateOutputNode` 直接放行（11.2 第四道输出侧记忆泄漏校验未实现）
 - **危机响应话术**：`crisisResponseNode` 为占位文案（11.8 固定协议，V-13 分类器就绪后补）
 - **分类器**：危机预筛为规则版（2026-08-02，crisis-rules.ts）；V-13 自建中文分类器就绪后替换
+- **10.3 路由分级**：`buildContextNode` 的 routing 仍 L1 scaffold（L0–L3 判定留后续）
 - `routes/auth.ts` 密码哈希 scrypt → 生产前换 argon2 + 邮件 OTP（13.2 事务邮件）
 - Live2D Cubism SDK 集成 —— 待 V-1 许可确认后引入
 - RLS 羁绊记忆成员校验完整策略 —— 后续 migration

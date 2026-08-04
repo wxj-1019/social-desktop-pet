@@ -4,10 +4,15 @@ import type { LlmClient } from '../llm/types.js';
 import { StateGraph, type NodeFn } from '../runtime/index.js';
 import { END, START } from '../runtime/types.js';
 
-import { crisisResponseNode, retrieveMemoryNode, authNode } from './chat-flow-nodes.js';
+import { crisisResponseNode, authNode } from './chat-flow-nodes.js';
 import { initialChatFlowState } from './chat-flow-state.js';
 import type { ChatFlowState } from './chat-flow-state.js';
 import { buildChatFlow } from './chat-flow.js';
+import {
+  retrieveMemoryNodeFactory,
+  type MemoryRetrievalStore,
+  type RetrievedMemory,
+} from './memory-retrieval.js';
 
 describe('chat-flow graph', () => {
   it('compiles and executes the scaffold path to END', async () => {
@@ -35,7 +40,7 @@ describe('chat-flow graph', () => {
     const graph = new StateGraph<ChatFlowState>()
       .addNode('auth', authNode)
       .addNode('classify_input', crisisClassify)
-      .addNode('retrieve_memory', retrieveMemoryNode)
+      .addNode('retrieve_memory', retrieveMemoryNodeFactory())
       .addNode('crisis_response', crisisResponseNode)
       .addEdge(START, 'auth')
       .addEdge('auth', 'classify_input')
@@ -195,5 +200,69 @@ describe('chat-flow graph', () => {
     expect(result.modelOutput?.emotion).toBe('shy');
     expect(result.modelOutput?.actionIntent).toBe('touch');
     expect(result.modelOutput?.intensity).toBe(2);
+  });
+
+  it('注入检索 store：记忆进入 retrievedMemories + contextPrompt，且 LLM 收到含记忆的上下文（10.7 反哺对话）', async () => {
+    const memory: RetrievedMemory = {
+      memoryId: 'mem-1',
+      value: '喜欢抹茶',
+      category: 'preference',
+      sourceType: 'user_stated',
+      sensitivity: 'low',
+      importance: 5,
+      visibility: 'private',
+      purpose: 'private_chat',
+      createdAt: '2026-08-01T00:00:00.000Z',
+    };
+    const store: MemoryRetrievalStore = {
+      recallMemories: async (input) => {
+        // 场景 → purpose 映射（10.7 权限过滤的输入）
+        expect(input.purpose).toBe('private_chat');
+        expect(input.ownerUserId).toBe('u1');
+        return { vectorHits: [memory], ftsHits: [] };
+      },
+    };
+    const mockLlm: LlmClient = {
+      streamChat: async (messages, onToken) => {
+        // 生成节点消费 contextPrompt（含检索记忆），而不是裸 userMessage
+        expect(messages[1]?.content).toContain('喜欢抹茶');
+        expect(messages[1]?.content).toContain('用户消息');
+        onToken(
+          '{"dialogue":"记得你喜欢抹茶","emotion":"warm","actionIntent":"nod","intensity":2}',
+        );
+        return 'ok';
+      },
+    };
+    const graph = buildChatFlow({ llm: mockLlm, retrievalStore: store });
+    const state = initialChatFlowState({
+      threadId: 't8',
+      userId: 'u1',
+      deviceId: 'd1',
+      userMessage: '今天喝什么好',
+      scenario: 'private_chat',
+    });
+    const result = await graph.invoke(state, { threadId: 't8' });
+
+    expect(result.retrievedMemories).toHaveLength(1);
+    expect(result.retrievedMemories?.[0]?.value).toBe('喜欢抹茶');
+    expect(result.retrievedMemoryIds).toEqual(['mem-1']);
+    expect(result.contextPrompt).toContain('喜欢抹茶');
+    expect(result.contextPrompt).toContain('preference');
+    expect(result.modelOutput?.dialogue).toBe('记得你喜欢抹茶');
+  });
+
+  it('无检索 store：retrieve 跳过，contextPrompt 标注暂无记忆（框架降级）', async () => {
+    const graph = buildChatFlow();
+    const state = initialChatFlowState({
+      threadId: 't9',
+      userId: 'u1',
+      deviceId: 'd1',
+      userMessage: '在吗',
+      scenario: 'private_chat',
+    });
+    const result = await graph.invoke(state, { threadId: 't9' });
+    expect(result.retrievedMemories).toEqual([]);
+    expect(result.retrievedMemoryIds).toEqual([]);
+    expect(result.contextPrompt).toContain('暂无相关记忆');
   });
 });

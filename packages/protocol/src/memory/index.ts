@@ -121,3 +121,25 @@ export const MemorySummarySchema = z.object({
   recentlySaved: z.array(SavedMemoryBriefSchema),
 });
 export type MemorySummary = z.infer<typeof MemorySummarySchema>;
+
+/** 记忆中心列表项（11.3：查看/修改/删除的载体；sourceTexts 供"查看来源"） */
+export const MemoryListItemSchema = z.object({
+  memoryId: z.string().uuid(),
+  category: MemoryCategorySchema,
+  value: z.string().max(2000),
+  importance: ImportanceSchema,
+  sensitivity: z.enum(['low', 'medium', 'high']),
+  sourceType: MemorySourceTypeSchema,
+  userConfirmed: z.boolean(),
+  /** 来源 turn 的原文（按 source_turn_ids 关联 chat_messages，倒序） */
+  sourceTexts: z.array(z.string()),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export type MemoryListItem = z.infer<typeof MemoryListItemSchema>;
+
+/** GET /memories 响应：owner 的 active 记忆列表 */
+export const MemoryListSchema = z.object({
+  memories: z.array(MemoryListItemSchema),
+});
+export type MemoryList = z.infer<typeof MemoryListSchema>;

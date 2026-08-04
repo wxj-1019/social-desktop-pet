@@ -39,6 +39,8 @@ export interface AppDeps {
   llm?: BusinessDeps['llm'];
   /** 记忆存储（10.6；无则跳过异步记忆抽取与确认数据层） */
   memoryStore?: BusinessDeps['memoryStore'];
+  /** 记忆检索存储（10.7；与 memoryStore 同一实例） */
+  retrievalStore?: BusinessDeps['retrievalStore'];
   /** 本地 e2e 专用：注册测试数据重置端点（仅 PET_DEV_RESET=true 时开启，生产无此端点） */
   devReset?: boolean;
 }
@@ -73,6 +75,7 @@ export function buildApp(deps: AppDeps) {
     realtime: deps.realtime,
     llm: deps.llm,
     memoryStore: deps.memoryStore,
+    retrievalStore: deps.retrievalStore,
   });
   app.route('/', business);
 
@@ -117,6 +120,7 @@ export async function main(): Promise<void> {
     realtime,
     llm,
     memoryStore,
+    retrievalStore: memoryStore, // 同一实例实现双接口（10.7 检索）
     devReset: process.env['PET_DEV_RESET'] === 'true',
   });
 

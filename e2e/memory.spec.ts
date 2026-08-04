@@ -80,6 +80,37 @@ test('健康敏感句 → 确认卡 → "记住"落库（D-3 分级确认）', a
   expect(summary.recentlySaved.some((m) => m.value === '我有糖尿病，每天要打胰岛素')).toBe(true);
 });
 
+test('记忆中心：查看来源 → 修改 → 删除（11.3）', async () => {
+  const page = await app.openPanel('chat');
+  await expect(page.locator('.chat-panel')).toBeVisible({ timeout: 15_000 });
+
+  // 切到"记忆"tab（第 4 个 tab）
+  await page.getByRole('tab', { name: '记忆' }).click();
+  await expect(page.locator('.memories-page')).toBeVisible();
+  // 测试 1 自动保存的偏好记忆在列表
+  const item = page.locator('.memory-item').filter({ hasText: '我喜欢抹茶' }).first();
+  await expect(item).toBeVisible({ timeout: 15_000 });
+
+  // 查看来源（11.3：source_turn 原文）
+  await item.getByRole('button', { name: '来源' }).click();
+  await expect(item.locator('.memory-item__source-texts')).toContainText('我喜欢抹茶');
+
+  // 修改（10.5 纠正链：旧条置失效 + 新条 superseded）
+  await item.getByRole('button', { name: '修改' }).click();
+  await item.getByLabel('修改记忆内容').fill('我喜欢焙茶');
+  await item.getByRole('button', { name: '保存' }).click();
+  await expect(page.locator('.memory-item').filter({ hasText: '我喜欢焙茶' }).first()).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // 删除（置失效不物理删除）→ 列表清空该项
+  const edited = page.locator('.memory-item').filter({ hasText: '我喜欢焙茶' }).first();
+  await edited.getByRole('button', { name: '删除' }).click();
+  await expect(page.locator('.memory-item').filter({ hasText: '我喜欢焙茶' })).toHaveCount(0, {
+    timeout: 15_000,
+  });
+});
+
 /**
  * 以 alice 身份调 /memories/summary（node 侧直连后端）。
  * 必须复用面板的设备 id：9.8 新设备登录会撤销其他设备会话（会把面板踢下线）。

@@ -7,11 +7,12 @@ import { ChatPanel } from './chat-panel.js';
 import { FriendsPage } from './friends.js';
 import { LocalChat } from './local-chat.js';
 import { LoginPage, type AuthResult } from './login.js';
+import { MemoriesPage } from './memories.js';
 import { PanelBrand } from './panel-brand.js';
 import { SettingsPage } from './settings.js';
 
 type SessionPhase = 'booting' | 'signed_out' | 'local' | 'active';
-type ActiveTab = 'friends' | 'chat' | 'settings';
+type ActiveTab = 'friends' | 'chat' | 'memories' | 'settings';
 
 /** 主应用面板：会话状态机驱动登录、本地聊天与已登录界面。 */
 export function AppPanel() {
@@ -121,7 +122,7 @@ export function AppPanel() {
         aria-label="面板页面"
         onKeyDown={(e) => {
           if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            const tabs: ActiveTab[] = ['friends', 'chat', 'settings'];
+            const tabs: ActiveTab[] = ['friends', 'chat', 'memories', 'settings'];
             const current = tabs.indexOf(tab);
             const next = e.key === 'ArrowLeft' ? current - 1 : current + 1;
             if (next >= 0 && next < tabs.length) setTab(tabs[next]!);
@@ -149,6 +150,16 @@ export function AppPanel() {
           聊天
         </button>
         <button
+          className={tab === 'memories' ? 'tab active' : 'tab'}
+          role="tab"
+          id="tab-memories"
+          aria-selected={tab === 'memories'}
+          aria-controls="panel-memories"
+          onClick={() => setTab('memories')}
+        >
+          记忆
+        </button>
+        <button
           className={tab === 'settings' ? 'tab active' : 'tab'}
           role="tab"
           id="tab-settings"
@@ -164,6 +175,8 @@ export function AppPanel() {
           <FriendsPage userId={user?.userId ?? ''} />
         ) : tab === 'chat' ? (
           <ChatPanel />
+        ) : tab === 'memories' ? (
+          <MemoriesPage />
         ) : (
           <SettingsPage />
         )}

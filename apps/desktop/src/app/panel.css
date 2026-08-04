@@ -537,7 +537,7 @@
   inset: auto;
   z-index: 4;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
   gap: 4px;
   width: 100%;
   height: 38px;
@@ -574,7 +574,8 @@
 .friends-page,
 .chat-panel,
 .local-chat,
-.settings-page {
+.settings-page,
+.memories-page {
   min-height: 0;
   overflow: hidden;
   padding-top: 12px;
@@ -1372,4 +1373,106 @@
 .memory-confirm-card__actions .secondary-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+/* ---- 记忆中心页（11.3 v1：查看/修改/删除/来源） ---- */
+
+.memories-page {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.memory-item {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: var(--panel-surface);
+  box-shadow: var(--panel-shadow);
+}
+
+.memory-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.memory-item__source {
+  color: var(--panel-text-muted);
+  font-size: 10px;
+}
+
+.memory-item__date {
+  margin-left: auto;
+  color: var(--panel-text-muted);
+  font-size: 10px;
+}
+
+.memory-item__value {
+  margin: 0;
+  color: var(--panel-text);
+  font-size: 13px;
+  line-height: 20px;
+  word-break: break-word;
+}
+
+.memory-item__source-texts {
+  margin: 0;
+  padding: 6px 8px;
+  border-left: 2px solid var(--panel-accent-tint);
+  border-radius: 0 6px 6px 0;
+  background: var(--panel-soft);
+}
+
+.memory-item__source-texts p {
+  margin: 0;
+  color: var(--panel-text-muted);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.memory-item__source-texts p + p {
+  margin-top: 4px;
+}
+
+.memory-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.memory-item__actions .secondary-button {
+  min-height: 28px;
+  padding: 3px 9px;
+  font-size: 11px;
+}
+
+.memory-item__actions .secondary-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.memory-item__danger {
+  margin-left: auto;
+}
+
+.memory-item__danger:hover {
+  border-color: #e5b7c6;
+  color: var(--panel-warning);
+  background: var(--panel-warning-bg);
 }

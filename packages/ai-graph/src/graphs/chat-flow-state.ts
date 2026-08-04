@@ -15,11 +15,12 @@
 import type {
   InputClassification,
   MemoryPurpose,
-  MemoryRecord,
   ModelOutput,
   OutputModerationResult,
   RoutingDecision,
 } from '@pet/protocol';
+
+import type { RetrievedMemory } from './memory-retrieval.js';
 
 /** chat-flow 在图中流动的状态 */
 export interface ChatFlowState {
@@ -36,7 +37,7 @@ export interface ChatFlowState {
   authenticated: boolean;
   inputClassification?: InputClassification;
   /** 检索到的记忆（10.7：先权限过滤再 hybrid 检索） */
-  retrievedMemories?: MemoryRecord[];
+  retrievedMemories?: RetrievedMemory[];
   /** 10.3 路由判定 */
   routing?: RoutingDecision;
   /** 构造的最小上下文 */

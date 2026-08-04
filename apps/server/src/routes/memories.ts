@@ -1,15 +1,21 @@
 /**
- * 记忆路由 —— 10.6 / D-3 分级确认的 HITL 收口。
+ * 记忆路由 —— 10.6 / D-3 分级确认的 HITL 收口 + 11.3 记忆中心数据层。
  *
- * GET  /memories/summary            → 待确认列表 + 60s 内自动保存（"已记住"提示）
- * POST /memories/confirm            → 确认卡"记住"（可携带修改后的 value）
- * POST /memories/reject             → 确认卡"仅本次聊天"
- * POST /memories/:memoryId/invalidate → 撤销自动保存（D-3 已记住·撤销）
+ * GET   /memories/summary            → 待确认列表 + 60s 内自动保存（"已记住"提示）
+ * GET   /memories?limit=             → 记忆中心：owner 的 active 记忆 + 来源原文
+ * POST  /memories/confirm            → 确认卡"记住"（可携带修改后的 value）
+ * POST  /memories/reject             → 确认卡"仅本次聊天"
+ * POST  /memories/:memoryId/edit     → 修改记忆（10.5 纠正：旧条置失效 + superseded 链）
+ * POST  /memories/:memoryId/invalidate → 撤销/删除（10.5 置失效不删除）
  *
  * 全部事务内 set_config('request.jwt.claims')（应用层校验 owner + RLS 兜底），
  * 写操作同步记 memory_audit_log（11.2）。
  */
-import { MemoryConfirmationSchema, SavedMemoryBriefSchema } from '@pet/protocol';
+import {
+  MemoryConfirmationSchema,
+  MemoryListItemSchema,
+  SavedMemoryBriefSchema,
+} from '@pet/protocol';
 import { type Hono } from 'hono';
 import type pg from 'pg';
 
@@ -233,6 +239,125 @@ export function registerMemoriesRoutes(
       );
       await client.query('commit');
       return c.json({ ok: true });
+    } catch (e) {
+      await client.query('rollback');
+      return c.json({ error: (e as Error).message }, 500);
+    } finally {
+      client.release();
+    }
+  });
+
+  // 记忆中心列表（11.3）：owner 的 active 记忆 + 来源原文（source_turn_ids → chat_messages）
+  app.get('/memories', auth, async (c) => {
+    const userId = c.get('userId');
+    const limit = Math.min(Number(c.req.query('limit') ?? 100), 200);
+    const client = await deps.pool.connect();
+    try {
+      await client.query('begin');
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        rlsClaimsJson(userId),
+      ]);
+      const { rows } = await client.query(
+        `select m.memory_id, m.category, m.value, m.importance, m.sensitivity,
+                m.source_type, m.user_confirmed, m.created_at, m.updated_at,
+                coalesce((
+                  select array_agg(c.content order by c.created_at desc)
+                  from chat_messages c
+                  where c.message_id = any(m.source_turn_ids)
+                ), '{}') as source_texts
+         from private_memories m
+         where m.owner_user_id = $1 and m.memory_status = 'active'
+         order by m.created_at desc
+         limit $2`,
+        [userId, limit],
+      );
+      await client.query('commit');
+      const memories = rows.map((r) =>
+        MemoryListItemSchema.parse({
+          memoryId: String(r.memory_id),
+          category: String(r.category),
+          value: String(r.value),
+          importance: Number(r.importance),
+          sensitivity: String(r.sensitivity),
+          sourceType: String(r.source_type),
+          userConfirmed: Boolean(r.user_confirmed),
+          sourceTexts: (r.source_texts ?? []).map(String),
+          createdAt: (r.created_at as Date).toISOString(),
+          updatedAt: (r.updated_at as Date).toISOString(),
+        }),
+      );
+      return c.json({ memories });
+    } catch (e) {
+      await client.query('rollback');
+      return c.json({ error: (e as Error).message }, 500);
+    } finally {
+      client.release();
+    }
+  });
+
+  // 修改记忆（11.3；10.5 纠正语义：旧条置失效 + 新条 superseded_by 链接，不物理删除）
+  app.post('/memories/:memoryId/edit', auth, async (c) => {
+    const userId = c.get('userId');
+    const memoryId = c.req.param('memoryId');
+    const { value } = (await c.req.json()) as { value?: string };
+    const finalValue = typeof value === 'string' ? value.trim() : '';
+    if (finalValue.length === 0 || finalValue.length > 2000) {
+      return c.json({ error: 'value 非法（1-2000 字符）' }, 400);
+    }
+
+    const client = await deps.pool.connect();
+    try {
+      await client.query('begin');
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        rlsClaimsJson(userId),
+      ]);
+      const { rows } = await client.query(
+        `select category, importance, sensitivity, source_turn_ids, purpose, visibility, namespace
+         from private_memories
+         where memory_id = $1 and owner_user_id = $2 and memory_status = 'active'
+         for update`,
+        [memoryId, userId],
+      );
+      const old = rows[0];
+      if (!old) {
+        await client.query('rollback');
+        return c.json({ error: '记忆不存在或已删除' }, 404);
+      }
+
+      // 10.5：旧条置失效（不物理删除），新条以 superseded_by 链接
+      await client.query(
+        `update private_memories set memory_status = 'invalidated', updated_at = now()
+         where memory_id = $1`,
+        [memoryId],
+      );
+      const { rows: newRows } = await client.query(
+        `insert into private_memories (
+           owner_user_id, category, value, source_turn_ids, confidence, user_confirmed,
+           sensitivity, visibility, purpose, importance, memory_status, superseded_by,
+           source_type, namespace
+         ) values ($1, $2, $3, $4, 1, true, $5, $6, $7, $8, 'active', $9, 'user_confirmed', $10)
+         returning memory_id`,
+        [
+          userId,
+          String(old.category),
+          finalValue,
+          (old.source_turn_ids ?? []).map(String),
+          String(old.sensitivity),
+          String(old.visibility),
+          String(old.purpose),
+          Number(old.importance),
+          memoryId,
+          String(old.namespace),
+        ],
+      );
+      const newMemoryId = String(newRows[0]?.memory_id);
+      await client.query(
+        `insert into memory_audit_log (owner_user_id, action, memory_id, value, source_turn_ids)
+         values ($1, 'user_confirmed', $2, $3, $4)`,
+        [userId, newMemoryId, finalValue, (old.source_turn_ids ?? []).map(String)],
+      );
+      await client.query('commit');
+      return c.json({ memoryId: newMemoryId, supersededMemoryId: memoryId });
     } catch (e) {
       await client.query('rollback');
       return c.json({ error: (e as Error).message }, 500);

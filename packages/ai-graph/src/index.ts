@@ -5,6 +5,7 @@ export * from './graphs/chat-flow.js';
 export * from './graphs/chat-flow-state.js';
 export * from './graphs/chat-flow-nodes.js';
 export * from './graphs/memory-extract.js';
+export * from './graphs/memory-retrieval.js';
 export * from './llm/types.js';
 export * from './graphs/crisis-rules.js';
 export * from './graphs/parse-model-output.js';

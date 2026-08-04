@@ -1,15 +1,19 @@
 /**
- * 记忆存储 pg 实现 —— 10.6 落库 / 10.7 相似检索 / 11.2 审计（注入 ai-graph MemoryExtractStore）。
+ * 记忆存储 pg 实现 —— 10.6 落库 / 10.7 检索（hybrid 召回）/ 11.2 审计
+ * （注入 ai-graph MemoryExtractStore + MemoryRetrievalStore，同一实例双接口）。
  *
  * - 每个事务开头 set_config('request.jwt.claims')（AGENTS.md 第 4 条：应用层校验为主，RLS 纵深防御兜底）
- * - findSimilar：embedding 列就绪前用 精确匹配 + 子串 + FTS(ts_rank) 加权排序；
- *   嵌入服务到位后在 PgMemoryExtractStore 内切换 pgvector 余弦（10.7 HNSW 索引已建）
+ * - findSimilar：embedding 列就绪前用 精确匹配 + 子串 + FTS(ts_rank) 加权排序（去重裁决用）
+ * - recallMemories：10.7 hybrid 召回（权限过滤 → FTS 臂 + 向量臂），打分在 ai-graph 纯函数完成
  */
 import type {
   AuditEntry,
   ConfirmationDraft,
   MemoryExtractStore,
+  MemoryRetrievalStore,
+  MemorySearchInput,
   PersistMemoryInput,
+  RetrievedMemory,
   SimilarMemory,
 } from '@pet/ai-graph';
 import type pg from 'pg';
@@ -19,8 +23,87 @@ import { rlsClaimsJson } from '../db/pool.js';
 /** 自动保存记忆的默认命名空间（pet_id:scenario；10.5） */
 const DEFAULT_NAMESPACE = 'star-isle:private_chat';
 
-export class PgMemoryExtractStore implements MemoryExtractStore {
+/**
+ * 场景 → 可见性范围（10.7 权限过滤：friend_visit 不可见私人记忆；
+ * bond 记忆需双人确认，接入后扩展）。
+ */
+function visibilityScope(purpose: MemorySearchInput['purpose']): string[] {
+  return purpose === 'friend_visit' ? ['public_profile'] : ['private', 'public_profile'];
+}
+
+/** 每臂召回上限（RRF 需要足够排名；top-k 6 → 召回 20 足够） */
+const RECALL_ARM_LIMIT = 20;
+
+export class PgMemoryExtractStore implements MemoryExtractStore, MemoryRetrievalStore {
   constructor(private readonly pool: pg.Pool) {}
+
+  async recallMemories(input: MemorySearchInput): Promise<{
+    vectorHits: RetrievedMemory[];
+    ftsHits: RetrievedMemory[];
+  }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        rlsClaimsJson(input.ownerUserId),
+      ]);
+      // 权限过滤（先于检索，10.7）：owner + active + purpose + visibility 范围 + 时间有效性
+      const filter = `owner_user_id = $1 and memory_status = 'active' and purpose = $2
+        and visibility = any($3)
+        and (expires_at is null or expires_at > now())
+        and (valid_from is null or valid_from <= now())
+        and (valid_to is null or valid_to >= now())`;
+      const cols = `memory_id, value, category, source_type, sensitivity, importance,
+        visibility, purpose, created_at`;
+      const args = [
+        input.ownerUserId,
+        input.purpose,
+        visibilityScope(input.purpose),
+        input.query,
+        RECALL_ARM_LIMIT,
+      ] as const;
+
+      // FTS 臂：tsvector @@ plainto_tsquery + ts_rank_cd 排序（GIN 索引）
+      const { rows: ftsRows } = await client.query(
+        `select ${cols}
+         from private_memories
+         where ${filter} and to_tsvector('simple', value) @@ plainto_tsquery('simple', $4)
+         order by ts_rank_cd(to_tsvector('simple', value), plainto_tsquery('simple', $4)) desc
+         limit $5`,
+        [...args],
+      );
+
+      // 向量臂：embedding 就绪后启用（HNSW 索引）；无查询向量时跳过
+      let vecRows: Array<Record<string, unknown>> = [];
+      if (input.queryEmbedding && input.queryEmbedding.length > 0) {
+        const vecArgs = [
+          ...args.slice(0, 3),
+          JSON.stringify(input.queryEmbedding),
+          RECALL_ARM_LIMIT,
+        ];
+        const { rows } = await client.query(
+          `select ${cols}
+           from private_memories
+           where ${filter} and embedding is not null
+           order by embedding <=> $4::vector
+           limit $5`,
+          vecArgs,
+        );
+        vecRows = rows;
+      }
+
+      await client.query('commit');
+      return {
+        vectorHits: vecRows.map((r) => toRetrievedMemory(r)),
+        ftsHits: ftsRows.map((r) => toRetrievedMemory(r)),
+      };
+    } catch (e) {
+      await client.query('rollback');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
 
   async findSimilar(ownerUserId: string, value: string, topK: number): Promise<SimilarMemory[]> {
     const client = await this.pool.connect();
@@ -169,4 +252,19 @@ export class PgMemoryExtractStore implements MemoryExtractStore {
       client.release();
     }
   }
+}
+
+/** 召回行 → RetrievedMemory（10.7 进上下文的精简记忆） */
+function toRetrievedMemory(r: Record<string, unknown>): RetrievedMemory {
+  return {
+    memoryId: String(r.memory_id),
+    value: String(r.value),
+    category: String(r.category) as RetrievedMemory['category'],
+    sourceType: String(r.source_type) as RetrievedMemory['sourceType'],
+    sensitivity: String(r.sensitivity) as RetrievedMemory['sensitivity'],
+    importance: Number(r.importance),
+    visibility: String(r.visibility) as RetrievedMemory['visibility'],
+    purpose: String(r.purpose) as RetrievedMemory['purpose'],
+    createdAt: (r.created_at as Date).toISOString(),
+  };
 }

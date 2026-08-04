@@ -38,31 +38,22 @@ export const classifyInputNode: NodeFn<ChatFlowState> = async (
   };
 };
 
-/** 10.1 / 10.7 按场景和权限检索记忆（先权限过滤再 hybrid 检索） */
-export const retrieveMemoryNode: NodeFn<ChatFlowState> = async (
-  _state,
-  _ctx,
-): Promise<Partial<ChatFlowState>> => {
-  // TODO(第7-10周): 10.7 hybrid 检索
-  //   权限过滤(owner+visibility+purpose+sensitivity+时间有效性+memory_status=active)
-  //   → 向量(pgvector 余弦) + 全文(tsvector/ts_rank_cd) → RRF 合并 → 综合分(相关性+时间衰减+importance)
-  //   工程参数: HNSW + hnsw.iterative_scan = relaxed_order
-  // 框架阶段返回空，避免误用未实现检索
-  return {
-    retrievedMemories: [],
-    retrievedMemoryIds: [],
-  };
-};
+/** 10.1 / 10.7 按场景和权限检索记忆（实现见 memory-retrieval.ts 的 retrieveMemoryNodeFactory） */
 
-/** 10.1 构造最小上下文 + 10.3 路由判定 */
+/** 10.1 构造最小上下文 + 10.3 路由判定（检索记忆进 prompt；路由分级留 10.3 实施） */
 export const buildContextNode: NodeFn<ChatFlowState> = async (
-  _state,
-  _ctx,
+  state,
 ): Promise<Partial<ChatFlowState>> => {
-  // TODO(第7-10周): 构造 system prompt（10.4 人格层级）+ 短期上下文 + 检索记忆 → 路由判定
+  // 10.7：检索到的记忆以编号列表进入上下文（生成节点直接消费 contextPrompt）
+  const memories = state.retrievedMemories ?? [];
+  const memoryBlock =
+    memories.length > 0
+      ? memories.map((m, i) => `${i + 1}. ${m.value}（${m.category}）`).join('\n')
+      : '（暂无相关记忆）';
+  const contextPrompt = `用户消息：${state.userMessage}\n\n相关记忆：\n${memoryBlock}`;
   return {
-    routing: { level: 'L1', reason: 'scaffold' },
-    contextPrompt: '(scaffold context)',
+    routing: { level: 'L1', reason: 'scaffold' }, // TODO(10.3): 路由分级判定
+    contextPrompt,
   };
 };
 
@@ -106,11 +97,12 @@ export function generateNodeFactory(llm?: LlmClient): NodeFn<ChatFlowState> {
     // 真实模型：10.2 输出契约 —— prompt 约束单行 JSON（无 response_format 依赖）。
     // 原始 token 先收集到局部 buffer（不外发），完成后容错解析出结构化字段，
     // 再把解析后的 dialogue 按 chunk 模拟流式（不泄露 JSON 骨架到客户端）。
+    // 用户上下文取 build_context 的 contextPrompt（含 10.7 检索记忆）。
     let buffer = '';
     await llm.streamChat(
       [
         { role: 'system', content: PET_SYSTEM_PROMPT },
-        { role: 'user', content: state.userMessage },
+        { role: 'user', content: state.contextPrompt ?? state.userMessage },
       ],
       (t) => {
         buffer += t;

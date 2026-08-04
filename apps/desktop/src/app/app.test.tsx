@@ -7,7 +7,7 @@
  */
 // @vitest-environment jsdom
 import type { PanelOpen } from '@pet/protocol';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { api } from '../lib/api/client.js';
@@ -58,6 +58,8 @@ beforeEach(() => {
   vi.spyOn(api, 'friends').mockResolvedValue([]);
   vi.spyOn(api, 'sync').mockResolvedValue({ events: [], nextInboxSeq: 0, hasMore: false });
   vi.spyOn(api, 'chatHistory').mockResolvedValue([]);
+  vi.spyOn(api, 'memories').mockResolvedValue([]);
+  vi.spyOn(api, 'memorySummary').mockResolvedValue({ pending: [], recentlySaved: [] });
   // jsdom 未实现元素滚动 API（ChatPanel 挂载时调用）
   Element.prototype.scrollIntoView = vi.fn();
   Element.prototype.scrollTo = vi.fn();
@@ -132,5 +134,16 @@ describe('AppPanel · panel.onNavigate 消费（I1）', () => {
 
     view.unmount();
     expect(fake.onNavigateOff).toHaveBeenCalledTimes(1);
+  });
+
+  it('第四个 tab「记忆」：点击渲染记忆中心（11.3 入口）', async () => {
+    installFakePet(ACTIVE_PROFILE);
+    render(<AppPanel />);
+    await act(async () => {});
+    await screen.findByRole('button', { name: '邀请好友' });
+
+    fireEvent.click(screen.getByRole('tab', { name: '记忆' }));
+    expect(await screen.findByText(/星屿记住的0件小事/)).not.toBeNull();
+    expect(api.memories).toHaveBeenCalled();
   });
 });

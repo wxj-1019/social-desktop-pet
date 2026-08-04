@@ -244,3 +244,112 @@ describe('POST /memories/:memoryId/invalidate', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('GET /memories（11.3 记忆中心列表）', () => {
+  it('返回 active 记忆 + 来源原文 sourceTexts', async () => {
+    const client = scriptedClient([
+      {
+        rows: [
+          {
+            memory_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            category: 'preference',
+            value: '我喜欢抹茶',
+            importance: 5,
+            sensitivity: 'low',
+            source_type: 'user_stated',
+            user_confirmed: false,
+            created_at: new Date('2026-08-03T10:00:00Z'),
+            updated_at: new Date('2026-08-03T10:00:00Z'),
+            source_texts: ['我喜欢抹茶', '今天喝什么好'],
+          },
+        ],
+      },
+    ]);
+    const app = makeApp(makePool(client));
+
+    const res = await authedRequest(app, '/memories?limit=50');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      memories: Array<{ memoryId: string; value: string; sourceTexts: string[] }>;
+    };
+    expect(body.memories).toHaveLength(1);
+    expect(body.memories[0]).toMatchObject({
+      memoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      value: '我喜欢抹茶',
+      sourceTexts: ['我喜欢抹茶', '今天喝什么好'],
+    });
+    // 契约校验：limit 传参生效（SQL 含 limit $2）
+    const listSql = String(dataCalls(client)[0]?.[0]);
+    expect(listSql).toContain('memory_status');
+    expect(listSql).toContain('limit $2');
+  });
+
+  it('未鉴权 → 401', async () => {
+    const app = makeApp(makePool(scriptedClient([])));
+    const res = await app.request('/memories');
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('POST /memories/:memoryId/edit（10.5 纠正语义）', () => {
+  it('旧条置失效 + 新条 superseded_by 链接 + 审计 user_confirmed', async () => {
+    const client = scriptedClient([
+      {
+        rows: [
+          {
+            category: 'preference',
+            importance: 5,
+            sensitivity: 'low',
+            source_turn_ids: ['11111111-1111-4111-8111-111111111111'],
+            purpose: 'private_chat',
+            visibility: 'private',
+            namespace: 'star-isle:private_chat',
+          },
+        ],
+      }, // select for update
+      { rows: [] }, // update 旧条置失效
+      { rows: [{ memory_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }] }, // insert 新条
+      { rows: [] }, // insert audit
+    ]);
+    const app = makeApp(makePool(client));
+
+    const res = await authedRequest(app, '/memories/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/edit', {
+      method: 'POST',
+      body: { value: '我喜欢焙茶' },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      memoryId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      supersededMemoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    });
+
+    // 事务序：select → 旧条 invalidated → 新条 insert（superseded_by=$9=旧 id）→ 审计
+    const updateSql = String(dataCalls(client)[1]?.[0]);
+    expect(updateSql).toContain("memory_status = 'invalidated'");
+    const insertSql = String(dataCalls(client)[2]?.[0]);
+    expect(insertSql).toContain('superseded_by');
+    const insertParams = dataCalls(client)[2]?.[1] as unknown[];
+    expect(insertParams).toContain('我喜欢焙茶');
+    expect(insertParams).toContain('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'); // supersede 旧 id
+    const auditSql = String(dataCalls(client)[3]?.[0]);
+    expect(auditSql).toContain('user_confirmed');
+  });
+
+  it('value 为空/超长 → 400；记忆不存在 → 404', async () => {
+    const app = makeApp(makePool(scriptedClient([])));
+    const empty = await authedRequest(app, '/memories/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/edit', {
+      method: 'POST',
+      body: { value: '   ' },
+    });
+    expect(empty.status).toBe(400);
+
+    const client = scriptedClient([{ rows: [] }]);
+    const app2 = makeApp(makePool(client));
+    const missing = await authedRequest(
+      app2,
+      '/memories/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/edit',
+      { method: 'POST', body: { value: '新内容' } },
+    );
+    expect(missing.status).toBe(404);
+  });
+});

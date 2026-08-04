@@ -6,8 +6,8 @@
  * - refresh token：只存在于主进程 safeStorage（经 window.pet.session 刷新）
  * - 401 → 调 session.refresh() → 重试一次；失败则登出回登录页
  */
-import type { MemorySummary, ModelOutput } from '@pet/protocol';
-import { MemorySummarySchema, ModelOutputSchema } from '@pet/protocol';
+import type { MemoryListItem, MemorySummary, ModelOutput } from '@pet/protocol';
+import { MemoryListSchema, MemorySummarySchema, ModelOutputSchema } from '@pet/protocol';
 
 import { parseSseChunks } from './sse.js';
 export interface MeResult {
@@ -276,5 +276,19 @@ export const api = {
       method: 'POST',
     });
     return (await jsonOrThrow(res)) as { ok: true };
+  },
+  /** GET /memories：记忆中心列表（11.3，含来源原文 sourceTexts） */
+  async memories(limit = 100): Promise<MemoryListItem[]> {
+    const res = await apiFetch(`/memories?limit=${limit}`);
+    const body = (await jsonOrThrow(res)) as unknown;
+    return MemoryListSchema.parse(body).memories;
+  },
+  /** POST /memories/:memoryId/edit：修改记忆（10.5 纠正：旧条置失效 + superseded 链） */
+  async editMemory(memoryId: string, value: string): Promise<{ memoryId: string }> {
+    const res = await apiFetch(`/memories/${encodeURIComponent(memoryId)}/edit`, {
+      method: 'POST',
+      body: JSON.stringify({ value }),
+    });
+    return (await jsonOrThrow(res)) as { memoryId: string };
   },
 };

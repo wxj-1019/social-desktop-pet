@@ -11,7 +11,12 @@
  * 不用 EventSource——后者无法带 Authorization header）。
  */
 import { buildChatFlow, initialChatFlowState } from '@pet/ai-graph';
-import type { GraphEvent, LlmClient, MemoryExtractStore } from '@pet/ai-graph';
+import type {
+  GraphEvent,
+  LlmClient,
+  MemoryExtractStore,
+  MemoryRetrievalStore,
+} from '@pet/ai-graph';
 import { LIMITS } from '@pet/config';
 import { type Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
@@ -30,12 +35,17 @@ export interface ChatDeps {
   llm?: LlmClient;
   /** 记忆存储（10.6；无则跳过异步记忆抽取） */
   memoryStore?: MemoryExtractStore;
+  /** 记忆检索存储（10.7；与 memoryStore 通常同一实例，无则跳过检索） */
+  retrievalStore?: MemoryRetrievalStore;
 }
 
-/** 图实例缓存（compile 一次，全进程复用；llm 注入一次） */
+/** 图实例缓存（compile 一次，全进程复用；llm/retrievalStore 注入一次） */
 let compiledGraph: ReturnType<typeof buildChatFlow> | null = null;
-function getGraph(llm?: LlmClient): ReturnType<typeof buildChatFlow> {
-  compiledGraph ??= buildChatFlow({ llm });
+function getGraph(
+  llm?: LlmClient,
+  retrievalStore?: MemoryRetrievalStore,
+): ReturnType<typeof buildChatFlow> {
+  compiledGraph ??= buildChatFlow({ llm, retrievalStore });
   return compiledGraph;
 }
 
@@ -165,7 +175,10 @@ export function registerChatRoutes(
         void stream.writeSSE({ event: e.type, data: JSON.stringify(e) });
       };
       try {
-        const finalState = await getGraph(deps.llm).invoke(initialState, { threadId: id, emit });
+        const finalState = await getGraph(deps.llm, deps.retrievalStore).invoke(initialState, {
+          threadId: id,
+          emit,
+        });
         const dialogue = finalState.modelOutput?.dialogue ?? '';
         await stream.writeSSE({
           event: 'done',

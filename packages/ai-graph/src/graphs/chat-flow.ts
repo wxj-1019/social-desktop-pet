@@ -19,17 +19,24 @@ import {
   crisisResponseNode,
   generateNodeFactory,
   moderateOutputNode,
-  retrieveMemoryNode,
 } from './chat-flow-nodes.js';
 import type { ChatFlowState } from './chat-flow-state.js';
+import { retrieveMemoryNodeFactory, type MemoryRetrievalStore } from './memory-retrieval.js';
 
-/** 编译 chat-flow 图；llm 注入后 generateNode 走真实模型（无则骨架降级） */
-export function buildChatFlow(options: { llm?: LlmClient } = {}): CompiledGraph<ChatFlowState> {
+export interface ChatFlowOptions {
+  /** 模型客户端（10.1；无则 generate 骨架降级） */
+  llm?: LlmClient;
+  /** 记忆检索存储（10.7；无则跳过检索，避免误用未实现召回） */
+  retrievalStore?: MemoryRetrievalStore;
+}
+
+/** 编译 chat-flow 图；llm/retrievalStore 注入后对应节点走真实实现 */
+export function buildChatFlow(options: ChatFlowOptions = {}): CompiledGraph<ChatFlowState> {
   const graph = new StateGraph<ChatFlowState>()
     // 节点（10.1 各步骤）
     .addNode('auth', authNode)
     .addNode('classify_input', classifyInputNode)
-    .addNode('retrieve_memory', retrieveMemoryNode)
+    .addNode('retrieve_memory', retrieveMemoryNodeFactory(options.retrievalStore))
     .addNode('build_context', buildContextNode)
     .addNode('generate', generateNodeFactory(options.llm))
     .addNode('moderate_output', moderateOutputNode)
