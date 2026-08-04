@@ -11,12 +11,14 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type pg from 'pg';
 
+import { createOpenAiCompatibleEmbeddingClient, embeddingConfigFromEnv } from './ai/embedding.js';
 import { createOpenAiCompatibleClient, llmConfigFromEnv } from './ai/llm.js';
 import { JwtService } from './auth/jwt.js';
 import { SessionManager, type SessionStore } from './auth/session.js';
 import { migrate } from './db/migrate.js';
 import { createPool } from './db/pool.js';
 import { PgDevicesStore, PgSessionStore, PgUsersStore } from './db/stores.js';
+import { createNoopMailProvider, createSmtpMailProvider, smtpConfigFromEnv } from './lib/mail.js';
 import { PgMemoryExtractStore } from './lib/memory-store.js';
 import { RealtimeServer } from './realtime/ws.js';
 import { createAuthRouter, type AuthDeps } from './routes/auth.js';
@@ -73,7 +75,15 @@ export function buildApp(deps: AppDeps) {
 
   // 4.3 Waitlist 公开报名：landing 是独立 vite app（跨源 POST 需要 CORS，仅此路由放开）
   app.use('/waitlist', cors());
-  registerWaitlistRoutes(app, { pool: deps.pool });
+  // 13.2 事务邮件：SMTP 配置就绪发真实邮件，否则降级日志（不阻塞注册）
+  const smtpConfig = smtpConfigFromEnv();
+  if (smtpConfig) {
+    console.info(`[server] 邮件已启用：${smtpConfig.host}:${smtpConfig.port}`);
+  }
+  registerWaitlistRoutes(app, {
+    pool: deps.pool,
+    mail: smtpConfig ? createSmtpMailProvider(smtpConfig) : createNoopMailProvider(),
+  });
 
   const business = createBusinessRouter({
     pool: deps.pool,
@@ -113,8 +123,17 @@ export async function main(): Promise<void> {
   }
   const llm = llmConfig ? createOpenAiCompatibleClient(llmConfig) : undefined;
 
+  // ---- 嵌入客户端（10.7 向量臂；未配置则记忆检索降级 FTS-only）----
+  const embeddingConfig = embeddingConfigFromEnv();
+  if (embeddingConfig) {
+    console.info(`[server] 嵌入模型已启用：${embeddingConfig.model}（向量检索臂开启）`);
+  }
+  const embeddingProvider = embeddingConfig
+    ? createOpenAiCompatibleEmbeddingClient(embeddingConfig)
+    : undefined;
+
   // ---- 记忆存储（10.6 落库/检索/审计；RLS 纵深防御在 store 事务内 set claims）----
-  const memoryStore = new PgMemoryExtractStore(pool);
+  const memoryStore = new PgMemoryExtractStore(pool, embeddingProvider);
 
   const app = buildApp({
     pool,

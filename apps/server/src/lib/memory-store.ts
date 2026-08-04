@@ -9,6 +9,7 @@
 import type {
   AuditEntry,
   ConfirmationDraft,
+  EmbeddingProvider,
   MemoryExtractStore,
   MemoryRetrievalStore,
   MemorySearchInput,
@@ -35,7 +36,18 @@ function visibilityScope(purpose: MemorySearchInput['purpose']): string[] {
 const RECALL_ARM_LIMIT = 20;
 
 export class PgMemoryExtractStore implements MemoryExtractStore, MemoryRetrievalStore {
-  constructor(private readonly pool: pg.Pool) {}
+  constructor(
+    private readonly pool: pg.Pool,
+    /** 嵌入 provider（10.7 向量臂；无 → FTS-only 降级，RRF 单臂语义不变） */
+    private readonly embeddingProvider?: EmbeddingProvider,
+  ) {}
+
+  /** 生成查询向量（provider 缺失 → undefined，向量臂跳过） */
+  private async queryEmbedding(text: string): Promise<number[] | undefined> {
+    if (!this.embeddingProvider) return undefined;
+    const vectors = await this.embeddingProvider.embed([text]);
+    return vectors[0];
+  }
 
   async recallMemories(input: MemorySearchInput): Promise<{
     vectorHits: RetrievedMemory[];
@@ -73,14 +85,11 @@ export class PgMemoryExtractStore implements MemoryExtractStore, MemoryRetrieval
         [...args],
       );
 
-      // 向量臂：embedding 就绪后启用（HNSW 索引）；无查询向量时跳过
+      // 向量臂：嵌入 provider 就绪时生成查询向量（HNSW 索引）；无 provider 跳过
       let vecRows: Array<Record<string, unknown>> = [];
-      if (input.queryEmbedding && input.queryEmbedding.length > 0) {
-        const vecArgs = [
-          ...args.slice(0, 3),
-          JSON.stringify(input.queryEmbedding),
-          RECALL_ARM_LIMIT,
-        ];
+      const queryEmbedding = await this.queryEmbedding(input.query);
+      if (queryEmbedding && queryEmbedding.length > 0) {
+        const vecArgs = [...args.slice(0, 3), JSON.stringify(queryEmbedding), RECALL_ARM_LIMIT];
         const { rows } = await client.query(
           `select ${cols}
            from private_memories
@@ -149,12 +158,23 @@ export class PgMemoryExtractStore implements MemoryExtractStore, MemoryRetrieval
       await client.query("select set_config('request.jwt.claims', $1, true)", [
         rlsClaimsJson(input.ownerUserId),
       ]);
+      // 10.7 向量臂：provider 就绪时生成 embedding 落库（无 → null，FTS-only）
+      let embedding: number[] | null = null;
+      if (this.embeddingProvider) {
+        try {
+          const vectors = await this.embeddingProvider.embed([input.value]);
+          embedding = vectors[0] ?? null;
+        } catch (e) {
+          // 嵌入失败不阻塞记忆落库（降级 FTS-only；后续回填脚本可补齐）
+          console.warn('[memory] embedding 生成失败，降级 FTS-only：', (e as Error).message);
+        }
+      }
       const { rows } = await client.query(
         `insert into private_memories (
            owner_user_id, category, value, source_turn_ids, confidence, user_confirmed,
            sensitivity, visibility, purpose, importance, memory_status, superseded_by,
-           source_type, namespace
-         ) values ($1, $2, $3, $4, 1, false, $5, 'private', 'private_chat', $6, 'active', $7, $8, $9)
+           source_type, namespace, embedding
+         ) values ($1, $2, $3, $4, 1, false, $5, 'private', 'private_chat', $6, 'active', $7, $8, $9, $10::vector)
          returning memory_id`,
         [
           input.ownerUserId,
@@ -166,6 +186,7 @@ export class PgMemoryExtractStore implements MemoryExtractStore, MemoryRetrieval
           input.supersedeMemoryId ?? null,
           input.sourceType,
           DEFAULT_NAMESPACE,
+          embedding !== null ? JSON.stringify(embedding) : null,
         ],
       );
       await client.query('commit');

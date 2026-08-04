@@ -16,6 +16,7 @@ import type {
   LlmClient,
   MemoryExtractStore,
   MemoryRetrievalStore,
+  OutputModerator,
 } from '@pet/ai-graph';
 import { LIMITS } from '@pet/config';
 import { type Hono } from 'hono';
@@ -37,15 +38,18 @@ export interface ChatDeps {
   memoryStore?: MemoryExtractStore;
   /** 记忆检索存储（10.7；与 memoryStore 通常同一实例，无则跳过检索） */
   retrievalStore?: MemoryRetrievalStore;
+  /** 输出审核 provider（12.5 免费 Moderation；无则图内规则版 PII/敏感细节拦截） */
+  outputModerator?: OutputModerator;
 }
 
-/** 图实例缓存（compile 一次，全进程复用；llm/retrievalStore 注入一次） */
+/** 图实例缓存（compile 一次，全进程复用；llm/retrievalStore/outputModerator 注入一次） */
 let compiledGraph: ReturnType<typeof buildChatFlow> | null = null;
 function getGraph(
   llm?: LlmClient,
   retrievalStore?: MemoryRetrievalStore,
+  outputModerator?: OutputModerator,
 ): ReturnType<typeof buildChatFlow> {
-  compiledGraph ??= buildChatFlow({ llm, retrievalStore });
+  compiledGraph ??= buildChatFlow({ llm, retrievalStore, outputModerator });
   return compiledGraph;
 }
 
@@ -175,13 +179,18 @@ export function registerChatRoutes(
         void stream.writeSSE({ event: e.type, data: JSON.stringify(e) });
       };
       try {
-        const finalState = await getGraph(deps.llm, deps.retrievalStore).invoke(initialState, {
+        const finalState = await getGraph(
+          deps.llm,
+          deps.retrievalStore,
+          deps.outputModerator,
+        ).invoke(initialState, {
           threadId: id,
           emit,
         });
-        // 危机路径没有 modelOutput：回退 responseText（11.8 固定协议文案）；
-        // 危机时星屿表情呈现关切（而非默认 neutral）
-        const dialogue = finalState.modelOutput?.dialogue ?? finalState.responseText ?? '';
+        // 终稿文案：approve 路径 responseText=通过审核的回复；阻断路径=通用降级
+        // 文案（11.2 泄漏拦截）；危机路径=11.8 固定协议。流式已发出的 token 无法
+        // 撤回，done 帧与落库以审核后的 responseText 为准（modelOutput 仅兜底）。
+        const dialogue = finalState.responseText ?? finalState.modelOutput?.dialogue ?? '';
         await stream.writeSSE({
           event: 'done',
           data: JSON.stringify({

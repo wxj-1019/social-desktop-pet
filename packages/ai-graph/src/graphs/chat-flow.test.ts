@@ -9,6 +9,7 @@ import {
   authNode,
   classifyInputNode,
   localReplyNode,
+  type OutputModerator,
 } from './chat-flow-nodes.js';
 import { initialChatFlowState } from './chat-flow-state.js';
 import type { ChatFlowState } from './chat-flow-state.js';
@@ -314,6 +315,70 @@ describe('chat-flow graph', () => {
     expect(result.retrievedMemories).toEqual([]);
     expect(result.retrievedMemoryIds).toEqual([]);
     expect(result.contextPrompt).toContain('暂无相关记忆');
+  });
+
+  it('输出审核：泄漏拦截 → blocked_reply（不发原始回复、不触发抽取、不发危机话术）', async () => {
+    // LLM 输出含 PII → 规则版审核不通过 → 阻断路径
+    const leakyLlm: LlmClient = {
+      streamChat: async (_messages, onToken) => {
+        onToken(
+          '{"dialogue":"你的电话是 13812345678 对吧","emotion":"warm","actionIntent":"idle","intensity":1}',
+        );
+        return 'ok';
+      },
+    };
+    const graph = buildChatFlow({ llm: leakyLlm });
+    const state = initialChatFlowState({
+      threadId: 't-mod-1',
+      userId: 'u1',
+      deviceId: 'd1',
+      userMessage: '在吗',
+      scenario: 'private_chat',
+    });
+    const result = await graph.invoke(state, { threadId: 't-mod-1' });
+
+    expect(result.moderation?.passed).toBe(false);
+    // 阻断：通用文案而非原始回复，且无危机话术
+    expect(result.responseText).toBe('抱歉，我刚才走神了，我们换个话题聊聊吧。');
+    expect(result.responseText).not.toContain('13812345678');
+    expect(result.responseText).not.toContain('12356');
+    expect(result.memoryExtractTriggered).toBe(false);
+    expect(result.crisisLevel).toBeUndefined();
+  });
+
+  it('注入输出审核 provider：语义拦截走阻断，危机级走危机协议', async () => {
+    const moderator: OutputModerator = {
+      moderate: async (text, allowlisted) => {
+        if (text.includes('昨天说的秘密')) {
+          return { passed: false, blockedCategories: ['friend_privacy_leak'], crisisLevel: 'none' };
+        }
+        if (text.includes('不想活')) {
+          return { passed: false, blockedCategories: [], crisisLevel: 'high' };
+        }
+        expect(allowlisted).toEqual([]);
+        return { passed: true, blockedCategories: [], crisisLevel: 'none' };
+      },
+    };
+    const mockLlm: LlmClient = {
+      streamChat: async (_messages, onToken) => {
+        onToken(
+          '{"dialogue":"你昨天说的秘密我不会告诉别人","emotion":"warm","actionIntent":"idle","intensity":1}',
+        );
+        return 'ok';
+      },
+    };
+    const graph = buildChatFlow({ llm: mockLlm, outputModerator: moderator });
+    const state = initialChatFlowState({
+      threadId: 't-mod-2',
+      userId: 'u1',
+      deviceId: 'd1',
+      userMessage: '在吗',
+      scenario: 'private_chat',
+    });
+    const result = await graph.invoke(state, { threadId: 't-mod-2' });
+    expect(result.moderation?.passed).toBe(false);
+    expect(result.responseText).toBe('抱歉，我刚才走神了，我们换个话题聊聊吧。');
+    expect(result.responseText).not.toContain('昨天说的秘密');
   });
 
   it('L0 路由：本地模板回复，不调模型、不检索记忆、不触发抽取（10.3）', async () => {

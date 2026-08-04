@@ -77,6 +77,12 @@ export const MEMORY_HALF_LIFE_MS = 30 * 24 * 60 * 60 * 1000;
 /** 检索默认 top-k（10.3 L2/L3 档） */
 export const DEFAULT_RETRIEVAL_TOPK = 6;
 
+/** 10.3 路由级 → 检索 top-k（L1=3 轻量 / L2/L3=6；L0 不检索） */
+export function retrievalTopKForLevel(level?: string): number {
+  if (level === 'L1') return 3;
+  return DEFAULT_RETRIEVAL_TOPK;
+}
+
 /**
  * RRF 融合：按 memoryId 合并两组候选，score = Σ 1/(k+rank)（10.7 公式）。
  * 单列表自然退化为纯该列表排名。
@@ -154,13 +160,15 @@ export function retrieveMemoryNodeFactory(store?: MemoryRetrievalStore): NodeFn<
     }
 
     const purpose = purposeForScenario(state.scenario);
+    // 10.3：路由级决定记忆条数（L1=3 / L2/L3=6），与 DEFAULT_ROUTE_TABLE.memoryRetrievalTopK 对齐
+    const topK = retrievalTopKForLevel(state.routing?.level);
     const { vectorHits, ftsHits } = await store.recallMemories({
       ownerUserId: state.userId,
       query: state.userMessage,
       purpose,
-      topK: DEFAULT_RETRIEVAL_TOPK,
+      topK,
     });
-    const retrievedMemories = fuseAndScore(vectorHits, ftsHits, DEFAULT_RETRIEVAL_TOPK);
+    const retrievedMemories = fuseAndScore(vectorHits, ftsHits, topK);
     return {
       retrievedMemories,
       retrievedMemoryIds: retrievedMemories.map((m) => m.memoryId),

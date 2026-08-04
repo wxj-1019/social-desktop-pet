@@ -14,13 +14,15 @@ import { END, START } from '../runtime/types.js';
 import {
   approveActionNode,
   authNode,
+  blockedReplyNode,
   buildContextNode,
   classifyInputNode,
   crisisResponseNode,
   generateNodeFactory,
   localReplyNode,
-  moderateOutputNode,
+  moderateOutputNodeFactory,
   routeNode,
+  type OutputModerator,
 } from './chat-flow-nodes.js';
 import type { ChatFlowState } from './chat-flow-state.js';
 import { retrieveMemoryNodeFactory, type MemoryRetrievalStore } from './memory-retrieval.js';
@@ -30,6 +32,8 @@ export interface ChatFlowOptions {
   llm?: LlmClient;
   /** 记忆检索存储（10.7；无则跳过检索，避免误用未实现召回） */
   retrievalStore?: MemoryRetrievalStore;
+  /** 输出审核 provider（12.5 免费 Moderation；无则规则版 PII/敏感细节拦截） */
+  outputModerator?: OutputModerator;
 }
 
 /** 编译 chat-flow 图；llm/retrievalStore 注入后对应节点走真实实现 */
@@ -42,10 +46,11 @@ export function buildChatFlow(options: ChatFlowOptions = {}): CompiledGraph<Chat
     .addNode('retrieve_memory', retrieveMemoryNodeFactory(options.retrievalStore))
     .addNode('build_context', buildContextNode)
     .addNode('generate', generateNodeFactory(options.llm))
-    .addNode('moderate_output', moderateOutputNode)
+    .addNode('moderate_output', moderateOutputNodeFactory(options.outputModerator))
     .addNode('approve_action', approveActionNode)
     .addNode('crisis_response', crisisResponseNode)
-    .addNode('local_reply', localReplyNode);
+    .addNode('local_reply', localReplyNode)
+    .addNode('blocked_reply', blockedReplyNode);
 
   // 边
   graph.addEdge(START, 'auth').addEdge('auth', 'classify_input');
@@ -68,15 +73,23 @@ export function buildChatFlow(options: ChatFlowOptions = {}): CompiledGraph<Chat
 
   graph.addEdge('retrieve_memory', 'build_context').addEdge('build_context', 'generate');
 
+  // 11.2 输出审核（12.5 免费 Moderation）：
+  //   输出侧危机 → crisis_response（11.8 固定协议）
+  //   泄漏/违规 → blocked_reply（阻断原始回复，改发通用文案；不发危机话术）
+  //   通过 → approve_action
   graph
     .addEdge('generate', 'moderate_output')
-    // 11.8：输出审核命中危机 → crisis_response
-    .addConditionalEdge('moderate_output', (s) =>
-      s.moderation && !s.moderation.passed ? 'crisis_response' : 'approve_action',
-    )
+    .addConditionalEdge('moderate_output', (s) => {
+      const moderation = s.moderation;
+      if (!moderation) return 'approve_action';
+      if (moderation.crisisLevel !== 'none') return 'crisis_response';
+      if (!moderation.passed) return 'blocked_reply';
+      return 'approve_action';
+    })
     .addEdge('approve_action', END)
     .addEdge('crisis_response', END)
-    .addEdge('local_reply', END);
+    .addEdge('local_reply', END)
+    .addEdge('blocked_reply', END);
 
   return graph.compile();
 }

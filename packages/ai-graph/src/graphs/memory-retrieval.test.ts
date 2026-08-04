@@ -149,6 +149,27 @@ describe('retrieveMemoryNodeFactory（10.7 检索节点）', () => {
     expect(out.retrievedMemories?.map((m) => m.value)).toEqual(['喜欢抹茶', '在准备考试']);
   });
 
+  it('10.3 路由级 topK：L1 → 3，L2/L3 → 6（对齐 DEFAULT_ROUTE_TABLE）', async () => {
+    const seenTopK: number[] = [];
+    const store: MemoryRetrievalStore = {
+      recallMemories: async (input) => {
+        seenTopK.push(input.topK);
+        return { vectorHits: [], ftsHits: [] };
+      },
+    };
+    const node = retrieveMemoryNodeFactory(store);
+
+    const l1 = { ...base('你好'), routing: { level: 'L1' as const, reason: 'test' } };
+    await node(l1, { threadId: 't1', emit: () => undefined });
+    expect(seenTopK).toEqual([3]);
+
+    const l2 = { ...base('你还记得吗'), routing: { level: 'L2' as const, reason: 'test' } };
+    await node(l2, { threadId: 't2', emit: () => undefined });
+    const l3 = { ...base('长文本'), routing: { level: 'L3' as const, reason: 'test' } };
+    await node(l3, { threadId: 't3', emit: () => undefined });
+    expect(seenTopK).toEqual([3, 6, 6]);
+  });
+
   it('friend_visit 场景把 purpose 透传给 store（10.7 权限过滤输入）', async () => {
     const store: MemoryRetrievalStore = {
       recallMemories: async (input) => {

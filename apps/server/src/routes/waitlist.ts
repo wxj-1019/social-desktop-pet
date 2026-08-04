@@ -5,13 +5,18 @@
  *   → 格式校验（基础正则 + 长度）→ 每 IP 内存限流（12.7 精神）→ 落库
  *   → 201 报名成功 / 409 已在名单（email 唯一兜底）/ 400 非法邮箱 / 429 限流
  *
- * 13.2 邀请邮件（pending → invited）待邮件供应商接入后在此触发。
+ * 13.2 事务邮件：报名成功后发确认邮件（MailProvider 注入；失败仅日志，
+ * 不阻塞注册——waitlist 已落库，供应商接入后回放补发）。
  */
 import type { Hono } from 'hono';
 import type pg from 'pg';
 
+import type { MailProvider } from '../lib/mail.js';
+
 export interface WaitlistDeps {
   pool: pg.Pool;
+  /** 邮件发送（13.2；无注入则降级日志，不阻塞） */
+  mail?: MailProvider;
 }
 
 /** 基础邮箱校验（RFC 简化：形如 a@b.c，≤254 字符） */
@@ -91,6 +96,19 @@ export function registerWaitlistRoutes(app: Hono, deps: WaitlistDeps): void {
       }
     } catch {
       return c.json({ error: '报名失败，请稍后再试' }, 500);
+    }
+    // 13.2 确认邮件：失败仅记日志不阻塞注册（waitlist 已落库，可回放补发）
+    if (deps.mail) {
+      void deps.mail
+        .send(
+          email.toLowerCase(),
+          '欢迎加入星屿等待名单',
+          `<p>你的邮箱 ${email.toLowerCase()} 已加入星屿（Star Isle）等待名单。</p>` +
+            '<p>正式开放时我们会第一时间通知你，保持期待～</p>',
+        )
+        .catch((e) => {
+          console.warn('[waitlist] 确认邮件发送失败：', (e as Error).message);
+        });
     }
     return c.json({ ok: true });
   });

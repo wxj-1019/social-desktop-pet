@@ -4,12 +4,16 @@
  * 框架阶段：每个节点是可编译的 stub，标注 TODO 与对应设计稿章节，
  * 后续实现工作（第 7-10 周）在此填入真实逻辑（模型调用/分类器/检索等）。
  */
+import type { OutputModerationResult } from '@pet/protocol';
+
 import type { LlmClient } from '../llm/types.js';
 import type { NodeFn } from '../runtime/types.js';
 
 import type { ChatFlowState } from './chat-flow-state.js';
 import { detectCrisis } from './crisis-rules.js';
+import { ruleModerateOutput } from './moderation-rules.js';
 import { chunkDialogue, parseModelOutput } from './parse-model-output.js';
+import { ruleRoute } from './route-rules.js';
 
 /** 10.1 认证、配额、限流 */
 export const authNode: NodeFn<ChatFlowState> = async (
@@ -41,14 +45,13 @@ export const classifyInputNode: NodeFn<ChatFlowState> = async (
 /** 10.1 / 10.7 按场景和权限检索记忆（实现见 memory-retrieval.ts 的 retrieveMemoryNodeFactory） */
 
 /**
- * 10.3 路由判定：把输入分级到 L0–L3/Safety，决定是否检索记忆/调模型。
- * 当前 scaffold：一律 L1（问候/闲聊档，与实现前的行为一致）；L0–L3/Safety
- * 分级判定（V-13 分类器 + 路由策略）留 10.3 实施。
- * 路由独立成节点：L0（动画/状态/固定事件，不调模型不检索）与 SAFETY 走
- * 各自条件边，避免闲聊被错误导向危机文案。
+ * 10.3 路由判定：把输入分级到 L0–L3（SAFETY 由 classify 危机预筛先行拦截）。
+ * 规则版见 route-rules.ts（动作指令→L0；记忆/情绪信号→L2；长文/多问→L3；
+ * 短问候→L1）；V-13 分类器就绪后替换同一出口。
  */
-export const routeNode: NodeFn<ChatFlowState> = async (): Promise<Partial<ChatFlowState>> => {
-  return { routing: { level: 'L1', reason: 'scaffold' } }; // TODO(10.3): 路由分级判定
+export const routeNode: NodeFn<ChatFlowState> = async (state): Promise<Partial<ChatFlowState>> => {
+  const decision = ruleRoute(state.userMessage);
+  return { routing: { level: decision.level, reason: decision.reason } };
 };
 
 /** 10.1 构造最小上下文（检索记忆进 prompt；10.3 路由判定已由 routeNode 完成） */
@@ -173,13 +176,54 @@ export function generateNodeFactory(llm?: LlmClient): NodeFn<ChatFlowState> {
 export const generateNode: NodeFn<ChatFlowState> = generateNodeFactory();
 
 /** 10.1 输出审核与隐私检查（11.2 第四道：输出侧记忆泄漏校验） */
+
+/**
+ * 输出审核 provider 接口（12.5 免费 Moderation 注入点）。
+ * 服务端注入真实实现（免费端点 + allowlist 语义核对）；无注入时用规则版
+ * （moderation-rules.ts：PII/敏感细节确定性信号）。
+ */
+export interface OutputModerator {
+  moderate(text: string, allowlistedMemoryIds: string[]): Promise<OutputModerationResult>;
+}
+
+/** 无注入的规则版审核（PII/敏感细节；allowlist 语义核对留 provider） */
 export const moderateOutputNode: NodeFn<ChatFlowState> = async (
-  _state,
-  _ctx,
+  state,
 ): Promise<Partial<ChatFlowState>> => {
-  // TODO(第7-10周): Moderation + 校验响应未引用 retrievedMemoryIds allowlist 外的记忆
+  const text = state.modelOutput?.dialogue ?? '';
+  const { passed, blockedCategories } = ruleModerateOutput(text);
+  return { moderation: { passed, blockedCategories, crisisLevel: 'none' } };
+};
+
+/** 注入 provider 的审核节点（无 provider 时回退规则版） */
+export function moderateOutputNodeFactory(moderator?: OutputModerator): NodeFn<ChatFlowState> {
+  return async (state): Promise<Partial<ChatFlowState>> => {
+    if (!moderator) {
+      // 规则版：与 moderateOutputNode 同逻辑（NodeFn ctx 不参与，直接内联）
+      const text = state.modelOutput?.dialogue ?? '';
+      const { passed, blockedCategories } = ruleModerateOutput(text);
+      return { moderation: { passed, blockedCategories, crisisLevel: 'none' } };
+    }
+    return {
+      moderation: await moderator.moderate(
+        state.modelOutput?.dialogue ?? '',
+        state.retrievedMemoryIds ?? [],
+      ),
+    };
+  };
+}
+
+/**
+ * 审核阻断回复（11.2 输出侧拦截）：泄漏/违规时不发原始回复，改发通用降级文案，
+ * 不给模型机会继续引用未授权内容；不触发记忆抽取。
+ */
+export const blockedReplyNode: NodeFn<ChatFlowState> = async (): Promise<
+  Partial<ChatFlowState>
+> => {
   return {
-    moderation: { passed: true, blockedCategories: [], crisisLevel: 'none' },
+    responseText: '抱歉，我刚才走神了，我们换个话题聊聊吧。',
+    approvedAction: 'idle',
+    memoryExtractTriggered: false,
   };
 };
 
