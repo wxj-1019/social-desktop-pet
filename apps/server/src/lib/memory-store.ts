@@ -49,6 +49,19 @@ export class PgMemoryExtractStore implements MemoryExtractStore, MemoryRetrieval
     return vectors[0];
   }
 
+  /** 单条文本向量化（确认/编辑落库补 embedding；无 provider → null，FTS-only 降级） */
+  async embedValue(value: string): Promise<number[] | null> {
+    if (!this.embeddingProvider) return null;
+    try {
+      const vectors = await this.embeddingProvider.embed([value]);
+      return vectors[0] ?? null;
+    } catch (e) {
+      // 嵌入失败不阻塞落库（降级 FTS-only；回填脚本可补齐）
+      console.warn('[memory] embedding 生成失败，降级 FTS-only：', (e as Error).message);
+      return null;
+    }
+  }
+
   async recallMemories(input: MemorySearchInput): Promise<{
     vectorHits: RetrievedMemory[];
     ftsHits: RetrievedMemory[];

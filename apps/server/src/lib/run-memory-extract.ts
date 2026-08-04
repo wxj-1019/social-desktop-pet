@@ -24,20 +24,30 @@ const OWNER_TURN_LIMIT = 4;
 export async function runMemoryExtract(input: RunMemoryExtractInput): Promise<void> {
   const { userId, threadId, pool, store, llm } = input;
 
-  // 仅取 owner 本人 user 消息（source_turn_ids 溯源；assistant/他人消息不进入抽取）
+  // 仅取 owner 本人、当前 thread 的 user 消息（source_turn_ids 溯源；
+  // thread_id 过滤防跨线程污染，assistant/他人消息不进入抽取）
   const { rows } = await pool.query(
     `select message_id, content, memory_extracted_at from chat_messages
-     where user_id = $1 and role = 'user'
+     where user_id = $1 and thread_id = $2 and role = 'user'
      order by created_at desc
-     limit $2`,
-    [userId, OWNER_TURN_LIMIT],
+     limit $3`,
+    [userId, threadId, OWNER_TURN_LIMIT],
   );
-  // 幂等：最新一条 user turn 已抽取过（memory_extracted_at 标记）→ 该窗口已处理，
-  // 跳过。避免连发消息时重叠窗口反复触发 LLM 抽取（10.6 每条消息只抽一次）。
-  if (rows.length === 0 || rows[0].memory_extracted_at !== null) return;
+  if (rows.length === 0) return;
   // 时间倒序 → 正序（最早在前）
   const turns = rows.map((r) => String(r.content)).reverse();
   const sourceTurnIds = rows.map((r) => String(r.message_id)).reverse();
+  // 幂等 + 并发安全：原子抢占"最新一条 user turn"的抽取标记——
+  // 连发消息时两次 fire-and-forget 并发触发，只有抢到标记的一方执行抽取，
+  // 另一方直接返回（10.6 每条消息只抽一次；防重复 ADD）。
+  const latestId = sourceTurnIds[sourceTurnIds.length - 1];
+  const claimed = await pool.query(
+    `update chat_messages set memory_extracted_at = now()
+     where message_id = $1 and memory_extracted_at is null
+     returning message_id`,
+    [latestId],
+  );
+  if (claimed.rows.length === 0) return; // 已被并发调用标记/处理
 
   const graph = buildMemoryExtractFlow({
     llm,
@@ -54,13 +64,6 @@ export async function runMemoryExtract(input: RunMemoryExtractInput): Promise<vo
       persistedCount: 0,
     },
     { threadId },
-  );
-
-  // 抽取完成（结果为空/全 NOOP 也算处理过）→ 标记窗口，防重复触发
-  await pool.query(
-    `update chat_messages set memory_extracted_at = now()
-     where message_id = any($1::uuid[])`,
-    [sourceTurnIds],
   );
 
   const { persistedCount, pendingConfirmation } = finalState;

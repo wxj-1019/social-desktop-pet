@@ -4,7 +4,7 @@
  * 框架阶段：每个节点是可编译的 stub，标注 TODO 与对应设计稿章节，
  * 后续实现工作（第 7-10 周）在此填入真实逻辑（模型调用/分类器/检索等）。
  */
-import type { OutputModerationResult } from '@pet/protocol';
+import type { ActionIntent, OutputModerationResult } from '@pet/protocol';
 
 import type { LlmClient } from '../llm/types.js';
 import type { NodeFn } from '../runtime/types.js';
@@ -42,6 +42,14 @@ export const classifyInputNode: NodeFn<ChatFlowState> = async (
   };
 };
 
+/** 危机级别序（保守 OR 用：规则版级别更高时覆盖 LLM 降级） */
+const CRISIS_RANK: Record<'none' | 'low' | 'medium' | 'high', number> = {
+  none: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+};
+
 /** V-13 分类器节点工厂：注入 llm 走 LLM 分类（含多轮上下文）；失败/无 llm 回退规则版 */
 export function classifyInputNodeFactory(llm?: LlmClient): NodeFn<ChatFlowState> {
   return async (state): Promise<Partial<ChatFlowState>> => {
@@ -50,7 +58,16 @@ export function classifyInputNodeFactory(llm?: LlmClient): NodeFn<ChatFlowState>
       : [{ role: 'user' as const, content: state.userMessage }];
     const classification = llm ? await classifyWithLlm(llm, turns) : null;
     const rule = ruleClassification(turns);
+    // 保守 OR（安全网）：规则版检测到的危机级别不被 LLM 降级——LLM 可能返回
+    // 结构合法但语义错误的分类（如对"我不想活了"判 none），high 级关键词网必须兜底
     const merged = classification ?? rule;
+    if (
+      classification &&
+      rule &&
+      CRISIS_RANK[rule.crisisLevel] > CRISIS_RANK[classification.crisisLevel]
+    ) {
+      merged.crisisLevel = rule.crisisLevel;
+    }
     return {
       inputClassification: {
         categories: merged.categories,
@@ -76,14 +93,18 @@ export const routeNode: NodeFn<ChatFlowState> = async (state): Promise<Partial<C
   return { routing: { level: decision.level, reason: decision.reason } };
 };
 
-/** 路由节点工厂：优先 V-13 分类结果（10.3 同源），缺失回退规则版 */
+/** 路由节点工厂：L0 动作指令始终走规则版（确定性本地命令，LLM 分类不参与），
+ *  其余级别优先 V-13 分类结果（10.3 同源），缺失回退规则版 */
 export function routeNodeFactory(llm?: LlmClient): NodeFn<ChatFlowState> {
   return async (state): Promise<Partial<ChatFlowState>> => {
+    const rule = ruleRoute(state.userMessage);
+    if (rule.level === 'L0') {
+      return { routing: { level: 'L0', reason: rule.reason } };
+    }
     if (llm && state.classification) {
       return { routing: { level: state.classification.routeLevel, reason: 'v13_classifier' } };
     }
-    const decision = ruleRoute(state.userMessage);
-    return { routing: { level: decision.level, reason: decision.reason } };
+    return { routing: { level: rule.level, reason: rule.reason } };
   };
 }
 
@@ -125,14 +146,35 @@ const LOCAL_REPLIES: Array<{ test: RegExp; reply: string }> = [
   { test: /再见|拜拜|晚安/u, reply: '拜拜～记得早点休息。' },
 ];
 
+/** L0 动作指令 → 桌宠意图 + 本地回复文案（route-rules.ts 的 ACTION_COMMANDS 同源） */
+const ACTION_REPLIES: Record<string, { intent: ActionIntent; reply: string }> = {
+  sit: { intent: 'sit', reply: '好，我坐下啦～' },
+  stand: { intent: 'idle', reply: '好，我站起来啦！' },
+  sleep: { intent: 'sleep', reply: '那我先睡一会儿…' },
+  wave: { intent: 'wave', reply: '嗨～你好！' },
+  dance: { intent: 'cheer', reply: '跟着节奏跳一段！' },
+  cheer: { intent: 'cheer', reply: '啪叽啪叽！' },
+  touch: { intent: 'touch', reply: '唔…好舒服～' },
+};
+
 export const localReplyNode: NodeFn<ChatFlowState> = async (
   state,
 ): Promise<Partial<ChatFlowState>> => {
   const text = state.userMessage.trim();
   const hit = LOCAL_REPLIES.find((r) => r.test.test(text));
+  // L0 动作指令：路由 reason 形如 action_command:<name>，映射为桌宠意图与专属文案；
+  // 非动作指令（问候等）保持原兜底模板
+  const action = state.routing?.reason?.startsWith('action_command:')
+    ? ACTION_REPLIES[state.routing.reason.slice('action_command:'.length)]
+    : undefined;
+  const responseText = action?.reply ?? hit?.reply ?? '嗯嗯，我在听你说。';
   return {
-    responseText: hit?.reply ?? '嗯嗯，我在听你说。',
-    approvedAction: 'idle',
+    responseText,
+    approvedAction: action?.intent ?? 'idle',
+    // 写 modelOutput 让 done 帧携带 actionIntent，驱动桌宠实际执行动作（10.3 L0）
+    modelOutput: action
+      ? { dialogue: responseText, emotion: 'warm', actionIntent: action.intent, intensity: 1 }
+      : undefined,
     memoryExtractTriggered: false,
   };
 };

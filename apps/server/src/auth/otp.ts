@@ -14,6 +14,7 @@
 import { createHash, randomInt } from 'node:crypto';
 
 import type { MailProvider } from '../lib/mail.js';
+import { safeEqualHex } from '../lib/safe-equal.js';
 
 export interface OtpCodeRow {
   otpId: string;
@@ -127,7 +128,7 @@ export class OtpService {
     if (latest.expiresAt.getTime() < now) return { ok: false, reason: 'expired' };
     if (latest.attempts >= maxAttempts) return { ok: false, reason: 'attempts_exceeded' };
 
-    if (sha256(code) !== latest.codeHash) {
+    if (!safeEqualHex(sha256(code), latest.codeHash)) {
       await this.store.incrementAttempts(latest.otpId);
       return { ok: false, reason: 'invalid' };
     }

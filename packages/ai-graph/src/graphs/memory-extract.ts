@@ -119,6 +119,8 @@ export interface MemoryExtractStore {
   createConfirmation(input: ConfirmationDraft): Promise<{ confirmationId: string }>;
   /** 审计日志（11.2） */
   logAudit(entry: AuditEntry): Promise<void>;
+  /** 单条文本向量化（确认/编辑落库补 embedding；无 provider → null，FTS-only） */
+  embedValue?(value: string): Promise<number[] | null>;
 }
 
 // ---- 抽取 ----

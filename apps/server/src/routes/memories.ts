@@ -11,6 +11,7 @@
  * 全部事务内 set_config('request.jwt.claims')（应用层校验 owner + RLS 兜底），
  * 写操作同步记 memory_audit_log（11.2）。
  */
+import type { MemoryExtractStore } from '@pet/ai-graph';
 import {
   MemoryConfirmationSchema,
   MemoryListItemSchema,
@@ -28,6 +29,8 @@ import { requireAuth } from './business.js';
 export interface MemoryRoutesDeps {
   pool: pg.Pool;
   jwt: JwtService;
+  /** 记忆存储（10.7 向量臂：确认/编辑落库补 embedding；缺失 → FTS-only） */
+  memoryStore?: MemoryExtractStore;
 }
 
 /** 自动保存提示窗口：最近 60s 落库的 active 记忆（客户端轮询时差分去重） */
@@ -90,7 +93,8 @@ export function registerMemoriesRoutes(
       return c.json({ pending, recentlySaved });
     } catch (e) {
       await client.query('rollback');
-      return c.json({ error: (e as Error).message }, 500);
+      console.error('[memories] summary 失败：', e);
+      return c.json({ error: '内部错误' }, 500);
     } finally {
       client.release();
     }
@@ -159,12 +163,16 @@ export function registerMemoriesRoutes(
           );
         }
       }
+      // 10.7 向量臂：确认落库补 embedding（provider 缺失 → null，FTS-only）
+      const embedding = deps.memoryStore
+        ? ((await deps.memoryStore.embedValue?.(finalValue)) ?? null)
+        : null;
       const { rows: memRows } = await client.query(
         `insert into private_memories (
            owner_user_id, category, value, source_turn_ids, confidence, user_confirmed,
            sensitivity, visibility, purpose, importance, memory_status, superseded_by,
-           source_type, namespace
-         ) values ($1, $2, $3, $4, 1, true, $5, 'private', 'private_chat', $6, 'active', $7, $8, $9)
+           source_type, namespace, embedding
+         ) values ($1, $2, $3, $4, 1, true, $5, 'private', 'private_chat', $6, 'active', $7, $8, $9, $10::vector)
          returning memory_id`,
         [
           userId,
@@ -176,6 +184,7 @@ export function registerMemoriesRoutes(
           superseded,
           sourceType,
           'star-isle:private_chat',
+          embedding !== null ? JSON.stringify(embedding) : null,
         ],
       );
       const memoryId = String(memRows[0]?.memory_id);
@@ -192,7 +201,8 @@ export function registerMemoriesRoutes(
       return c.json({ memoryId });
     } catch (e) {
       await client.query('rollback');
-      return c.json({ error: (e as Error).message }, 500);
+      console.error('[memories] confirm 失败：', e);
+      return c.json({ error: '内部错误' }, 500);
     } finally {
       client.release();
     }
@@ -279,7 +289,8 @@ export function registerMemoriesRoutes(
       return c.json({ ok: true });
     } catch (e) {
       await client.query('rollback');
-      return c.json({ error: (e as Error).message }, 500);
+      console.error('[memories] invalidate 失败：', e);
+      return c.json({ error: '内部错误' }, 500);
     } finally {
       client.release();
     }
@@ -327,7 +338,8 @@ export function registerMemoriesRoutes(
       return c.json({ memories });
     } catch (e) {
       await client.query('rollback');
-      return c.json({ error: (e as Error).message }, 500);
+      console.error('[memories] list 失败：', e);
+      return c.json({ error: '内部错误' }, 500);
     } finally {
       client.release();
     }
@@ -368,12 +380,16 @@ export function registerMemoriesRoutes(
          where memory_id = $1`,
         [memoryId],
       );
+      // 10.7 向量臂：编辑落库补 embedding（provider 缺失 → null，FTS-only）
+      const embedding = deps.memoryStore
+        ? ((await deps.memoryStore.embedValue?.(finalValue)) ?? null)
+        : null;
       const { rows: newRows } = await client.query(
         `insert into private_memories (
            owner_user_id, category, value, source_turn_ids, confidence, user_confirmed,
            sensitivity, visibility, purpose, importance, memory_status, superseded_by,
-           source_type, namespace
-         ) values ($1, $2, $3, $4, 1, true, $5, $6, $7, $8, 'active', $9, 'user_confirmed', $10)
+           source_type, namespace, embedding
+         ) values ($1, $2, $3, $4, 1, true, $5, $6, $7, $8, 'active', $9, 'user_confirmed', $10, $11::vector)
          returning memory_id`,
         [
           userId,
@@ -386,6 +402,7 @@ export function registerMemoriesRoutes(
           Number(old.importance),
           memoryId,
           String(old.namespace),
+          embedding !== null ? JSON.stringify(embedding) : null,
         ],
       );
       const newMemoryId = String(newRows[0]?.memory_id);
@@ -398,7 +415,8 @@ export function registerMemoriesRoutes(
       return c.json({ memoryId: newMemoryId, supersededMemoryId: memoryId });
     } catch (e) {
       await client.query('rollback');
-      return c.json({ error: (e as Error).message }, 500);
+      console.error('[memories] edit 失败：', e);
+      return c.json({ error: '内部错误' }, 500);
     } finally {
       client.release();
     }

@@ -30,7 +30,8 @@ function makePool() {
   type TurnRow = { message_id: string; content: string; memory_extracted_at: Date | null };
   const pool = {
     connect: vi.fn(async () => client),
-    // saveChatMessages（insert）与 runMemoryExtract（select 最近 user turn）共用
+    // saveChatMessages（insert）与 runMemoryExtract（select 最近 user turn +
+    // 原子抢占标记 update）共用；默认抢占成功（返回 message_id）
     query: vi.fn(async (sql: string) => {
       const first = sql.trim().toLowerCase();
       if (first.startsWith('select message_id, content, memory_extracted_at from chat_messages')) {
@@ -40,6 +41,10 @@ function makePool() {
           memory_extracted_at: null,
         };
         return { rows: [row] };
+      }
+      // 幂等抢占：最新 turn 未被标记时抢到（返回行）；已标记（where 不命中）→ 空
+      if (first.startsWith('update chat_messages set memory_extracted_at')) {
+        return { rows: [{ message_id: TURN_ID }] };
       }
       return { rows: [] };
     }),
@@ -104,7 +109,7 @@ describe('POST /chat 触发异步记忆抽取（10.6）', () => {
       expect.stringContaining('insert into chat_messages'),
       expect.anything(),
     );
-    // 抽取完成 → 幂等标记窗口（memory_extracted_at，防重叠窗口重复触发）
+    // 抽取前原子抢占最新 turn 的抽取标记（memory_extracted_at，防并发重复抽取）
     await vi.waitFor(() =>
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('update chat_messages set memory_extracted_at'),
@@ -126,6 +131,10 @@ describe('POST /chat 触发异步记忆抽取（10.6）', () => {
           rows: [{ message_id: TURN_ID, content: '我喜欢抹茶。', memory_extracted_at: new Date() }],
         };
       }
+      // 已标记的 turn：抢占 update 的 where（memory_extracted_at is null）不命中 → 空返回
+      if (String(sql).includes('update chat_messages set memory_extracted_at')) {
+        return { rows: [] };
+      }
       return orig(sql);
     });
     const memoryStore = makeMemoryStore();
@@ -142,10 +151,14 @@ describe('POST /chat 触发异步记忆抽取（10.6）', () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(memoryStore.persistMemory).not.toHaveBeenCalled();
     expect(memoryStore.findSimilar).not.toHaveBeenCalled();
-    // 无 update 标记调用
+    // 抢占 update 带幂等条件（memory_extracted_at is null），已标记行不会被重复标记
     expect(
-      pool.query.mock.calls.some(([sql]) => String(sql).includes('set memory_extracted_at')),
-    ).toBe(false);
+      pool.query.mock.calls.some(
+        ([sql]) =>
+          String(sql).includes('update chat_messages set memory_extracted_at') &&
+          String(sql).includes('memory_extracted_at is null'),
+      ),
+    ).toBe(true);
   });
 
   it('未注入 memoryStore → 跳过抽取（不查 owner turns）', async () => {

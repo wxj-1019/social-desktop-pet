@@ -19,6 +19,7 @@ import type { Hono } from 'hono';
 import type pg from 'pg';
 
 import type { MailProvider } from '../lib/mail.js';
+import { safeEqualHex } from '../lib/safe-equal.js';
 
 export interface WaitlistDeps {
   pool: pg.Pool;
@@ -150,7 +151,7 @@ export class WaitlistService {
     if (row.status === 'joined') return { ok: false, reason: 'already_joined' };
 
     // status = invited：校验码
-    if (String(row.invite_code_hash ?? '') !== hashInviteCode(code)) {
+    if (!safeEqualHex(String(row.invite_code_hash ?? ''), hashInviteCode(code))) {
       return { ok: false, reason: 'invalid_code' };
     }
     await this.pool.query(

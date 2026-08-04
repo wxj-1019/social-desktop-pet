@@ -41,12 +41,26 @@ export function createAuthRouter(deps: AuthDeps): Hono {
 
   app.post('/register', async (c) => {
     const { email, password, deviceId, platform, nickname } = await c.req.json();
-    if (typeof email !== 'string' || typeof password !== 'string' || password.length < 8) {
+    if (
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      password.length < 8 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    ) {
       return c.json({ error: 'email/password 非法' }, 400);
     }
     // argon2id 哈希（PHC 格式；OWASP 推荐替代旧 scrypt）
     const passwordHash = await hashPasswordArgon2(password);
-    const userId = await deps.users.create(email, passwordHash);
+    let userId: string;
+    try {
+      userId = await deps.users.create(email, passwordHash);
+    } catch (e) {
+      // auth.users.email 唯一约束（23505）：重复注册 → 409 而非 500
+      if ((e as { code?: string }).code === '23505') {
+        return c.json({ error: '该邮箱已注册' }, 409);
+      }
+      throw e;
+    }
     // 默认昵称 = email 前缀（6.x 注册流程接入后由用户设置）
     const defaultNickname =
       typeof nickname === 'string' && nickname.length > 0

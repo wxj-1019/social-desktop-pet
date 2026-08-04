@@ -130,7 +130,8 @@ export async function main(): Promise<void> {
     return createNoopMailProvider();
   })();
   const otp = new OtpService(new PgOtpStore(pool), mailProvider, {
-    devCodeInResponse: env('PET_DEV_OTP_CODE_IN_RESPONSE') === 'true',
+    // dev 开关：可选读取（与 PET_DEV_RESET 同款），缺失时静默关闭，不影响生产启动
+    devCodeInResponse: process.env['PET_DEV_OTP_CODE_IN_RESPONSE'] === 'true',
   });
 
   // ---- 自建 Realtime（9.2/9.4）----
