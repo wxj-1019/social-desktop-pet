@@ -99,10 +99,15 @@ body,
   transform-origin: 22% 92%;
 }
 
-/* 常态：idle 呼吸；walk 摇摆；sit 坐姿压扁（形态动画见各自规则） */
-[data-motion='idle'] .star-isle__body,
-[data-motion='idle'] .star-isle__head {
+/* 常态：idle 呼吸；walk 摇摆；sit 坐姿压扁（形态动画见各自规则）。
+   头部用 translateY 跟随身体呼吸（而非 scaleY）——scaleY 会以包围盒中心
+   缩放，把头顶的星冠/刘海向上推离头部（"帽子错位/悬浮"）。整体平移
+   保持头部各部件（星冠/耳朵/五官）相对位置不变。 */
+[data-motion='idle'] .star-isle__body {
   animation: star-isle-breathe 3.2s ease-in-out infinite;
+}
+[data-motion='idle'] .star-isle__head {
+  animation: star-isle-breathe-head 3.2s ease-in-out infinite;
 }
 
 /* 行走：整只同步 bob（rig 纯平移）+ 身体摆 + 前肢交替划动 + 后足对角步态 + 尾巴随步 */
@@ -175,10 +180,13 @@ body,
   animation: star-isle-tail-star 0.7s ease-in-out infinite 0.15s;
 }
 
-/* 睡眠：缓慢呼吸、闭眼、慢摆尾 */
-[data-motion='sleep'] .star-isle__body,
-[data-motion='sleep'] .star-isle__head {
+/* 睡眠：缓慢呼吸、闭眼、慢摆尾。头部同样用 translateY 跟随（scaleY 会让
+   星冠错位，见 idle 注释） */
+[data-motion='sleep'] .star-isle__body {
   animation: star-isle-breathe-slow 5.5s ease-in-out infinite;
+}
+[data-motion='sleep'] .star-isle__head {
+  animation: star-isle-breathe-head-slow 5.5s ease-in-out infinite;
 }
 [data-motion='sleep'] .star-isle__tail {
   animation: star-isle-tail 4.5s ease-in-out infinite;
@@ -342,6 +350,21 @@ body,
     transform: scaleY(1);
   }
 }
+/* 头部跟随呼吸：身体吸气鼓起时头部被轻微抬起（-1.5px），呼气回落。
+   用 translateY 而非 scaleY，星冠/耳朵/五官作为整体平移不发生相对错位 */
+@keyframes star-isle-breathe-head {
+  0% {
+    transform: translateY(0);
+    animation-timing-function: ease-out;
+  }
+  50% {
+    transform: translateY(-1.5px);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
 @keyframes star-isle-breathe-slow {
   0% {
     transform: scaleY(1);
@@ -353,6 +376,19 @@ body,
   }
   100% {
     transform: scaleY(1);
+  }
+}
+@keyframes star-isle-breathe-head-slow {
+  0% {
+    transform: translateY(0);
+    animation-timing-function: ease-out;
+  }
+  50% {
+    transform: translateY(-2px);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: translateY(0);
   }
 }
 @keyframes star-isle-blink {
