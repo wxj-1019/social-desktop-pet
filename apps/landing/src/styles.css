@@ -63,6 +63,19 @@ body {
   opacity: 0.6;
 }
 
+/* 邀请兑换区（4.3 状态机）：与报名区同风格，垂直堆叠输入 */
+.waitlist--claim {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px dashed #c9d2e0;
+  flex-direction: column;
+  align-items: center;
+}
+.waitlist--claim input {
+  width: min(320px, 80vw);
+  min-width: 0;
+}
+
 .error {
   color: #d63031;
   font-size: 0.85rem;

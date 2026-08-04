@@ -6,9 +6,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   checkWaitlistRateLimit,
+  hashInviteCode,
   rateWindows,
   registerWaitlistRoutes,
   resetWaitlistRateLimitForTest,
+  WaitlistService,
 } from './waitlist.js';
 
 function makePool(rowCount: number | null = 1) {
@@ -107,5 +109,221 @@ describe('checkWaitlistRateLimit（纯函数）', () => {
     expect(rateWindows.has('ip-other')).toBe(true);
     expect(rateWindows.size).toBe(1);
     vi.useRealTimers();
+  });
+});
+
+describe('邀请状态机（4.3：pending → invited → joined/expired）', () => {
+  /** 脚本化 pool：按调用序执行 handler（返回 rows/rowCount） */
+  function makeScriptedPool(
+    script: Array<(sql: string, params?: unknown[]) => { rows?: unknown[]; rowCount?: number }>,
+  ) {
+    let i = 0;
+    return {
+      query: vi.fn(async (sql: string, params?: unknown[]) =>
+        (script[i++] ?? (() => ({ rows: [] })))(sql, params),
+      ),
+    };
+  }
+
+  const MAIL = { send: vi.fn(async () => undefined) };
+
+  describe('WaitlistService.invite（pending → invited）', () => {
+    it('生成 8 位兑换码 + sha256 落库 + 邀请邮件；非 pending 跳过', async () => {
+      const calls: Array<{ sql: string; params?: unknown[] }> = [];
+      const pool = {
+        query: vi.fn(async (sql: string, params?: unknown[]) => {
+          calls.push({ sql, params });
+          // 第一个邮箱 pending（推进），第二个非 pending（跳过）
+          return { rowCount: String(params?.[0]) === 'a@b.com' ? 1 : 0 };
+        }),
+      };
+      const service = new WaitlistService(pool as never, MAIL, {
+        claimUrlBase: 'https://x.example/claim',
+      });
+
+      const result = await service.invite(['A@b.com', 'already@b.com']);
+
+      // 运营端拿回明文兑换码（adminToken 鉴权端点）；落库是 sha256
+      expect(result.invited).toHaveLength(1);
+      const { email, code } = result.invited[0] as { email: string; code: string };
+      expect(email).toBe('a@b.com');
+      expect(code).toMatch(/^[A-Z2-9]{8}$/);
+      expect(result.skipped).toEqual(['already@b.com']);
+      expect(MAIL.send).toHaveBeenCalledTimes(1);
+      const [to, subject, html] = MAIL.send.mock.calls[0] as unknown as [string, string, string];
+      expect(to).toBe('a@b.com');
+      expect(subject).toContain('邀请');
+      // 落库的是 sha256 哈希，不是明文
+      const updateCall = calls.find((c) => c.sql.includes("status = 'invited'"));
+      const params = updateCall?.params as [string, string, number];
+      expect(params[1]).toBe(hashInviteCode(code));
+      expect(params[1]).not.toContain(code);
+      // 邮件带兑换码与链接
+      expect(html).toContain(code);
+      expect(html).toContain('https://x.example/claim');
+    });
+
+    it('非法邮箱直接跳过（不落库不发信）', async () => {
+      const pool = makeScriptedPool([]);
+      const service = new WaitlistService(pool as never, MAIL);
+      const result = await service.invite(['not-an-email']);
+      expect(result).toEqual({ invited: [], skipped: ['not-an-email'] });
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('WaitlistService.claim（invited → joined）', () => {
+    const INVITED_ROW = {
+      status: 'invited',
+      invite_code_hash: hashInviteCode('ABCD2345'),
+      invite_expires_at: new Date(Date.now() + 60_000),
+    };
+
+    it('正确码 → ok；错误码 → invalid_code', async () => {
+      const pool = makeScriptedPool([
+        () => ({ rows: [INVITED_ROW] }), // select
+        () => ({ rows: [] }), // update joined
+      ]);
+      const service = new WaitlistService(pool as never);
+      expect(await service.claim('a@b.com', 'ABCD2345')).toEqual({ ok: true });
+      const updateSql = pool.query.mock.calls[1]?.[0] as string;
+      expect(updateSql).toContain("status = 'joined'");
+
+      const poolBad = makeScriptedPool([() => ({ rows: [INVITED_ROW] })]);
+      const serviceBad = new WaitlistService(poolBad as never);
+      expect(await serviceBad.claim('a@b.com', 'WRONG123')).toEqual({
+        ok: false,
+        reason: 'invalid_code',
+      });
+    });
+
+    it('超期 → 惰性置 expired 并返回 expired', async () => {
+      const expiredRow = {
+        ...INVITED_ROW,
+        invite_expires_at: new Date(Date.now() - 1000),
+      };
+      const pool = makeScriptedPool([
+        () => ({ rows: [expiredRow] }),
+        () => ({ rows: [] }), // update expired
+      ]);
+      const service = new WaitlistService(pool as never);
+      expect(await service.claim('a@b.com', 'ABCD2345')).toEqual({ ok: false, reason: 'expired' });
+      const updateSql = pool.query.mock.calls[1]?.[0] as string;
+      expect(updateSql).toContain("status = 'expired'");
+    });
+
+    it('pending → not_invited；joined → already_joined', async () => {
+      const service = new WaitlistService(
+        makeScriptedPool([() => ({ rows: [{ status: 'pending' }] })]) as never,
+      );
+      expect(await service.claim('p@b.com', 'ABCD2345')).toEqual({
+        ok: false,
+        reason: 'not_invited',
+      });
+
+      const joined = new WaitlistService(
+        makeScriptedPool([() => ({ rows: [{ status: 'joined' }] })]) as never,
+      );
+      expect(await joined.claim('j@b.com', 'ABCD2345')).toEqual({
+        ok: false,
+        reason: 'already_joined',
+      });
+    });
+  });
+
+  describe('WaitlistService.bindJoinedUser（注册绑定）', () => {
+    it('仅 invited/joined 绑定 claimed_by（幂等）', async () => {
+      const pool = makeScriptedPool([]);
+      const service = new WaitlistService(pool as never);
+      await service.bindJoinedUser('a@b.com', 'u1');
+      const [sql, params] = pool.query.mock.calls[0] as [string, unknown[]];
+      expect(sql).toContain("status in ('invited', 'joined')");
+      expect(sql).toContain('claimed_by is null');
+      expect(params).toEqual(['a@b.com', 'u1']);
+    });
+  });
+
+  describe('路由端点', () => {
+    it('/waitlist/invite：未配置 adminToken → 404；错 token → 401；对 token → 200', async () => {
+      // 未配置 adminToken：端点不暴露（404）
+      const hiddenApp = new Hono();
+      registerWaitlistRoutes(hiddenApp, { pool: makePool(1) as never });
+      const hidden = await hiddenApp.request('/waitlist/invite', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ emails: ['a@b.com'] }),
+      });
+      expect(hidden.status).toBe(404);
+
+      const app = new Hono();
+      registerWaitlistRoutes(app, { pool: makePool(1) as never, adminToken: 'op-secret' });
+      const noAuth = await app.request('/waitlist/invite', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer wrong' },
+        body: JSON.stringify({ emails: ['a@b.com'] }),
+      });
+      expect(noAuth.status).toBe(401);
+
+      const pool = {
+        query: vi.fn(async () => ({ rowCount: 1 })),
+      };
+      const appOk = new Hono();
+      registerWaitlistRoutes(appOk, {
+        pool: pool as never,
+        adminToken: 'op-secret',
+      });
+      const ok = await appOk.request('/waitlist/invite', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer op-secret' },
+        body: JSON.stringify({ emails: ['a@b.com'] }),
+      });
+      expect(ok.status).toBe(200);
+      const body = (await ok.json()) as { invited: Array<{ email: string; code: string }> };
+      expect(body.invited[0]?.email).toBe('a@b.com');
+      expect(body.invited[0]?.code).toMatch(/^[A-Z2-9]{8}$/);
+    });
+
+    it('/waitlist/claim：成功 200；错误码 401；格式 400', async () => {
+      const pool = {
+        query: vi.fn(async (sql: string) => {
+          if (sql.includes('select status')) {
+            return {
+              rows: [
+                {
+                  status: 'invited',
+                  invite_code_hash: hashInviteCode('ABCD2345'),
+                  invite_expires_at: new Date(Date.now() + 60_000),
+                },
+              ],
+            };
+          }
+          return { rows: [] };
+        }),
+      };
+      const app = new Hono();
+      registerWaitlistRoutes(app, { pool: pool as never });
+
+      const ok = await app.request('/waitlist/claim', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'a@b.com', code: 'ABCD2345' }),
+      });
+      expect(ok.status).toBe(200);
+
+      const bad = await app.request('/waitlist/claim', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'a@b.com', code: 'WRONG123' }),
+      });
+      expect(bad.status).toBe(401);
+      expect(await bad.json()).toEqual({ error: 'invalid_code' });
+
+      const malformed = await app.request('/waitlist/claim', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'a@b.com', code: 'short' }),
+      });
+      expect(malformed.status).toBe(400);
+    });
   });
 });

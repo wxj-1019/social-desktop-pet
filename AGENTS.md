@@ -86,6 +86,6 @@ pnpm dev:server          # 自动应用未执行的 migrations（幂等）
 - **输出审核**：规则版已落地（`moderation-rules.ts`：PII/敏感细节拦截 → blocked_reply 阻断路径）；注入 `OutputModerator` 走 12.5 免费 Moderation（含 allowlist 语义核对）的供应商实现待密钥接入
 - **V-13 分类器**：LLM 版已落地（`input-classifier.ts`：危机三级 + 类别 + 路由同源分类，**多轮上下文判定**，失败回退规则版；`classifierLlm` 独立注入可走低成本档；`crisis-resources.ts` 本地化热线库）；PsyCrisis-Bench 种子训练版与多轮阈值校准留评测集（V-16）阶段
 - Live2D Cubism SDK 集成 —— 待 V-1 许可确认后引入
-- 13.2 邀请邮件：MailProvider 抽象 + SMTP 实现已接入（waitlist 报名确认 + 邮箱 OTP 登录，`/auth/otp/request` + `/auth/otp/login`，验证码 sha256 落库/15min TTL/5 次尝试/60s 冷却；`PET_DEV_OTP_CODE_IN_RESPONSE` 仅本地开发返回验证码）；正式邀请流程（pending → invited 状态机）待产品确认
+- 13.2 邀请邮件/状态机：MailProvider + SMTP 已接入（waitlist 报名确认 + 邮箱 OTP 登录，`/auth/otp/request` + `/auth/otp/login`，验证码 sha256 落库/15min TTL/5 次尝试/60s 冷却；`PET_DEV_OTP_CODE_IN_RESPONSE` 仅本地开发返回验证码）；**邀请状态机已落地**（`WaitlistService`：pending → invited（8 位兑换码 sha256 落库 + 邀请邮件 + 30 天过期）→ claim 兑换 joined → register 绑定 claimed_by；invited 超期惰性 expired；`POST /waitlist/invite` 运营端点（WAITLIST_ADMIN_TOKEN，未配置 404）+ `POST /waitlist/claim` 公开兑换 + landing 兑换页）
 
 详见设计稿 14.2 实施路线与决策清单 V 类验证项。

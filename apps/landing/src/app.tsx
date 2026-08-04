@@ -1,23 +1,33 @@
 /**
  * Waitlist 落地页 —— 第 0–1 周交付物（4.3 传播循环入口）。
- * 收集邮箱 → POST /waitlist（自建后端 D-13；13.2 邀请邮件待邮件供应商接入）。
+ * 收集邮箱 → POST /waitlist（自建后端 D-13）；邀请兑换（4.3 状态机）：
+ * 邀请邮件链接带 ?code=&email= 自动预填，提交 → POST /waitlist/claim。
  * 开发默认连本机后端，部署时经 VITE_WAITLIST_API 指向线上 API。
  */
 import { useState } from 'react';
 
 type SubmitState = 'idle' | 'submitting' | 'done' | 'error';
+type ClaimState = 'idle' | 'submitting' | 'done' | 'error';
 
 /** 后端 API 基址（landing 独立部署，跨源请求由服务端 /waitlist CORS 放开） */
 const WAITLIST_API = import.meta.env.VITE_WAITLIST_API ?? 'http://127.0.0.1:8787';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function App() {
   const [email, setEmail] = useState('');
   const [state, setState] = useState<SubmitState>('idle');
   const [errorText, setErrorText] = useState('');
 
+  // 邀请兑换（邮件链接 ?code=&email= 预填）
+  const params = new URLSearchParams(window.location.search);
+  const [claimCode, setClaimCode] = useState(params.get('code') ?? '');
+  const [claimEmail, setClaimEmail] = useState(params.get('email') ?? '');
+  const [claimState, setClaimState] = useState<ClaimState>('idle');
+  const [claimError, setClaimError] = useState('');
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!EMAIL_PATTERN.test(email)) {
       setErrorText('请输入有效邮箱地址。');
       setState('error');
       return;
@@ -39,6 +49,41 @@ export function App() {
     } catch {
       setErrorText('报名暂时失败，请稍后再试。');
       setState('error');
+    }
+  }
+
+  /** 邀请兑换：校验码（invited → joined） */
+  async function claim(e: React.FormEvent) {
+    e.preventDefault();
+    if (!EMAIL_PATTERN.test(claimEmail) || claimCode.length !== 8) {
+      setClaimError('请输入有效的邮箱和 8 位兑换码。');
+      setClaimState('error');
+      return;
+    }
+    setClaimState('submitting');
+    try {
+      const res = await fetch(`${WAITLIST_API}/waitlist/claim`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: claimEmail, code: claimCode }),
+      });
+      if (res.status === 401) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        const reasons: Record<string, string> = {
+          invalid_code: '兑换码不正确，请检查后重试。',
+          expired: '兑换码已过期（30 天有效）。',
+          not_invited: '该邮箱暂未收到邀请。',
+          already_joined: '该邮箱已兑换过邀请。',
+        };
+        setClaimError(reasons[body.error ?? 'invalid_code'] ?? '兑换失败，请稍后再试。');
+        setClaimState('error');
+        return;
+      }
+      if (!res.ok) throw new Error(`claim ${res.status}`);
+      setClaimState('done');
+    } catch {
+      setClaimError('兑换暂时失败，请稍后再试。');
+      setClaimState('error');
     }
   }
 
@@ -71,6 +116,36 @@ export function App() {
               {state === 'submitting' ? '提交中…' : '加入等待名单'}
             </button>
             {state === 'error' && <p className="error">{errorText}</p>}
+          </form>
+        )}
+
+        {claimState === 'done' ? (
+          <div className="success">
+            <h2>兑换成功 🎉</h2>
+            <p>邀请已生效，注册星屿账号后即可进入 Beta 体验。</p>
+          </div>
+        ) : (
+          <form className="waitlist waitlist--claim" onSubmit={claim}>
+            <input
+              type="email"
+              placeholder="邀请邮箱"
+              value={claimEmail}
+              onChange={(e) => setClaimEmail(e.target.value)}
+              disabled={claimState === 'submitting'}
+              aria-label="邀请邮箱"
+            />
+            <input
+              type="text"
+              placeholder="8 位兑换码"
+              value={claimCode}
+              onChange={(e) => setClaimCode(e.target.value.toUpperCase())}
+              disabled={claimState === 'submitting'}
+              aria-label="兑换码"
+            />
+            <button type="submit" disabled={claimState === 'submitting'}>
+              {claimState === 'submitting' ? '兑换中…' : '兑换邀请码'}
+            </button>
+            {claimState === 'error' && <p className="error">{claimError}</p>}
           </form>
         )}
 

@@ -25,7 +25,7 @@ import { PgMemoryExtractStore } from './lib/memory-store.js';
 import { RealtimeServer } from './realtime/ws.js';
 import { createAuthRouter, type AuthDeps } from './routes/auth.js';
 import { createBusinessRouter, type BusinessDeps } from './routes/business.js';
-import { registerWaitlistRoutes, type WaitlistDeps } from './routes/waitlist.js';
+import { registerWaitlistRoutes, WaitlistService, type WaitlistDeps } from './routes/waitlist.js';
 
 function env(name: string): string {
   const v = process.env[name];
@@ -76,15 +76,20 @@ export function buildApp(deps: AppDeps) {
     });
   }
 
-  const auth = createAuthRouter(deps);
+  const auth = createAuthRouter({
+    ...deps,
+    // 4.3 邀请状态机：注册绑定（joined + claimed_by）
+    waitlist: new WaitlistService(deps.pool, deps.mail),
+  });
   app.route('/auth', auth);
 
-  // 4.3 Waitlist 公开报名：landing 是独立 vite app（跨源 POST 需要 CORS，仅此路由放开）
+  // 4.3 Waitlist：公开报名/兑换 + 运营邀请（WAITLIST_ADMIN_TOKEN 未配置时 invite 404）
   app.use('/waitlist', cors());
-  // 13.2 事务邮件：复用 main() 里构造的 mailProvider（SMTP 或降级日志）
   registerWaitlistRoutes(app, {
     pool: deps.pool,
     mail: deps.mail,
+    adminToken: process.env['WAITLIST_ADMIN_TOKEN'],
+    claimUrlBase: process.env['WAITLIST_CLAIM_URL_BASE'],
   });
 
   const business = createBusinessRouter({

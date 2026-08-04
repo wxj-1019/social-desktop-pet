@@ -30,6 +30,10 @@ export interface AuthDeps {
   };
   /** 邮箱 OTP（13.2 事务邮件；未注入则 /otp/* 返回 501） */
   otp?: OtpService;
+  /** waitlist 注册绑定（4.3 邀请状态机：invited/joined → joined + claimed_by；可选注入） */
+  waitlist?: {
+    bindJoinedUser(email: string, userId: string): Promise<void>;
+  };
 }
 
 export function createAuthRouter(deps: AuthDeps): Hono {
@@ -54,6 +58,13 @@ export function createAuthRouter(deps: AuthDeps): Hono {
       String(platform ?? 'windows'),
       defaultNickname,
     );
+    // 4.3 邀请状态机：注册即绑定 waitlist（invited/joined → joined + claimed_by；
+    // 幂等；失败仅日志不阻塞注册）
+    if (deps.waitlist) {
+      await deps.waitlist
+        .bindJoinedUser(email.toLowerCase(), userId)
+        .catch((e) => console.warn('[waitlist] 注册绑定失败：', (e as Error).message));
+    }
     return c.json({ userId }, 201);
   });
 
