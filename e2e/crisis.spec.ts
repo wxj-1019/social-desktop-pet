@@ -40,7 +40,7 @@ test('自伤消息 → 危机协议话术（11.8 high：12356 热线送达，不
   await expect(page.locator('.chat-panel')).toBeVisible();
 
   // 命中规则预筛 high（自伤关键词）
-  await page.locator('.chat-input-row input').fill('我不想活了');
+  await page.locator('.chat-input-row textarea').fill('我不想活了');
   await page.getByRole('button', { name: '发送' }).click();
 
   // 危机协议话术送达：done 帧回退 responseText（含 12356 全国心理援助热线）

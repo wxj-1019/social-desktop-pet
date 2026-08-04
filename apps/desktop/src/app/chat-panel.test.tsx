@@ -179,4 +179,57 @@ describe('ChatPanel（云端聊天 → chatEvent 联动）', () => {
 
     expect(screen.getByText('没有 Electron 也能聊')).not.toBeNull();
   });
+
+  it('流式中点击"停止回复"→ onAbort（不本地兜底、不弹错误），按钮恢复发送', async () => {
+    installFakePet();
+    vi.spyOn(api, 'chatStream').mockImplementation(async (_msg, handlers, _threadId, signal) => {
+      // 模拟真实流式：挂起直到外部 signal 中止 → onAbort
+      await new Promise<void>((resolve) => {
+        signal?.addEventListener('abort', () => {
+          handlers.onAbort?.();
+          resolve();
+        });
+      });
+    });
+
+    render(<ChatPanel />);
+    fireEvent.change(screen.getByPlaceholderText(/说点什么/), { target: { value: '你好' } });
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await act(async () => {});
+
+    // 流式中：发送按钮变为停止按钮
+    const stop = screen.getByRole('button', { name: '停止回复' });
+    expect(stop).not.toBeNull();
+    fireEvent.click(stop);
+    await act(async () => {});
+
+    // 停止后：无本地兜底（无 fallback done 事件、无错误提示），按钮恢复发送
+    expect(screen.queryByText('云端暂不可用，已切换本地回应')).toBeNull();
+    expect(screen.getByRole('button', { name: '发送' })).not.toBeNull();
+    expect(screen.getByRole('textbox', { name: '给星屿发消息' })).not.toBeNull();
+  });
+
+  it('多行输入：Enter 发送、Shift+Enter 换行不发送', async () => {
+    installFakePet();
+    vi.spyOn(api, 'chatStream').mockImplementation(async (_msg, handlers) => {
+      handlers.onDone({ dialogue: '收到', emotion: 'warm', actionIntent: 'nod', intensity: 1 });
+    });
+
+    render(<ChatPanel />);
+    const input = screen.getByRole('textbox', { name: '给星屿发消息' }) as HTMLTextAreaElement;
+
+    // Shift+Enter：不发送，文本保留换行
+    fireEvent.change(input, { target: { value: '第一行' } });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: '发送' })).not.toBeNull();
+    expect(input.value).toBe('第一行');
+
+    // Enter：发送并清空输入
+    fireEvent.change(input, { target: { value: '第二行' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await act(async () => {});
+    expect(input.value).toBe('');
+  });
 });

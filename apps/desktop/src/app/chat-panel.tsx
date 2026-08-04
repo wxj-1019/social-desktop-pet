@@ -16,7 +16,7 @@
  * - 网络/模型异常 try/catch 兜底，streaming 永不卡死
  */
 import type { MemoryConfirmation, ModelOutput, SavedMemoryBrief } from '@pet/protocol';
-import { Send, Sparkles } from 'lucide-react';
+import { Send, Sparkles, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { api } from '../lib/api/client.js';
@@ -59,6 +59,8 @@ export function ChatPanel() {
   const seenSavedIdsRef = useRef<Set<string>>(new Set());
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollAbortRef = useRef<boolean>(false);
+  /** 流式中止控制器（"停止回复"按钮） */
+  const abortRef = useRef<AbortController | null>(null);
 
   /** "已记住"通知（4s 自动消失，含撤销入口）+ 桌宠气泡 */
   function showSavedNotice(saved: SavedMemoryBrief) {
@@ -158,6 +160,14 @@ export function ChatPanel() {
     };
   }, []);
 
+  // 历史加载完成 → 定位到最新消息（scrollTo 守卫只在用户已贴底时自动滚，
+  // 打开面板时 scrollTop=0 不会触发——这里显式滚一次）
+  useEffect(() => {
+    if (!historyLoaded) return;
+    const el = listRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'auto' });
+  }, [historyLoaded]);
+
   // 新消息滚动到底部（只在用户已在底部时自动滚动，不抢用户上滚查看历史；
   // 流式时用 'auto' 避免 smooth 动画每 token 重启）
   useEffect(() => {
@@ -168,6 +178,11 @@ export function ChatPanel() {
       el.scrollTo({ top: el.scrollHeight, behavior: streaming ? 'auto' : 'smooth' });
     }
   }, [entries, streaming]);
+
+  /** 中止当前流式回复（保留已生成文本；不触发本地兜底） */
+  function stopStreaming() {
+    abortRef.current?.abort();
+  }
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
@@ -217,6 +232,8 @@ export function ChatPanel() {
       setStreaming(false);
     };
 
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       await api.chatStream(
         text,
@@ -244,12 +261,26 @@ export function ChatPanel() {
           onError: () => {
             fallbackToLocal();
           },
+          // 用户主动停止：保留已生成文本，静默结束（不兜底、不弹错误）
+          onAbort: () => {
+            setStreaming(false);
+            if (petId) {
+              setEntries((prev) =>
+                prev.map((entry) =>
+                  entry.id === petId && entry.text === '' ? { ...entry, text: '…' } : entry,
+                ),
+              );
+            }
+          },
         },
         'local-thread',
+        controller.signal,
       );
     } catch {
       // 网络异常（如模型供应商超时）不能卡死 UI——本地兜底
       fallbackToLocal();
+    } finally {
+      abortRef.current = null;
     }
   }
 
@@ -295,7 +326,9 @@ export function ChatPanel() {
             <span className="chat-bubble">
               {message.text || (
                 <span className="typing-dots" aria-label="星屿正在回复">
-                  •••
+                  <span aria-hidden="true" />
+                  <span aria-hidden="true" />
+                  <span aria-hidden="true" />
                 </span>
               )}
             </span>
@@ -336,21 +369,36 @@ export function ChatPanel() {
         <label className="sr-only" htmlFor="cloud-chat-input">
           给星屿发消息
         </label>
-        <input
+        <textarea
           id="cloud-chat-input"
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="说点什么…（Enter 发送）"
+          onKeyDown={(event) => {
+            // Enter 发送 / Shift+Enter 换行（多行输入）
+            if (event.key === 'Enter' && !event.shiftKey && !streaming) {
+              event.preventDefault();
+              void send(event);
+            }
+          }}
+          placeholder={streaming ? '星屿正在回复…' : '说点什么…（Enter 发送）'}
           maxLength={2000}
+          rows={1}
+          disabled={streaming || !historyLoaded}
         />
-        <button
-          type="submit"
-          aria-label="发送"
-          title="发送"
-          disabled={!input.trim() || streaming || !historyLoaded}
-        >
-          <Send size={17} aria-hidden="true" />
-        </button>
+        {streaming ? (
+          <button type="button" aria-label="停止回复" title="停止回复" onClick={stopStreaming}>
+            <Square size={15} aria-hidden="true" fill="currentColor" />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            aria-label="发送"
+            title="发送"
+            disabled={!input.trim() || !historyLoaded}
+          >
+            <Send size={17} aria-hidden="true" />
+          </button>
+        )}
       </form>
     </main>
   );

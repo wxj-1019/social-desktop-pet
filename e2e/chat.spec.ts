@@ -42,7 +42,7 @@ test('登录 → 聊天 tab → SSE 流式回复', async () => {
   await expect(page.locator('.chat-panel')).toBeVisible();
 
   // 发送消息 → 收到流式回复（真实模型或骨架降级，均为非空回复）
-  await page.locator('.chat-input-row input').fill('你好呀');
+  await page.locator('.chat-input-row textarea').fill('你好呀');
   await page.getByRole('button', { name: '发送' }).click();
   // 流式占位消息出现后，等待云端或本地兜底完成。
   await expect(page.locator('.chat-msg.pet').last()).toBeVisible({ timeout: 15_000 });

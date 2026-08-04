@@ -175,21 +175,26 @@ export const api = {
   },
   /** 10.1 chat-flow SSE 流式聊天（fetch + ReadableStream；不用 EventSource 以携带 Authorization）
    *  done 帧：完整 ModelOutput（dialogue/emotion/actionIntent/intensity），
-   *  safeParse 失败 → onError('模型回复格式无效')，不调 onDone。 */
+   *  safeParse 失败 → onError('模型回复格式无效')，不调 onDone。
+   *  signal：调用方可传外部 AbortSignal（"停止回复"）；用户中止 → onAbort（不视为错误） */
   async chatStream(
     message: string,
     handlers: {
       onToken: (text: string) => void;
       onDone: (output: ModelOutput) => void;
       onError?: (message: string) => void;
+      onAbort?: () => void;
     },
     threadId?: string,
+    signal?: AbortSignal,
   ): Promise<void> {
-    // 流式对话超时放宽（真实模型生成可能 30s+）；超时经 AbortError → catch → onError
+    // 流式对话超时放宽（真实模型生成可能 30s+）；超时/外部中止经 AbortError → catch
+    const timeoutSignal = AbortSignal.timeout(120_000);
+    const combined = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
     const res = await apiFetch('/chat', {
       method: 'POST',
       body: JSON.stringify({ message, threadId }),
-      signal: AbortSignal.timeout(120_000),
+      signal: combined,
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -226,7 +231,12 @@ export const api = {
         }
       }
     } catch (e) {
-      handlers.onError?.((e as Error).message);
+      // 用户主动停止（外部 signal aborted）→ onAbort，不按错误处理
+      if (signal?.aborted) {
+        handlers.onAbort?.();
+      } else {
+        handlers.onError?.((e as Error).message);
+      }
     } finally {
       reader.releaseLock();
     }

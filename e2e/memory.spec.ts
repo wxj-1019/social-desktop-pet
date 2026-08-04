@@ -47,7 +47,7 @@ test('普通偏好自动保存 → "已记住"提示（可撤销）', async () =
   await loginAndOpenChat(page);
 
   // 发送偏好句（规则抽取：我喜欢 → preference/low → 自动保存）
-  await page.locator('.chat-input-row input').fill('我喜欢抹茶');
+  await page.locator('.chat-input-row textarea').fill('我喜欢抹茶');
   await page.getByRole('button', { name: '发送' }).click();
 
   // 聊天回复完成后（最多 ~8s 轮询窗口）出现"已记住"通知（60s 内自动保存被差分命中）
@@ -64,7 +64,7 @@ test('健康敏感句 → 确认卡 → "记住"落库（D-3 分级确认）', a
   await expect(page.locator('.chat-panel')).toBeVisible({ timeout: 15_000 });
 
   // 敏感句（规则抽取：health → high → 弹确认卡而非自动保存）
-  await page.locator('.chat-input-row input').fill('我有糖尿病，每天要打胰岛素');
+  await page.locator('.chat-input-row textarea').fill('我有糖尿病，每天要打胰岛素');
   await page.getByRole('button', { name: '发送' }).click();
 
   // 确认卡出现（异步抽取完成后轮询命中）
