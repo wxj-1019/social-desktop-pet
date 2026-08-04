@@ -4,7 +4,12 @@ import type { LlmClient } from '../llm/types.js';
 import { StateGraph, type NodeFn } from '../runtime/index.js';
 import { END, START } from '../runtime/types.js';
 
-import { crisisResponseNode, authNode } from './chat-flow-nodes.js';
+import {
+  crisisResponseNode,
+  authNode,
+  classifyInputNode,
+  localReplyNode,
+} from './chat-flow-nodes.js';
 import { initialChatFlowState } from './chat-flow-state.js';
 import type { ChatFlowState } from './chat-flow-state.js';
 import { buildChatFlow } from './chat-flow.js';
@@ -309,5 +314,45 @@ describe('chat-flow graph', () => {
     expect(result.retrievedMemories).toEqual([]);
     expect(result.retrievedMemoryIds).toEqual([]);
     expect(result.contextPrompt).toContain('暂无相关记忆');
+  });
+
+  it('L0 路由：本地模板回复，不调模型、不检索记忆、不触发抽取（10.3）', async () => {
+    // 路由判定返回 L0（动画/状态/固定事件档）→ 条件边走 local_reply
+    const l0Route: NodeFn<ChatFlowState> = async () => ({
+      routing: { level: 'L0', reason: 'test' },
+    });
+    const graph = new StateGraph<ChatFlowState>()
+      .addNode('auth', authNode)
+      .addNode('classify_input', classifyInputNode)
+      .addNode('route', l0Route)
+      .addNode('retrieve_memory', retrieveMemoryNodeFactory())
+      .addNode('local_reply', localReplyNode)
+      .addEdge(START, 'auth')
+      .addEdge('auth', 'classify_input')
+      .addConditionalEdge('classify_input', (s) =>
+        s.inputClassification?.crisisLevel && s.inputClassification.crisisLevel !== 'none'
+          ? 'crisis_response'
+          : 'route',
+      )
+      .addConditionalEdge('route', (s) =>
+        s.routing?.level === 'L0' ? 'local_reply' : 'retrieve_memory',
+      )
+      .addEdge('retrieve_memory', END)
+      .addEdge('local_reply', END)
+      .compile();
+
+    const state = initialChatFlowState({
+      threadId: 'l0-1',
+      userId: 'u1',
+      deviceId: 'd1',
+      userMessage: '你好',
+      scenario: 'private_chat',
+    });
+    const result = await graph.invoke(state, { threadId: 'l0-1' });
+    expect(result.responseText).toContain('你好呀');
+    // 不调模型、不检索、不抽记忆（区别于 L1 路径的 generate/retrieve/approve）
+    expect(result.modelOutput).toBeUndefined();
+    expect(result.retrievedMemoryIds).toEqual([]);
+    expect(result.memoryExtractTriggered).toBe(false);
   });
 });

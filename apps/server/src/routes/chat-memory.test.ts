@@ -26,13 +26,20 @@ function makePool() {
     }),
     release: vi.fn(),
   };
+  // 抽取窗口行（memory_extracted_at 可为 null=未抽取 / Date=已抽取，幂等测试覆盖）
+  type TurnRow = { message_id: string; content: string; memory_extracted_at: Date | null };
   const pool = {
     connect: vi.fn(async () => client),
     // saveChatMessages（insert）与 runMemoryExtract（select 最近 user turn）共用
     query: vi.fn(async (sql: string) => {
       const first = sql.trim().toLowerCase();
-      if (first.startsWith('select message_id, content from chat_messages')) {
-        return { rows: [{ message_id: TURN_ID, content: '我喜欢抹茶。' }] };
+      if (first.startsWith('select message_id, content, memory_extracted_at from chat_messages')) {
+        const row: TurnRow = {
+          message_id: TURN_ID,
+          content: '我喜欢抹茶。',
+          memory_extracted_at: null,
+        };
+        return { rows: [row] };
       }
       return { rows: [] };
     }),
@@ -97,6 +104,48 @@ describe('POST /chat 触发异步记忆抽取（10.6）', () => {
       expect.stringContaining('insert into chat_messages'),
       expect.anything(),
     );
+    // 抽取完成 → 幂等标记窗口（memory_extracted_at，防重叠窗口重复触发）
+    await vi.waitFor(() =>
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('update chat_messages set memory_extracted_at'),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('最新 user turn 已抽取过 → 跳过（幂等标记）', async () => {
+    const { pool } = makePool();
+    // 覆盖抽取窗口查询：最新 turn 的 memory_extracted_at 已打标 → 幂等跳过
+    const orig = pool.query.getMockImplementation()!;
+    pool.query.mockImplementation(async (sql: string) => {
+      if (
+        String(sql).includes('from chat_messages') &&
+        String(sql).includes('memory_extracted_at')
+      ) {
+        return {
+          rows: [{ message_id: TURN_ID, content: '我喜欢抹茶。', memory_extracted_at: new Date() }],
+        };
+      }
+      return orig(sql);
+    });
+    const memoryStore = makeMemoryStore();
+    const honoApp = new Hono<{ Variables: BusinessVariables }>();
+    registerChatRoutes(honoApp, {
+      jwt,
+      pool: pool as never,
+      memoryStore: memoryStore as never,
+    });
+
+    const res = await postChat(honoApp, '我喜欢抹茶。');
+    expect(res.status).toBe(200);
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(memoryStore.persistMemory).not.toHaveBeenCalled();
+    expect(memoryStore.findSimilar).not.toHaveBeenCalled();
+    // 无 update 标记调用
+    expect(
+      pool.query.mock.calls.some(([sql]) => String(sql).includes('set memory_extracted_at')),
+    ).toBe(false);
   });
 
   it('未注入 memoryStore → 跳过抽取（不查 owner turns）', async () => {
@@ -108,7 +157,7 @@ describe('POST /chat 触发异步记忆抽取（10.6）', () => {
     expect(res.status).toBe(200);
 
     const memorySelects = pool.query.mock.calls.filter(([sql]) =>
-      String(sql).includes('select message_id, content from chat_messages'),
+      String(sql).includes('select message_id, content, memory_extracted_at from chat_messages'),
     );
     expect(memorySelects).toHaveLength(0);
   });

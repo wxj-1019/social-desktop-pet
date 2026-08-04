@@ -209,8 +209,9 @@ export class PgMemoryExtractStore implements MemoryExtractStore, MemoryRetrieval
       ]);
       const { rows } = await client.query(
         `insert into memory_confirmations (
-           owner_user_id, category, value, importance, source_type, sensitivity, source_turn_ids
-         ) values ($1, $2, $3, $4, $5, $6, $7)
+           owner_user_id, category, value, importance, source_type, sensitivity,
+           source_turn_ids, superseded_memory_id
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8)
          returning confirmation_id`,
         [
           input.ownerUserId,
@@ -220,6 +221,7 @@ export class PgMemoryExtractStore implements MemoryExtractStore, MemoryRetrieval
           input.sourceType,
           input.sensitivity,
           input.sourceTurnIds,
+          input.supersedeMemoryId ?? null,
         ],
       );
       await client.query('commit');

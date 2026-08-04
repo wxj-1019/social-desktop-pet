@@ -103,9 +103,10 @@ test('记忆中心：查看来源 → 修改 → 删除（11.3）', async () => 
     timeout: 15_000,
   });
 
-  // 删除（置失效不物理删除）→ 列表清空该项
+  // 删除（置失效不物理删除）→ 二次确认后列表清空该项
   const edited = page.locator('.memory-item').filter({ hasText: '我喜欢焙茶' }).first();
   await edited.getByRole('button', { name: '删除' }).click();
+  await edited.getByRole('button', { name: '确认删除？' }).click();
   await expect(page.locator('.memory-item').filter({ hasText: '我喜欢焙茶' })).toHaveCount(0, {
     timeout: 15_000,
   });

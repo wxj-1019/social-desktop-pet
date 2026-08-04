@@ -227,6 +227,44 @@ describe('memory-extract 管线（10.6 全链）', () => {
     expect(result.persistedCount).toBe(1);
   });
 
+  it('去重：敏感 UPDATE → 进确认队列且不置失效（拒绝不丢数据；确认后服务端完成纠正链）', async () => {
+    const similar: SimilarMemory[] = [
+      {
+        memoryId: 'mem-1',
+        value: '我工资是 8000',
+        category: 'fact',
+        sourceType: 'user_stated',
+      },
+    ];
+    // 候选 sensitivity=high（财务类）→ UPDATE 触发 tiered 确认
+    const llm = mockLlmQueue([
+      JSON.stringify([
+        {
+          value: '我工资涨到 12000 了',
+          category: 'fact',
+          importance: 7,
+          sourceType: 'user_stated',
+          sensitivity: 'high',
+        },
+      ]),
+      '{"action":"UPDATE","targetMemoryId":"mem-1","reason":"工资变了"}',
+    ]);
+    const { store, calls } = makeMockStore({ findSimilar: async () => similar });
+    const graph = buildMemoryExtractFlow({ llm, store });
+    const result = await graph.invoke(baseState(['我工资涨到 12000 了。']), { threadId: 't1' });
+
+    expect(result.dedupeActions?.[0]?.action).toBe('UPDATE');
+    expect(result.pendingConfirmation).toHaveLength(1);
+    // 关键：不立即置失效旧记忆（此前实现会 invalidate → 拒绝确认即数据丢失）
+    expect(calls.invalidated).toHaveLength(0);
+    expect(calls.persisted).toHaveLength(0);
+    expect(calls.confirmations[0]).toMatchObject({
+      supersedeMemoryId: 'mem-1',
+      value: '我工资涨到 12000 了',
+    });
+    expect(calls.audits.map((a) => a.action)).toContain('pending_confirm');
+  });
+
   it('去重：LLM 裁决 DELETE → 旧记忆置失效、不新增', async () => {
     const similar: SimilarMemory[] = [
       { memoryId: 'mem-2', value: '晚上要去跑步', category: 'event', sourceType: 'user_stated' },

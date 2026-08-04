@@ -158,6 +158,8 @@ function MemoryItem({
   const [draft, setDraft] = useState(memory.value);
   const [showSource, setShowSource] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** 删除确认（二次点击防误删：置失效不可见，纠正链恢复只覆盖被纠正的旧条） */
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   async function save() {
     const value = draft.trim();
@@ -174,13 +176,20 @@ function MemoryItem({
     }
   }
 
+  /** 二次确认：第一次点击进入确认态（按钮文案变"确认删除？"），2s 未操作自动复位 */
   async function remove() {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      window.setTimeout(() => setConfirmingDelete(false), 2000);
+      return;
+    }
     setBusy(true);
     try {
       await api.invalidateMemory(memory.memoryId);
       onChanged();
     } catch {
       onError('删除失败，请重试');
+      setConfirmingDelete(false);
     } finally {
       setBusy(false);
     }
@@ -262,12 +271,16 @@ function MemoryItem({
             </button>
             <button
               type="button"
-              className="secondary-button memory-item__danger"
+              className={
+                confirmingDelete
+                  ? 'secondary-button memory-item__danger memory-item__danger--confirm'
+                  : 'secondary-button memory-item__danger'
+              }
               disabled={busy}
               onClick={() => void remove()}
             >
               <Trash2 size={13} aria-hidden="true" />
-              删除
+              {confirmingDelete ? '确认删除？' : '删除'}
             </button>
           </>
         )}

@@ -81,6 +81,12 @@ export interface ConfirmationDraft {
   sourceType: MemorySourceType;
   sensitivity: 'low' | 'medium' | 'high';
   sourceTurnIds: string[];
+  /**
+   * 纠正链（10.5）：候选是对旧记忆的 UPDATE 纠正。确认前**不**置失效旧记忆
+   * （拒绝确认时旧记忆保留，避免信息丢失）；确认时由服务端置失效旧条 +
+   * 新条 superseded_by 链接。
+   */
+  supersedeMemoryId?: string;
 }
 
 /** 11.2 记忆审计条目 */
@@ -208,7 +214,7 @@ const DEDUPE_SYSTEM_PROMPT =
   '你是记忆去重裁决器。判断新候选与已有记忆的关系，输出严格 JSON（不要 Markdown）：' +
   '{"action":"ADD|UPDATE|DELETE|NOOP","targetMemoryId":"已有记忆id或null","reason":"一句话"}' +
   '规则：语义完全重复→NOOP；新信息补充/纠正旧记忆→UPDATE 并填 targetMemoryId；' +
-  '无关→ADD；候选是旧记忆的过期替代且新候选正确→DELETE 旧记忆。';
+  '无关→ADD；新陈述明确推翻旧记忆、且本身不值得落库→DELETE 旧记忆（置失效，候选不保存）。';
 
 export interface DedupeDecision {
   action: MemoryDedupeAction;
@@ -315,7 +321,8 @@ export function tieredConfirmNodeFactory(mode: MemoryConfirmationMode = 'tiered'
 
 /**
  * 落库节点工厂（经 MemoryExtractStore；无 store 时为 dry-run，persistedCount=0）。
- * ADD：pending 中的进确认队列，其余自动保存；UPDATE：旧记忆置失效 + 新记忆 supersede 链；
+ * ADD：pending 中的进确认队列，其余自动保存；UPDATE：自动保存=旧条置失效 +
+ * supersede 链，pending（敏感纠正）= 不置失效，确认后由服务端完成纠正；
  * DELETE：旧记忆置失效；全部写审计（NOOP 跳过）。
  */
 export function persistNodeFactory(store?: MemoryExtractStore): NodeFn<MemoryExtractState> {
@@ -365,6 +372,19 @@ export function persistNodeFactory(store?: MemoryExtractStore): NodeFn<MemoryExt
           break;
         }
         case 'UPDATE': {
+          // 敏感纠正（进确认队列）：不立即置失效旧记忆——确认后由服务端
+          // 统一置失效 + superseded_by 链；用户拒绝则旧记忆保留（不丢数据）。
+          if (pendingKeys.has(candidateKey(candidate))) {
+            await store.createConfirmation({ ...draft, supersedeMemoryId: targetMemoryId });
+            await store.logAudit({
+              ownerUserId: state.ownerUserId,
+              action: 'pending_confirm',
+              value: candidate.value,
+              sourceTurnIds: draft.sourceTurnIds,
+            });
+            break;
+          }
+          // 自动保存纠正：即时置失效 + 新条 supersede 链（10.5）
           if (targetMemoryId !== undefined) {
             await store.invalidateMemory(state.ownerUserId, targetMemoryId);
             await store.logAudit({
@@ -375,29 +395,19 @@ export function persistNodeFactory(store?: MemoryExtractStore): NodeFn<MemoryExt
               sourceTurnIds: draft.sourceTurnIds,
             });
           }
-          if (pendingKeys.has(candidateKey(candidate))) {
-            await store.createConfirmation(draft);
-            await store.logAudit({
-              ownerUserId: state.ownerUserId,
-              action: 'pending_confirm',
-              value: candidate.value,
-              sourceTurnIds: draft.sourceTurnIds,
-            });
-          } else {
-            const { memoryId } = await store.persistMemory({
-              ...draft,
-              supersedeMemoryId: targetMemoryId,
-            });
-            persistedMemoryIds.push(memoryId);
-            persistedCount += 1;
-            await store.logAudit({
-              ownerUserId: state.ownerUserId,
-              action: 'auto_save',
-              memoryId,
-              value: candidate.value,
-              sourceTurnIds: draft.sourceTurnIds,
-            });
-          }
+          const { memoryId } = await store.persistMemory({
+            ...draft,
+            supersedeMemoryId: targetMemoryId,
+          });
+          persistedMemoryIds.push(memoryId);
+          persistedCount += 1;
+          await store.logAudit({
+            ownerUserId: state.ownerUserId,
+            action: 'auto_save',
+            memoryId,
+            value: candidate.value,
+            sourceTurnIds: draft.sourceTurnIds,
+          });
           break;
         }
         case 'DELETE': {

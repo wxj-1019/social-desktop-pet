@@ -179,13 +179,15 @@ export function registerChatRoutes(
           threadId: id,
           emit,
         });
-        // 危机路径没有 modelOutput：回退 responseText（11.8 固定协议文案）
+        // 危机路径没有 modelOutput：回退 responseText（11.8 固定协议文案）；
+        // 危机时星屿表情呈现关切（而非默认 neutral）
         const dialogue = finalState.modelOutput?.dialogue ?? finalState.responseText ?? '';
         await stream.writeSSE({
           event: 'done',
           data: JSON.stringify({
             dialogue,
-            emotion: finalState.modelOutput?.emotion ?? 'neutral',
+            emotion:
+              finalState.modelOutput?.emotion ?? (finalState.crisisLevel ? 'concerned' : 'neutral'),
             actionIntent: finalState.modelOutput?.actionIntent ?? 'idle',
             intensity: finalState.modelOutput?.intensity ?? 1,
           }),

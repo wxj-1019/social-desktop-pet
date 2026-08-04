@@ -4,7 +4,12 @@
 import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
 
-import { checkWaitlistRateLimit, registerWaitlistRoutes } from './waitlist.js';
+import {
+  checkWaitlistRateLimit,
+  rateWindows,
+  registerWaitlistRoutes,
+  resetWaitlistRateLimitForTest,
+} from './waitlist.js';
 
 function makePool(rowCount: number | null = 1) {
   return {
@@ -85,6 +90,22 @@ describe('checkWaitlistRateLimit（纯函数）', () => {
 
     vi.setSystemTime(1_000_000 + 61_000);
     expect(checkWaitlistRateLimit('ip-a').allowed).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('惰性清扫：窗口过期后不再回访的 IP 的 key 被清理（Map 不随任意 IP 无限膨胀）', () => {
+    resetWaitlistRateLimitForTest(); // 模块级状态，避免前序测试污染
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    checkWaitlistRateLimit('ip-gone');
+    expect(rateWindows.size).toBe(1);
+
+    // 61s 后其他 IP 请求触发清扫：ip-gone 记录已全部过期 → 被删除
+    vi.setSystemTime(1_000_000 + 61_000);
+    checkWaitlistRateLimit('ip-other');
+    expect(rateWindows.has('ip-gone')).toBe(false);
+    expect(rateWindows.has('ip-other')).toBe(true);
+    expect(rateWindows.size).toBe(1);
     vi.useRealTimers();
   });
 });

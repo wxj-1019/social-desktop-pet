@@ -61,12 +61,16 @@ export interface MemoryRetrievalStore {
 
 /** RRF 常数 k（标准值 60） */
 const RRF_K = 60;
-/** RRF 归一化系数：rrf ∈ [1/60, 2/60] → 综合分量级 [1, 2] */
-const RRF_SCALE = RRF_K;
-/** 时间衰减权重 */
-const TIME_DECAY_WEIGHT = 1;
-/** importance 权重 */
-const IMPORTANCE_WEIGHT = 0.5;
+/**
+ * 综合分权重（10.7 三项可比，相关性主导）：
+ * 相关性 0.6（RRF 相对值归一化到 [~0.5,1]：双臂命中显著高于单臂）、
+ * 时间衰减 0.2（(0,1] 指数降权）、importance 0.2（归一化 [0.1,1]）。
+ * 权重比例避免辅助信号淹没相关性（旧实现 RRF×60 把相关性压到 [1,2] 区间，
+ * 档间差仅 0.016，而 importance 满差 4.5 —— 排序被 importance 主导）。
+ */
+const RELEVANCE_WEIGHT = 0.6;
+const RECENCY_WEIGHT = 0.2;
+const IMPORTANCE_WEIGHT = 0.2;
 /** 时间衰减半衰期：30 天（指数降权不删除） */
 export const MEMORY_HALF_LIFE_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -103,9 +107,22 @@ export function timeDecay(ageMs: number, halfLifeMs = MEMORY_HALF_LIFE_MS): numb
   return Math.pow(0.5, ageMs / halfLifeMs);
 }
 
-/** 综合分 = 相关性（RRF 归一化）+ 时间衰减 + importance 加权（10.7） */
-export function compositeScore(rrf: number, ageMs: number, importance: number): number {
-  return rrf * RRF_SCALE + timeDecay(ageMs) * TIME_DECAY_WEIGHT + importance * IMPORTANCE_WEIGHT;
+/**
+ * 综合分 = 相关性（RRF 相对值 min-max 归一化，双臂命中显著靠前）+
+ * 时间衰减（指数降权不删除）+ importance 归一化（10.7 三项可比）。
+ */
+export function compositeScore(
+  rrf: number,
+  maxRrf: number,
+  ageMs: number,
+  importance: number,
+): number {
+  const relevance = maxRrf > 0 ? rrf / maxRrf : 0;
+  return (
+    RELEVANCE_WEIGHT * relevance +
+    RECENCY_WEIGHT * timeDecay(ageMs) +
+    IMPORTANCE_WEIGHT * (Math.min(importance, 10) / 10)
+  );
 }
 
 /** 召回 → 打分 → 排序 → topK（纯函数；now 可注入便于测试） */
@@ -116,9 +133,11 @@ export function fuseAndScore(
   now = Date.now(),
 ): RetrievedMemory[] {
   const fused = rrfFuse(vectorHits, ftsHits);
-  const scored = [...fused.values()].map(({ hit, rrf }) => ({
+  const entries = [...fused.values()];
+  const maxRrf = entries.reduce((max, { rrf }) => Math.max(max, rrf), 0);
+  const scored = entries.map(({ hit, rrf }) => ({
     hit,
-    score: compositeScore(rrf, now - Date.parse(hit.createdAt), hit.importance),
+    score: compositeScore(rrf, maxRrf, now - Date.parse(hit.createdAt), hit.importance),
   }));
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, topK).map((s) => s.hit);

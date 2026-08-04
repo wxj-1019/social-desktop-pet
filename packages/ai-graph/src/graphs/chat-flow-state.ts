@@ -4,10 +4,10 @@
  * 图结构（compile 后）：
  *   START→auth→classify_input
  *     classify_input --(SAFETY)→ crisis_response → END          # 11.8 危机分支
- *     classify_input --(normal)→ retrieve_memory
- *   retrieve_memory→build_context
- *     build_context --(L0)→ END                                 # 10.3 不调模型
- *     build_context --(L1/L2/L3)→ generate                      # 10.3 路由
+ *     classify_input --(normal)→ route
+ *   route --(L0)→ local_reply → END                             # 10.3 不调模型不检索
+ *   route --(SAFETY)→ crisis_response → END
+ *   route --(L1/L2/L3)→ retrieve_memory→build_context→generate  # 10.3 路由
  *   generate→moderate_output
  *     moderate_output --(crisis)→ crisis_response → END
  *     moderate_output --(ok)→ approve_action → END

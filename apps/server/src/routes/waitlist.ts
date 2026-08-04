@@ -21,7 +21,28 @@ const EMAIL_MAX_LENGTH = 254;
 /** 每 IP 60s 窗口报名次数上限（防刷；单实例内存态，多实例升级 Redis） */
 const RATE_LIMIT_MAX = 5;
 const RATE_WINDOW_MS = 60_000;
-const rateWindows = new Map<string, number[]>();
+/** 内部限流状态（导出仅供测试观察；窗口过期即清理 key，防无限膨胀） */
+export const rateWindows = new Map<string, number[]>();
+/** 上次清扫时间（惰性清扫：仅在有请求时推进） */
+let lastSweepAt = 0;
+
+/** 测试辅助：重置限流状态（模块级状态跨测试共享，防时间回拨干扰清扫守卫） */
+export function resetWaitlistRateLimitForTest(): void {
+  rateWindows.clear();
+  lastSweepAt = 0;
+}
+
+/**
+ * 惰性清扫：每 RATE_WINDOW_MS 至多扫一次，删除所有记录已全部过期的 key。
+ * 否则 Map 会随"历史见过但不再回访的 IP"无限膨胀（每条 key 永驻内存）。
+ */
+function sweepRateWindows(now: number): void {
+  if (now - lastSweepAt < RATE_WINDOW_MS) return;
+  lastSweepAt = now;
+  for (const [ip, times] of rateWindows) {
+    if (times.every((t) => now - t >= RATE_WINDOW_MS)) rateWindows.delete(ip);
+  }
+}
 
 /** 限流：超限返回剩余等待秒数 */
 export function checkWaitlistRateLimit(
@@ -29,6 +50,7 @@ export function checkWaitlistRateLimit(
   max = RATE_LIMIT_MAX,
 ): { allowed: boolean; retryAfterSec: number } {
   const now = Date.now();
+  sweepRateWindows(now);
   const window = (rateWindows.get(ip) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
   if (window.length >= max) {
     const oldest = window[0] ?? now;

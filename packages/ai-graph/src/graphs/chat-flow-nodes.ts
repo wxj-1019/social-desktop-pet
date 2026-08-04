@@ -40,20 +40,64 @@ export const classifyInputNode: NodeFn<ChatFlowState> = async (
 
 /** 10.1 / 10.7 按场景和权限检索记忆（实现见 memory-retrieval.ts 的 retrieveMemoryNodeFactory） */
 
-/** 10.1 构造最小上下文 + 10.3 路由判定（检索记忆进 prompt；路由分级留 10.3 实施） */
+/**
+ * 10.3 路由判定：把输入分级到 L0–L3/Safety，决定是否检索记忆/调模型。
+ * 当前 scaffold：一律 L1（问候/闲聊档，与实现前的行为一致）；L0–L3/Safety
+ * 分级判定（V-13 分类器 + 路由策略）留 10.3 实施。
+ * 路由独立成节点：L0（动画/状态/固定事件，不调模型不检索）与 SAFETY 走
+ * 各自条件边，避免闲聊被错误导向危机文案。
+ */
+export const routeNode: NodeFn<ChatFlowState> = async (): Promise<Partial<ChatFlowState>> => {
+  return { routing: { level: 'L1', reason: 'scaffold' } }; // TODO(10.3): 路由分级判定
+};
+
+/** 10.1 构造最小上下文（检索记忆进 prompt；10.3 路由判定已由 routeNode 完成） */
 export const buildContextNode: NodeFn<ChatFlowState> = async (
   state,
 ): Promise<Partial<ChatFlowState>> => {
   // 10.7：检索到的记忆以编号列表进入上下文（生成节点直接消费 contextPrompt）
   const memories = state.retrievedMemories ?? [];
-  const memoryBlock =
-    memories.length > 0
-      ? memories.map((m, i) => `${i + 1}. ${m.value}（${m.category}）`).join('\n')
-      : '（暂无相关记忆）';
+  const memoryBlock = buildMemoryBlock(memories);
   const contextPrompt = `用户消息：${state.userMessage}\n\n相关记忆：\n${memoryBlock}`;
+  return { contextPrompt };
+};
+
+/** 记忆块长度上限：防止 topK 放大后把整个上下文撑爆（6 条 × ≤2000 字符） */
+const MAX_MEMORY_BLOCK_CHARS = 1200;
+
+/** 检索记忆 → 编号列表（超长截断，不拆断行） */
+function buildMemoryBlock(memories: ChatFlowState['retrievedMemories']): string {
+  if (!memories || memories.length === 0) return '（暂无相关记忆）';
+  const lines: string[] = [];
+  let total = 0;
+  for (const [i, m] of memories.entries()) {
+    const line = `${i + 1}. ${m.value}（${m.category}）`;
+    if (lines.length > 0 && total + line.length > MAX_MEMORY_BLOCK_CHARS) break;
+    lines.push(line);
+    total += line.length;
+  }
+  return lines.join('\n');
+}
+
+/**
+ * L0 本地回复（10.3 不调模型）：动画/状态/计时/固定事件类轻交互的兜底模板。
+ * 不触发记忆抽取（无新事实）；L0 边不经过检索节点（无上下文需求）。
+ */
+const LOCAL_REPLIES: Array<{ test: RegExp; reply: string }> = [
+  { test: /你好|嗨|哈喽|hello|hi/iu, reply: '你好呀～今天过得怎么样？' },
+  { test: /在吗|在不在|在么/u, reply: '我在呢，随时找我聊天。' },
+  { test: /再见|拜拜|晚安/u, reply: '拜拜～记得早点休息。' },
+];
+
+export const localReplyNode: NodeFn<ChatFlowState> = async (
+  state,
+): Promise<Partial<ChatFlowState>> => {
+  const text = state.userMessage.trim();
+  const hit = LOCAL_REPLIES.find((r) => r.test.test(text));
   return {
-    routing: { level: 'L1', reason: 'scaffold' }, // TODO(10.3): 路由分级判定
-    contextPrompt,
+    responseText: hit?.reply ?? '嗯嗯，我在听你说。',
+    approvedAction: 'idle',
+    memoryExtractTriggered: false,
   };
 };
 

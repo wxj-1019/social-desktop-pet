@@ -167,6 +167,50 @@ describe('POST /memories/confirm', () => {
     expect(params).toContain('user_confirmed');
   });
 
+  it('敏感纠正确认：先置失效被纠正的旧条 + 新条 superseded_by 链接 + 双审计（10.5 纠正链）', async () => {
+    const client = scriptedClient([
+      {
+        rows: [
+          {
+            ...CONFIRM_ROW,
+            superseded_memory_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          },
+        ],
+      }, // select for update（含 superseded_memory_id）
+      {
+        rows: [
+          {
+            value: '我工资是 8000',
+            source_turn_ids: ['11111111-1111-4111-8111-111111111111'],
+          },
+        ],
+      }, // update 旧条置失效 returning
+      { rows: [] }, // insert audit invalidate
+      { rows: [{ memory_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }] }, // insert 新条
+      { rows: [] }, // update status confirmed
+      { rows: [] }, // insert audit user_confirmed
+    ]);
+    const app = makeApp(makePool(client));
+
+    const res = await authedRequest(app, '/memories/confirm', {
+      method: 'POST',
+      body: { confirmationId: CONFIRM_ROW.confirmation_id },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ memoryId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' });
+
+    const calls = dataCalls(client);
+    // 事务序：select → 旧条 invalidated → 审计 invalidate → 新条 insert（superseded_by=旧 id）
+    expect(String(calls[1]?.[0])).toContain("memory_status = 'invalidated'");
+    expect(String(calls[1]?.[0])).toContain('owner_user_id = $2');
+    expect(String(calls[2]?.[0])).toContain("'invalidate'");
+    const insertSql = String(calls[3]?.[0]);
+    expect(insertSql).toContain('superseded_by');
+    const insertParams = calls[3]?.[1] as unknown[];
+    expect(insertParams).toContain('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    expect(String(calls[5]?.[0])).toContain("'user_confirmed'");
+  });
+
   it('已处理/不存在 → 410', async () => {
     const client = scriptedClient([{ rows: [] }]);
     const app = makeApp(makePool(client));
@@ -231,6 +275,38 @@ describe('POST /memories/:memoryId/invalidate', () => {
     const updateSql = String(dataCalls(client)[0]?.[0]);
     expect(updateSql).toContain("memory_status = 'invalidated'");
     expect(updateSql).toContain('owner_user_id = $2');
+  });
+
+  it('撤销被纠正的新条 → 恢复被纠正的旧条（纠正链回到纠正前状态）', async () => {
+    const client = scriptedClient([
+      {
+        rows: [
+          {
+            value: '我工资涨到 12000 了',
+            source_turn_ids: ['11111111-1111-4111-8111-111111111111'],
+            superseded_by: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          },
+        ],
+      }, // update ... returning（superseded_by 非空）
+      { rows: [] }, // update 旧条恢复 active
+      { rows: [] }, // insert audit
+    ]);
+    const app = makeApp(makePool(client));
+
+    const res = await authedRequest(
+      app,
+      '/memories/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/invalidate',
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+
+    const calls = dataCalls(client);
+    expect(String(calls[0]?.[0])).toContain("memory_status = 'invalidated'");
+    const restoreSql = String(calls[1]?.[0]);
+    expect(restoreSql).toContain("memory_status = 'active'");
+    const restoreParams = calls[1]?.[1] as unknown[];
+    expect(restoreParams[0]).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    expect(restoreParams[1]).toBe('user-1');
   });
 
   it('不存在/已撤销 → 404', async () => {

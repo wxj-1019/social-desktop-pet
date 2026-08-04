@@ -118,7 +118,8 @@ export function registerMemoriesRoutes(
         rlsClaimsJson(userId),
       ]);
       const { rows } = await client.query(
-        `select confirmation_id, category, value, importance, source_type, sensitivity, source_turn_ids
+        `select confirmation_id, category, value, importance, source_type, sensitivity,
+                source_turn_ids, superseded_memory_id
          from memory_confirmations
          where confirmation_id = $1 and owner_user_id = $2 and status = 'pending'
          for update`,
@@ -133,11 +134,37 @@ export function registerMemoriesRoutes(
       const finalValue = edited ?? String(confirm.value);
       // 编辑过 → 用户在确认卡确认（10.5 sourceType 语义）
       const sourceType = edited !== null ? 'user_confirmed' : String(confirm.source_type);
+
+      // 敏感纠正（superseded_memory_id 非空，10.5 纠正链）：确认即置失效旧条 +
+      // 新条 superseded_by 链接。此前 persist 阶段已置失效——拒绝确认会丢数据，
+      // 现在改到确认时执行（拒绝则旧记忆保留）。审计写 invalidate + user_confirmed。
+      const superseded = confirm.superseded_memory_id ? String(confirm.superseded_memory_id) : null;
+      if (superseded) {
+        const { rows: oldRows } = await client.query(
+          `update private_memories set memory_status = 'invalidated', updated_at = now()
+           where memory_id = $1 and owner_user_id = $2 and memory_status = 'active'
+           returning value, source_turn_ids`,
+          [superseded, userId],
+        );
+        if (oldRows[0]) {
+          await client.query(
+            `insert into memory_audit_log (owner_user_id, action, memory_id, value, source_turn_ids)
+             values ($1, 'invalidate', $2, $3, $4)`,
+            [
+              userId,
+              superseded,
+              String(oldRows[0].value),
+              (oldRows[0].source_turn_ids ?? []).map(String),
+            ],
+          );
+        }
+      }
       const { rows: memRows } = await client.query(
         `insert into private_memories (
            owner_user_id, category, value, source_turn_ids, confidence, user_confirmed,
-           sensitivity, visibility, purpose, importance, memory_status, source_type, namespace
-         ) values ($1, $2, $3, $4, 1, true, $5, 'private', 'private_chat', $6, 'active', $7, $8)
+           sensitivity, visibility, purpose, importance, memory_status, superseded_by,
+           source_type, namespace
+         ) values ($1, $2, $3, $4, 1, true, $5, 'private', 'private_chat', $6, 'active', $7, $8, $9)
          returning memory_id`,
         [
           userId,
@@ -146,6 +173,7 @@ export function registerMemoriesRoutes(
           (confirm.source_turn_ids ?? []).map(String),
           String(confirm.sensitivity),
           Number(confirm.importance),
+          superseded,
           sourceType,
           'star-isle:private_chat',
         ],
@@ -213,6 +241,8 @@ export function registerMemoriesRoutes(
   });
 
   // 撤销自动保存（D-3"已记住·撤销"；10.5 置失效不删除）
+  // 纠正链语义：撤销的是被纠正的新条（superseded_by 非空）时，同时把被纠正的
+  // 旧条恢复 active——回到纠正前状态，避免"撤销"把整条纠正链都抹掉（信息丢失）。
   app.post('/memories/:memoryId/invalidate', auth, async (c) => {
     const userId = c.get('userId');
     const memoryId = c.req.param('memoryId');
@@ -225,12 +255,20 @@ export function registerMemoriesRoutes(
       const { rows } = await client.query(
         `update private_memories set memory_status = 'invalidated', updated_at = now()
          where memory_id = $1 and owner_user_id = $2 and memory_status = 'active'
-         returning value, source_turn_ids`,
+         returning value, source_turn_ids, superseded_by`,
         [memoryId, userId],
       );
       if (!rows[0]) {
         await client.query('rollback');
         return c.json({ error: '记忆不存在或已撤销' }, 404);
+      }
+      const supersededBy = rows[0].superseded_by ? String(rows[0].superseded_by) : null;
+      if (supersededBy) {
+        await client.query(
+          `update private_memories set memory_status = 'active', updated_at = now()
+           where memory_id = $1 and owner_user_id = $2 and memory_status = 'invalidated'`,
+          [supersededBy, userId],
+        );
       }
       await client.query(
         `insert into memory_audit_log (owner_user_id, action, memory_id, value, source_turn_ids)

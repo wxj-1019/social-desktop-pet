@@ -79,11 +79,17 @@ describe('MemoriesPage（11.3 记忆中心）', () => {
     );
   });
 
-  it('「删除」调用 api.invalidateMemory（置失效不物理删除）', async () => {
+  it('「删除」需二次确认才调用 api.invalidateMemory（防误删）', async () => {
     render(<MemoriesPage />);
     await screen.findByText('我喜欢抹茶');
 
+    // 第一次点击：进入确认态（不调用 API）
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    expect(api.invalidateMemory).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '确认删除？' })).not.toBeNull();
+
+    // 第二次点击：才执行
+    fireEvent.click(screen.getByRole('button', { name: '确认删除？' }));
     await vi.waitFor(() => expect(api.invalidateMemory).toHaveBeenCalledWith(MEMORY.memoryId));
   });
 

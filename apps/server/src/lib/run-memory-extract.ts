@@ -26,16 +26,18 @@ export async function runMemoryExtract(input: RunMemoryExtractInput): Promise<vo
 
   // 仅取 owner 本人 user 消息（source_turn_ids 溯源；assistant/他人消息不进入抽取）
   const { rows } = await pool.query(
-    `select message_id, content from chat_messages
+    `select message_id, content, memory_extracted_at from chat_messages
      where user_id = $1 and role = 'user'
      order by created_at desc
      limit $2`,
     [userId, OWNER_TURN_LIMIT],
   );
+  // 幂等：最新一条 user turn 已抽取过（memory_extracted_at 标记）→ 该窗口已处理，
+  // 跳过。避免连发消息时重叠窗口反复触发 LLM 抽取（10.6 每条消息只抽一次）。
+  if (rows.length === 0 || rows[0].memory_extracted_at !== null) return;
   // 时间倒序 → 正序（最早在前）
   const turns = rows.map((r) => String(r.content)).reverse();
   const sourceTurnIds = rows.map((r) => String(r.message_id)).reverse();
-  if (turns.length === 0) return; // 无落库 turn（落库失败等）→ 无源可抽
 
   const graph = buildMemoryExtractFlow({
     llm,
@@ -52,6 +54,13 @@ export async function runMemoryExtract(input: RunMemoryExtractInput): Promise<vo
       persistedCount: 0,
     },
     { threadId },
+  );
+
+  // 抽取完成（结果为空/全 NOOP 也算处理过）→ 标记窗口，防重复触发
+  await pool.query(
+    `update chat_messages set memory_extracted_at = now()
+     where message_id = any($1::uuid[])`,
+    [sourceTurnIds],
   );
 
   const { persistedCount, pendingConfirmation } = finalState;

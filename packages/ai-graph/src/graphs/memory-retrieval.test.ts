@@ -61,10 +61,26 @@ describe('timeDecay（指数降权不删除）', () => {
 });
 
 describe('compositeScore + fuseAndScore（综合分排序）', () => {
-  it('综合分 = 相关性 + 时间衰减 + importance', () => {
-    const score = compositeScore(1 / 61, 0, 5);
-    const relevance = (1 / 61) * 60;
-    expect(score).toBeCloseTo(relevance + 1 + 5 * 0.5);
+  it('综合分 = 0.6·相关性(归一化) + 0.2·衰减 + 0.2·importance（三项可比，相关性主导）', () => {
+    const maxRrf = 1 / 61;
+    const score = compositeScore(maxRrf, maxRrf, 0, 5);
+    expect(score).toBeCloseTo(0.6 * 1 + 0.2 * 1 + 0.2 * 0.5);
+  });
+
+  it('双臂命中的记忆显著优先于单臂（RRF 融合价值）', () => {
+    const now = Date.now();
+    const recent = new Date(now - 1000).toISOString();
+    const dual: RetrievedMemory = {
+      ...hit('dual', '双臂命中', recent),
+      importance: 1,
+    };
+    const single: RetrievedMemory = {
+      ...hit('single', '单臂命中', recent),
+      importance: 10,
+    };
+    // dual 在双臂 rank1；single 只在单臂 rank1 → 即使 importance 满值也不能反超
+    const out = fuseAndScore([dual, single], [dual], 2, now);
+    expect(out[0]?.memoryId).toBe('dual');
   });
 
   it('排序后截断 topK', () => {
@@ -80,13 +96,27 @@ describe('compositeScore + fuseAndScore（综合分排序）', () => {
     expect(new Set(out.map((m) => m.memoryId))).toEqual(new Set(['a', 'c']));
   });
 
-  it('importance 加权：同相关性下 importance 更高者靠前', () => {
+  it('importance 加权：同相关性下 importance 更高者靠前（微调不主导）', () => {
     const now = Date.now();
     const recent = new Date(now - 1000).toISOString();
     const highImp: RetrievedMemory = { ...hit('hi', '重要承诺'), importance: 9, createdAt: recent };
     const lowImp: RetrievedMemory = { ...hit('lo', '普通偏好'), importance: 2, createdAt: recent };
     const out = fuseAndScore([highImp, lowImp], [], 1, now);
     expect(out[0]?.memoryId).toBe('hi');
+  });
+
+  it('时间衰减：同臂同 importance，近期记忆靠前（30 天半衰期）', () => {
+    const now = Date.now();
+    const fresh: RetrievedMemory = {
+      ...hit('fresh', '刚记住'),
+      createdAt: new Date(now - 1000).toISOString(),
+    };
+    const old: RetrievedMemory = {
+      ...hit('old', '一个月前'),
+      createdAt: new Date(now - MEMORY_HALF_LIFE_MS * 2).toISOString(),
+    };
+    const out = fuseAndScore([fresh, old], [], 2, now);
+    expect(out[0]?.memoryId).toBe('fresh');
   });
 });
 
