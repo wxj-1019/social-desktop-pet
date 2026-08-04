@@ -13,6 +13,7 @@ import {
   createPanelWindow,
   createPetWindow,
   loadRendererSurface,
+  petWindowSizeFor,
   setPassThrough,
   PANEL_WINDOW_SIZE,
   PET_WINDOW_SIZE,
@@ -121,6 +122,16 @@ function makeRuntime(displays: DisplayInfo[]) {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+describe('petWindowSizeFor（桌宠缩放尺寸）', () => {
+  it('基准 240×260 按比例缩放并 clamp', () => {
+    expect(petWindowSizeFor(1)).toEqual({ width: 240, height: 260 });
+    expect(petWindowSizeFor(1.25)).toEqual({ width: 300, height: 325 });
+    expect(petWindowSizeFor(0.75)).toEqual({ width: 180, height: 195 });
+    expect(petWindowSizeFor(0.4)).toEqual({ width: 120, height: 130 }); // clamp 到 MIN 0.5
+    expect(petWindowSizeFor(3)).toEqual({ width: 480, height: 520 }); // clamp 到 MAX 2
+  });
 });
 
 describe('createPetWindow (宠物窗)', () => {

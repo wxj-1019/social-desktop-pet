@@ -134,6 +134,18 @@ export const PetSocialEventSchema = z.discriminatedUnion('type', [
 ]);
 export type PetSocialEvent = z.infer<typeof PetSocialEventSchema>;
 
+/** 桌宠缩放比例（1 = 240×260 基准；范围与 Main 侧 MIN/MAX_PET_SCALE 一致） */
+export const PetScaleSchema = z.number().min(0.5).max(2);
+export type PetScale = z.infer<typeof PetScaleSchema>;
+
+/** 桌宠大小调节指令（右键菜单档位 / 设置页滑块） */
+export const PetSetSizeSchema = z
+  .object({
+    scale: PetScaleSchema,
+  })
+  .strict();
+export type PetSetSize = z.infer<typeof PetSetSizeSchema>;
+
 /** 面板打开指令 */
 export const PanelOpenSchema = z
   .object({

@@ -44,6 +44,9 @@ const api = {
     ipcRenderer.invoke('deeplink:consume-pending') as Promise<string | null>,
   /** 自建后端地址（D-13）：API client 基址 */
   getApiBase: () => ipcRenderer.invoke('app:getApiBase') as Promise<string>,
+  /** 桌宠大小：调节（滑块/档位）与查询 */
+  setPetScale: (scale: number) => ipcRenderer.send('pet:set-size', { scale }),
+  getPetScale: () => ipcRenderer.invoke('pet:get-size') as Promise<number>,
   /** 9.8 会话：启动恢复 / 登录 / 注册 / 刷新 / 登出（refresh token 留在主进程 safeStorage） */
   session: {
     init: () => ipcRenderer.invoke('session:init') as Promise<SessionResult>,

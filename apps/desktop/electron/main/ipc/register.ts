@@ -16,6 +16,7 @@ import {
   PetDragPointSchema,
   PetInteractionSchema,
   PetProfileSchema,
+  PetSetSizeSchema,
   PetSocialEventSchema,
   PetVisualCommandSchema,
 } from '@pet/protocol';
@@ -68,6 +69,10 @@ export interface PetIpcDependencies {
   setPassThrough: (enabled: boolean) => void;
   /** 勿扰开关单一入口（Main 端 syncDnd：runtime + 档案持久化 + 托盘快照） */
   setDnd: (enabled: boolean) => void;
+  /** 桌宠大小调节单一入口（Main 端 setPetScale：resize + 位置钳制 + 持久化 + 托盘快照） */
+  setPetScale: (scale: number) => void;
+  /** 当前缩放比例（设置页滑块初始值） */
+  getPetScale: () => number;
   /** 会话 handler（Task 1；可选，缺省不注册会话通道） */
   sessionHandlers?: SessionServiceHandlers;
 }
@@ -195,6 +200,12 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
   registerOn(deps, 'pet:social-event', ['pet', 'panel'], (_win, payload) =>
     runtime.handleSocialEvent(parseIpcPayload(PetSocialEventSchema, payload)),
   );
+  // 桌宠大小：设置页滑块（send）与查询（invoke）
+  registerOn(deps, 'pet:set-size', ['pet', 'panel'], (_win, payload) => {
+    const { scale } = parseIpcPayload(PetSetSizeSchema, payload);
+    deps.setPetScale(scale);
+  });
+  registerInvoke(deps, 'pet:get-size', 'panel', () => deps.getPetScale());
   registerOn(deps, 'pet:set-dnd', 'pet', (_win, payload) => {
     const { enabled } = parseIpcPayload(BooleanSettingSchema, payload);
     // 单一状态源：Main 端 syncDnd 统一 runtime / 档案 / 托盘（快照广播由 runtime emit 驱动）

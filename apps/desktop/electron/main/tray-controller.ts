@@ -16,6 +16,22 @@ import type { BrowserWindow, MenuItemConstructorOptions, NativeImage } from 'ele
 export type TrayAction =
   'open-chat' | 'open-friends' | 'toggle-dnd' | 'toggle-pass-through' | 'hide' | 'show' | 'quit';
 
+export type TrayAction =
+  'open-chat' | 'open-friends' | 'toggle-dnd' | 'toggle-pass-through' | 'hide' | 'show' | 'quit';
+
+/** 桌宠大小预设档位（右键菜单/托盘子菜单；滑块可任意微调） */
+export const PET_SCALE_PRESETS: Array<{ label: string; value: number }> = [
+  { label: '小', value: 0.75 },
+  { label: '中', value: 1 },
+  { label: '大', value: 1.25 },
+];
+
+/** 当前缩放比例所属档位 label（radio 勾选用；非档位值显示百分比） */
+export function scalePresetLabel(scale: number): string {
+  const preset = PET_SCALE_PRESETS.find((p) => Math.abs(scale - p.value) < 0.125);
+  return preset?.label ?? `${Math.round(scale * 100)}%`;
+}
+
 export interface TrayHandlers {
   /** 打开聊天/好友面板（Main 端接 openPanel） */
   onOpenPanel(view: 'chat' | 'friends'): void;
@@ -23,6 +39,8 @@ export interface TrayHandlers {
   onSetDnd(enabled: boolean): void;
   /** 穿透开关（Main 端接窗口 setIgnoreMouseEvents + snapshot 同步） */
   onSetPassThrough(enabled: boolean): void;
+  /** 桌宠大小调节（Main 端接 setPetScale：resize + 持久化） */
+  onSetScale(scale: number): void;
   /** 隐藏桌宠（Main 端接 petWindow.hide + runtime.setHidden） */
   onHide(): void;
   /** 显示桌宠（Main 端接 petWindow.show + 解除穿透 + runtime.setHidden(false)） */
@@ -34,8 +52,10 @@ export interface TrayHandlers {
 /** 菜单项的最小形态（buildMenu 负责翻译成原生菜单） */
 export interface TrayMenuItem {
   label?: string;
-  type?: 'separator';
+  type?: 'separator' | 'radio';
   enabled?: boolean;
+  checked?: boolean;
+  submenu?: TrayMenuItem[];
   toolTip?: string;
   click?: () => void;
 }
@@ -87,6 +107,7 @@ export class TrayController {
   private iconReady = false;
   private passThrough = false;
   private dnd = false;
+  private scale = 1;
   private readonly options: Required<
     Pick<TrayControllerOptions, 'createTray' | 'buildMenu' | 'loadIcon' | 'popupMenu'>
   > &
@@ -100,8 +121,8 @@ export class TrayController {
   }
 
   /** 当前托盘状态快照（Main 侧同步用） */
-  get snapshot(): { dnd: boolean; passThrough: boolean } {
-    return { dnd: this.dnd, passThrough: this.passThrough };
+  get snapshot(): { dnd: boolean; passThrough: boolean; scale: number } {
+    return { dnd: this.dnd, passThrough: this.passThrough, scale: this.scale };
   }
 
   /**
@@ -132,6 +153,12 @@ export class TrayController {
   /** Main 同步外部勿扰状态（单一状态源入口 syncDnd 驱动），不触发 handler 避免循环 */
   setDndForced(enabled: boolean): void {
     this.dnd = enabled;
+    this.refresh();
+  }
+
+  /** Main 同步外部桌宠缩放（单一状态源入口 setPetScale 驱动），不触发 handler 避免循环 */
+  setScaleForced(scale: number): void {
+    this.scale = scale;
     this.refresh();
   }
 
@@ -202,6 +229,19 @@ export class TrayController {
       {
         label: `勿扰：${this.dnd ? '开' : '关'}`,
         click: () => this.dispatch('toggle-dnd'),
+      },
+      {
+        label: `桌宠大小：${scalePresetLabel(this.scale)}`,
+        submenu: PET_SCALE_PRESETS.map((p) => ({
+          label: p.label,
+          type: 'radio' as const,
+          checked: Math.abs(this.scale - p.value) < 0.125,
+          click: () => {
+            this.scale = p.value;
+            this.options.handlers.onSetScale(p.value);
+            this.refresh();
+          },
+        })),
       },
       { type: 'separator' },
       { label: '隐藏桌宠', click: () => this.dispatch('hide') },

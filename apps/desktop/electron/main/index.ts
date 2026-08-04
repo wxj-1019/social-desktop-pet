@@ -15,7 +15,13 @@ import type { PanelOpen } from '@pet/protocol';
 import { app, BrowserWindow, screen } from 'electron';
 
 import { DeepLinkController } from './deep-link-controller.js';
-import { toPersistedPosition } from './display-controller.js';
+import {
+  DEFAULT_PET_SCALE,
+  MAX_PET_SCALE,
+  MIN_PET_SCALE,
+  resolvePetPosition,
+  toPersistedPosition,
+} from './display-controller.js';
 import { broadcastPetSnapshot, registerIpcAllowlist, sendPetVisual } from './ipc/register.js';
 import type { PetIpcDependencies } from './ipc/register.js';
 import { deliverPanelMessage } from './panel-delivery.js';
@@ -31,7 +37,12 @@ import { StartupController, parseStartupArgs } from './startup-controller.js';
 import { TrayController, trayIconPath, type TrayAction } from './tray-controller.js';
 import { UpdateController } from './update-controller.js';
 import { createUpdateApi } from './update-source.js';
-import { createPanelWindow, createPetWindow, setPassThrough } from './window-controller.js';
+import {
+  createPanelWindow,
+  createPetWindow,
+  petWindowSizeFor,
+  setPassThrough,
+} from './window-controller.js';
 import type { PanelWindowHandle } from './window-controller.js';
 
 // ---- 8.7 资源削减（app ready 前必须设置）----
@@ -173,6 +184,31 @@ void app.whenReady().then(async () => {
     tray?.setDndForced(enabled);
   };
 
+  // ---- 桌宠大小：Main 唯一入口，统一窗口尺寸 / 位置钳制 / 持久化 / 托盘快照 ----
+  // 右键菜单档位与设置页滑块都收敛到这里；scale 持久化于 PetPosition（重启恢复，
+  // 8.5）；托盘菜单勾选由 setScaleForced 强制同步。
+  const setPetScale = (scale: number): void => {
+    const win = alivePetWindow();
+    if (!win || !positionStore) return;
+    const s = Math.min(Math.max(scale, MIN_PET_SCALE), MAX_PET_SCALE);
+    const size = petWindowSizeFor(s);
+    // 以窗口中心为锚 resize + 夹进所在显示器工作区（复用 8.5 位置钳制）
+    const displays = screen
+      .getAllDisplays()
+      .map((d) => ({ id: String(d.id), workArea: d.workArea, scaleFactor: d.scaleFactor }));
+    const restored = resolvePetPosition(
+      { ...positionStore.load(), scale: s, savedAt: Date.now() },
+      displays,
+      size,
+    );
+    win.setBounds({ x: restored.x, y: restored.y, width: size.width, height: size.height });
+    positionStore.save({ ...positionStore.load(), scale: s, savedAt: Date.now() });
+    tray?.setScaleForced(s);
+  };
+
+  /** 当前缩放比例（设置页滑块初始值） */
+  const getPetScale = (): number => positionStore?.load().scale ?? DEFAULT_PET_SCALE;
+
   // ---- 8.2 面板：首次打开时懒创建，锚定到宠物旁 ----
   // C1 修复：深链 payload（deeplink:payload）只投递到面板渲染进程，不再发往桌宠窗；
   // 渲染进程未就绪（首次创建/正在加载）时等 did-finish-load 再发（见 panel-delivery.ts）。
@@ -284,6 +320,8 @@ void app.whenReady().then(async () => {
     },
     setPassThrough: setPassThroughFromMain,
     setDnd: syncDnd,
+    setPetScale,
+    getPetScale,
     sessionHandlers: createSessionHandlers(
       createdSession,
       () => void deepLink?.restorePending(),
@@ -349,6 +387,7 @@ void app.whenReady().then(async () => {
     handlers: {
       onOpenPanel: (view) => openPanel(view),
       onSetDnd: (enabled) => syncDnd(enabled),
+      onSetScale: (scale) => setPetScale(scale),
       onSetPassThrough: setPassThroughFromMain,
       onHide: () => {
         drag?.cancel(); // 隐藏前解除进行中的拖动，避免残留会话

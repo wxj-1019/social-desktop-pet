@@ -32,6 +32,7 @@ function makeHarness(iconAvailable = true): TrayHarness {
     onOpenPanel: vi.fn(),
     onSetDnd: vi.fn(),
     onSetPassThrough: vi.fn(),
+    onSetScale: vi.fn(),
     onHide: vi.fn(),
     onShow: vi.fn(),
     onQuit: vi.fn(),
@@ -267,15 +268,15 @@ describe('TrayController.dispatch', () => {
 });
 
 describe('TrayController.snapshot / refresh / setPassThroughForced', () => {
-  it('snapshot reflects the current dnd and pass-through flags', () => {
+  it('snapshot reflects the current dnd, pass-through and scale flags', () => {
     const harness = makeHarness(true);
     const controller = makeController(harness);
     controller.create('/a.png');
 
-    expect(controller.snapshot).toEqual({ dnd: false, passThrough: false });
+    expect(controller.snapshot).toEqual({ dnd: false, passThrough: false, scale: 1 });
     controller.dispatch('toggle-dnd');
     controller.dispatch('toggle-pass-through');
-    expect(controller.snapshot).toEqual({ dnd: true, passThrough: true });
+    expect(controller.snapshot).toEqual({ dnd: true, passThrough: true, scale: 1 });
   });
 
   it('refresh rebuilds the menu (label flips on state change)', () => {

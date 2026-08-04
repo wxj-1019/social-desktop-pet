@@ -1618,3 +1618,9 @@
   color: var(--panel-warning);
   background: var(--panel-warning-bg);
 }
+
+/* 桌宠大小滑块（settings-item 内，范围输入适配棉花糖主题） */
+.settings-item__range {
+  width: 96px;
+  accent-color: var(--panel-accent);
+}

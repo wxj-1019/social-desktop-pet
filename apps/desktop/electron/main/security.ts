@@ -53,6 +53,8 @@ export const IPC_ALLOWLIST = [
   'pet:drag-move',
   'pet:drag-end',
   'pet:set-dnd', // 勿扰开关
+  'pet:set-size', // 桌宠大小调节（设置页滑块）
+  'pet:get-size', // 桌宠大小查询（设置页初始值）
   'pet:set-pass-through', // 整窗穿透
   'pet:show-context-menu', // 桌宠右键菜单
   'pet:show-bubble', // 面板 → 桌宠气泡（记忆"已记住"等提示）

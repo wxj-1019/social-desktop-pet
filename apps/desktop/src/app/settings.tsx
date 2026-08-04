@@ -1,10 +1,15 @@
-/** 设置页：桌宠气泡开关 / 减弱动态切换（写回 petProfile 持久化）。 */
-import { Bell, BellOff, Settings2, Turtle } from 'lucide-react';
+/** 设置页：桌宠大小 / 气泡开关 / 减弱动态（大小写回 Main setPetScale，其余写 petProfile）。 */
+import { Bell, BellOff, Maximize2, Settings2, Turtle } from 'lucide-react';
 import { useEffect, useState } from 'react';
+
+/** 设置页滑块范围（60%–140%，Main 端 MIN/MAX_PET_SCALE 内） */
+const SCALE_MIN = 0.6;
+const SCALE_MAX = 1.4;
 
 export function SettingsPage() {
   const [bubbleEnabled, setBubbleEnabled] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [petScale, setPetScale] = useState(1);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -12,6 +17,9 @@ export function SettingsPage() {
       setBubbleEnabled(profile.bubbleEnabled);
       setReducedMotion(profile.reducedMotion);
       setLoaded(true);
+    });
+    void window.pet?.getPetScale?.().then((scale) => {
+      if (typeof scale === 'number') setPetScale(scale);
     });
   }, []);
 
@@ -49,6 +57,30 @@ export function SettingsPage() {
       </div>
 
       <div className="settings-list">
+        <label className="settings-item">
+          <span className="settings-item__icon" aria-hidden="true">
+            <Maximize2 size={16} />
+          </span>
+          <span className="settings-item__text">
+            <strong>桌宠大小</strong>
+            <small>当前 {Math.round(petScale * 100)}%（也可以右键星屿快速切换）</small>
+          </span>
+          <input
+            className="settings-item__range"
+            type="range"
+            min={SCALE_MIN}
+            max={SCALE_MAX}
+            step={0.05}
+            value={petScale}
+            onChange={(e) => {
+              const scale = Number(e.target.value);
+              setPetScale(scale);
+              window.pet?.setPetScale?.(scale);
+            }}
+            aria-label="桌宠大小调节"
+          />
+        </label>
+
         <label className="settings-item">
           <span className="settings-item__icon" aria-hidden="true">
             {bubbleEnabled ? <Bell size={16} /> : <BellOff size={16} />}

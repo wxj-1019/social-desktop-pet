@@ -119,6 +119,8 @@ function makeDeps() {
   const setPassThrough = vi.fn();
   // 勿扰单一状态源：与 index.ts syncDnd 一致，先驱动 runtime（emitSnapshot 广播）
   const setDnd = vi.fn((enabled: boolean) => runtime.setDnd(enabled));
+  const setPetScale = vi.fn();
+  const getPetScale = vi.fn(() => 1);
   const deps: PetIpcDependencies = {
     appVersion: '4.5.6-test',
     getPetWindow: () => asWindow(pet),
@@ -133,6 +135,8 @@ function makeDeps() {
     showContextMenu,
     setPassThrough,
     setDnd,
+    setPetScale,
+    getPetScale,
   };
   return {
     pet,
@@ -146,6 +150,8 @@ function makeDeps() {
     showContextMenu,
     setPassThrough,
     setDnd,
+    setPetScale,
+    getPetScale,
     deps,
     snapshots,
     visuals,
@@ -442,6 +448,53 @@ describe('pet runtime 通道（Task 7）', () => {
 
     electronMocks.onHandlers.get('pet:show-context-menu')?.(eventFrom(pet), undefined);
     expect(showContextMenu).toHaveBeenCalled();
+  });
+});
+
+describe('pet:set-size / pet:get-size（桌宠大小调节）', () => {
+  it('panel 发送合法 scale → setPetScale 被调用', () => {
+    const { panel, deps, setPetScale } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.onHandlers.get('pet:set-size');
+
+    expect(() => handler?.(eventFrom(panel), { scale: 1.25 })).not.toThrow();
+    expect(setPetScale).toHaveBeenCalledWith(1.25);
+  });
+
+  it('拒绝越界 scale（>2）', () => {
+    const { panel, deps, setPetScale } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.onHandlers.get('pet:set-size');
+
+    expect(() => handler?.(eventFrom(panel), { scale: 3 })).toThrow(IpcPayloadError);
+    expect(setPetScale).not.toHaveBeenCalled();
+  });
+
+  it('拒绝多余字段', () => {
+    const { panel, deps, setPetScale } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.onHandlers.get('pet:set-size');
+
+    expect(() => handler?.(eventFrom(panel), { scale: 1, width: 999 })).toThrow(IpcPayloadError);
+    expect(setPetScale).not.toHaveBeenCalled();
+  });
+
+  it('pet 窗口也可调节（右键档位走渲染层回调）', () => {
+    const { pet, deps, setPetScale } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.onHandlers.get('pet:set-size');
+
+    expect(() => handler?.(eventFrom(pet), { scale: 0.75 })).not.toThrow();
+    expect(setPetScale).toHaveBeenCalledWith(0.75);
+  });
+
+  it('pet:get-size 返回当前 scale', async () => {
+    const { panel, deps, getPetScale } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.invokeHandlers?.get('pet:get-size');
+
+    await expect(handler?.(eventFrom(panel), undefined)).resolves.toBe(1);
+    expect(getPetScale).toHaveBeenCalled();
   });
 });
 

@@ -17,6 +17,9 @@ import type { BrowserWindowConstructorOptions } from 'electron';
 
 import {
   anchorPanelToPet,
+  DEFAULT_PET_SCALE,
+  MAX_PET_SCALE,
+  MIN_PET_SCALE,
   resolvePetPosition,
   toPersistedPosition,
   type DisplayInfo,
@@ -24,9 +27,21 @@ import {
 } from './display-controller.js';
 import { SECURE_WEB_PREFS } from './security.js';
 
-/** 宠物窗：240×260 —— 桌面常驻小巧，角色经构图框放大后占窗口高度约 81%（viewBox 320×380） */
+/**
+ * 桌宠窗尺寸：基准 240×260 × 用户缩放比例（0.5–2.0；持久化于 PetPosition.scale）。
+ * 角色经构图框放大后占窗口高度约 81%（viewBox 320×380）。
+ */
 export const PET_WINDOW_SIZE = { width: 240, height: 260 };
 export const PANEL_WINDOW_SIZE = { width: 360, height: 480 };
+
+/** 按缩放比例计算桌宠窗像素尺寸（clamp 到合法范围） */
+export function petWindowSizeFor(scale: number): { width: number; height: number } {
+  const s = Math.min(Math.max(scale, MIN_PET_SCALE), MAX_PET_SCALE);
+  return {
+    width: Math.round(PET_WINDOW_SIZE.width * s),
+    height: Math.round(PET_WINDOW_SIZE.height * s),
+  };
+}
 
 /** 测试注入端口：生产默认由 BrowserWindow + screen 实现 */
 export interface WindowControllerRuntime {
@@ -116,18 +131,20 @@ export function loadRendererSurface(
 }
 
 /**
- * 创建桌宠窗：固定 240×260、不可缩放、透明无边框、置顶、跳过任务栏。
+ * 创建桌宠窗：透明无边框、不可缩放（尺寸由持久化 scale 决定）、置顶、跳过任务栏。
  * moved → toAnchor 回调（8.5 位置持久化）；加载 surface=pet。
  */
 export function createPetWindow(options: WindowOptions = {}): BrowserWindow {
   const runtime = options.runtime ?? defaultRuntime();
-  // 8.5：恢复位置（找不到原显示器回主屏 + 夹进可见区域 + 负数坐标支持）
+  // 用户缩放比例（8.5 持久化）：恢复窗口尺寸与位置（夹进可见区域 + 负数坐标支持）
+  const savedScale = options.savedPosition?.scale ?? DEFAULT_PET_SCALE;
+  const size = petWindowSizeFor(savedScale);
   const displays = runtime.getAllDisplays();
-  const restored = resolvePetPosition(options.savedPosition ?? null, displays, PET_WINDOW_SIZE);
+  const restored = resolvePetPosition(options.savedPosition ?? null, displays, size);
 
   const win = runtime.createWindow({
-    width: PET_WINDOW_SIZE.width,
-    height: PET_WINDOW_SIZE.height,
+    width: size.width,
+    height: size.height,
     x: restored.x,
     y: restored.y,
     frame: false,
