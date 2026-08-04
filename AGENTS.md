@@ -24,7 +24,7 @@ ai-social-desktop-pet/
 | 你要做的事                                      | 改这里                                                                                                           | 设计稿章节               |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------ |
 | 加/改一个 AI 输出字段、事件类型、命令、记忆字段 | `packages/protocol/src/*`                                                                                        | 9.3 / 10.2 / 10.5        |
-| 改 AI 流程的一个步骤（分类/检索/生成/审核）     | `packages/ai-graph/src/graphs/chat-flow-nodes.ts` 的对应节点                                                     | 10.1                     |
+| 改 AI 流程的一个步骤（分类/检索/生成/审核）     | `packages/ai-graph/src/graphs/chat-flow-nodes.ts` 的对应节点 + `input-classifier.ts`（V-13 分类）                | 10.1                     |
 | 改路由策略（L0–L3/Safety）                      | `route-rules.ts`（规则判定）+ `chat-flow.ts` 的条件边 + `packages/config/src/routing.ts`                         | 10.3                     |
 | 改记忆抽取/去重/确认                            | `packages/ai-graph/src/graphs/memory-extract.ts`                                                                 | 10.6                     |
 | 改记忆确认 API / 确认卡 UI / "已记住"提示       | `apps/server/src/routes/memories.ts` + `apps/desktop/src/app/memory-confirm-card.tsx`                            | 10.6 / D-3               |
@@ -84,7 +84,7 @@ pnpm dev:server          # 自动应用未执行的 migrations（幂等）
 
 - **向量检索臂**：embedding provider 已接入（`apps/server/src/ai/embedding.ts`，EMBEDDING_* 环境变量，OpenAI 兼容协议）；persistMemory 落库 embedding、recallMemories 查询向量生成、`pnpm --filter @pet/server backfill-embeddings` 历史回填（幂等）；未配置密钥时自动降级 FTS-only（RRF 单臂语义不变）
 - **输出审核**：规则版已落地（`moderation-rules.ts`：PII/敏感细节拦截 → blocked_reply 阻断路径）；注入 `OutputModerator` 走 12.5 免费 Moderation（含 allowlist 语义核对）的供应商实现待密钥接入
-- **分类器**：危机预筛为规则版（2026-08-02，crisis-rules.ts）；V-13 自建中文分类器就绪后替换（11.8 三级固定危机话术已落地，含 12356/120/110；10.3 路由分级同为规则版 route-rules.ts）
+- **V-13 分类器**：LLM 版已落地（`input-classifier.ts`：危机三级 + 类别 + 路由同源分类，**多轮上下文判定**，失败回退规则版；`classifierLlm` 独立注入可走低成本档；`crisis-resources.ts` 本地化热线库）；PsyCrisis-Bench 种子训练版与多轮阈值校准留评测集（V-16）阶段
 - Live2D Cubism SDK 集成 —— 待 V-1 许可确认后引入
 - 13.2 邀请邮件：MailProvider 抽象 + SMTP 实现已接入（waitlist 报名确认 + 邮箱 OTP 登录，`/auth/otp/request` + `/auth/otp/login`，验证码 sha256 落库/15min TTL/5 次尝试/60s 冷却；`PET_DEV_OTP_CODE_IN_RESPONSE` 仅本地开发返回验证码）；正式邀请流程（pending → invited 状态机）待产品确认
 

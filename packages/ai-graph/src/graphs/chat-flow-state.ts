@@ -20,6 +20,7 @@ import type {
   RoutingDecision,
 } from '@pet/protocol';
 
+import type { LlmClassification } from './input-classifier.js';
 import type { RetrievedMemory } from './memory-retrieval.js';
 
 /** chat-flow 在图中流动的状态 */
@@ -36,6 +37,10 @@ export interface ChatFlowState {
   // —— 阶段产出（节点写入） ——
   authenticated: boolean;
   inputClassification?: InputClassification;
+  /** V-13 分类器原始结果（LLM 分类成功时写入；routeNode 同源消费路由） */
+  classification?: LlmClassification;
+  /** 最近几轮对话（V-13 多轮上下文判定；服务端从 chat_messages 注入，含当前轮） */
+  recentTurns?: Array<{ role: 'user' | 'assistant'; content: string }>;
   /** 检索到的记忆（10.7：先权限过滤再 hybrid 检索） */
   retrievedMemories?: RetrievedMemory[];
   /** 10.3 路由判定 */
@@ -67,6 +72,8 @@ export const initialChatFlowState = (input: {
   userMessage: string;
   scenario: 'private_chat' | 'friend_visit';
   bondId?: string;
+  /** V-13 多轮上下文（最近几轮 user+assistant，含当前轮） */
+  recentTurns?: Array<{ role: 'user' | 'assistant'; content: string }>;
 }): ChatFlowState => ({
   ...input,
   authenticated: false,

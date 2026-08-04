@@ -91,6 +91,37 @@ export function leaveConcurrency(deviceId: string): void {
   else inFlight.set(deviceId, current - 1);
 }
 
+/**
+ * V-13 多轮上下文：取该 thread 最近几轮（user+assistant，正序，不含当前消息——
+ * 当前消息由调用方追加），供分类器判定情绪恶化趋势。
+ */
+const RECENT_TURNS_LIMIT = 6;
+
+async function loadRecentTurns(
+  pool: pg.Pool,
+  userId: string,
+  threadId: string,
+  currentMessage: string,
+): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+  try {
+    const { rows } = await pool.query(
+      `select role, content from chat_messages
+       where user_id = $1 and thread_id = $2
+       order by created_at desc
+       limit $3`,
+      [userId, threadId, RECENT_TURNS_LIMIT],
+    );
+    const turns = rows.reverse().map((r) => ({
+      role: String(r.role) === 'assistant' ? ('assistant' as const) : ('user' as const),
+      content: String(r.content),
+    }));
+    turns.push({ role: 'user', content: currentMessage });
+    return turns;
+  } catch {
+    return [{ role: 'user', content: currentMessage }];
+  }
+}
+
 /** 12.7：每日预算记账（chat_usage 表；token 估算 = 字符数/4） */
 async function checkAndRecordDailyUsage(
   pool: pg.Pool,
@@ -164,12 +195,16 @@ export function registerChatRoutes(
 
     const id = typeof threadId === 'string' && threadId.length > 0 ? threadId : crypto.randomUUID();
 
+    // V-13 多轮上下文判定：注入最近几轮（user+assistant，正序，含当前轮）
+    const recentTurns = await loadRecentTurns(deps.pool, userId, id, message);
+
     const initialState = initialChatFlowState({
       threadId: id,
       userId,
       deviceId,
       userMessage: message,
       scenario: 'private_chat',
+      recentTurns,
     });
 
     console.info(`[chat] 进入流式：user=${userId.slice(0, 8)} msg=${message.slice(0, 20)}`);

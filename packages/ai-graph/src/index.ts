@@ -9,4 +9,6 @@ export * from './graphs/memory-retrieval.js';
 export * from './llm/types.js';
 export * from './llm/embedding.js';
 export * from './graphs/crisis-rules.js';
+export * from './graphs/crisis-resources.js';
+export * from './graphs/input-classifier.js';
 export * from './graphs/parse-model-output.js';

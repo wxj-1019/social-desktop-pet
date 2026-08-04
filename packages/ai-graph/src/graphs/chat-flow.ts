@@ -16,12 +16,12 @@ import {
   authNode,
   blockedReplyNode,
   buildContextNode,
-  classifyInputNode,
+  classifyInputNodeFactory,
   crisisResponseNode,
   generateNodeFactory,
   localReplyNode,
   moderateOutputNodeFactory,
-  routeNode,
+  routeNodeFactory,
   type OutputModerator,
 } from './chat-flow-nodes.js';
 import type { ChatFlowState } from './chat-flow-state.js';
@@ -30,6 +30,8 @@ import { retrieveMemoryNodeFactory, type MemoryRetrievalStore } from './memory-r
 export interface ChatFlowOptions {
   /** 模型客户端（10.1；无则 generate 骨架降级） */
   llm?: LlmClient;
+  /** V-13 输入分类器模型（12.5 精神：分类走独立低成本档；缺省复用 llm） */
+  classifierLlm?: LlmClient;
   /** 记忆检索存储（10.7；无则跳过检索，避免误用未实现召回） */
   retrievalStore?: MemoryRetrievalStore;
   /** 输出审核 provider（12.5 免费 Moderation；无则规则版 PII/敏感细节拦截） */
@@ -38,11 +40,12 @@ export interface ChatFlowOptions {
 
 /** 编译 chat-flow 图；llm/retrievalStore 注入后对应节点走真实实现 */
 export function buildChatFlow(options: ChatFlowOptions = {}): CompiledGraph<ChatFlowState> {
+  const classifierLlm = options.classifierLlm ?? options.llm;
   const graph = new StateGraph<ChatFlowState>()
     // 节点（10.1 各步骤）
     .addNode('auth', authNode)
-    .addNode('classify_input', classifyInputNode)
-    .addNode('route', routeNode)
+    .addNode('classify_input', classifyInputNodeFactory(classifierLlm))
+    .addNode('route', routeNodeFactory(classifierLlm))
     .addNode('retrieve_memory', retrieveMemoryNodeFactory(options.retrievalStore))
     .addNode('build_context', buildContextNode)
     .addNode('generate', generateNodeFactory(options.llm))

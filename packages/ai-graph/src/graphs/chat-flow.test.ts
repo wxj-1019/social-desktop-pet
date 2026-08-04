@@ -420,4 +420,108 @@ describe('chat-flow graph', () => {
     expect(result.retrievedMemoryIds).toEqual([]);
     expect(result.memoryExtractTriggered).toBe(false);
   });
+
+  it('V-13 分类器：LLM 判危机 → 危机协议（规则版未命中也能触发）', async () => {
+    // "我真的很难受"规则版不命中（无关键词），LLM 分类判 medium → 危机分支
+    const classifierLlm: LlmClient = {
+      streamChat: async (_messages, onToken) => {
+        onToken(
+          '{"crisisLevel":"medium","categories":["self_harm"],"routeLevel":"SAFETY","confidence":0.9}',
+        );
+        return 'ok';
+      },
+    };
+    const graph = buildChatFlow({ llm: classifierLlm });
+    const state = initialChatFlowState({
+      threadId: 'v13-1',
+      userId: 'u1',
+      deviceId: 'd1',
+      userMessage: '我真的很难受，感觉活着没意思',
+      scenario: 'private_chat',
+      // 多轮上下文：连续两轮负面信号（V-13 多轮判定输入）
+      recentTurns: [
+        { role: 'user', content: '最近一直睡不着' },
+        { role: 'assistant', content: '失眠很辛苦，要照顾好自己' },
+        { role: 'user', content: '我真的很难受，感觉活着没意思' },
+      ],
+    });
+    const result = await graph.invoke(state, { threadId: 'v13-1' });
+    expect(result.crisisLevel).toBe('medium');
+    expect(result.responseText).toContain('信任的人');
+    expect(result.responseText).not.toContain('骨架回复');
+    expect(result.memoryExtractTriggered).toBe(false);
+  });
+
+  it('V-13 分类器：routeLevel 同源消费 → 路由 L2（跳过规则版判定）', async () => {
+    const classifierLlm: LlmClient = {
+      streamChat: async (_messages, onToken) => {
+        onToken('{"crisisLevel":"none","categories":["none"],"routeLevel":"L2","confidence":0.8}');
+        return 'ok';
+      },
+    };
+    const graph = buildChatFlow({ llm: classifierLlm });
+    const state = initialChatFlowState({
+      threadId: 'v13-2',
+      userId: 'u1',
+      deviceId: 'd1',
+      userMessage: '在吗', // 规则版判 L1；LLM 分类判 L2 → 消费 L2
+      scenario: 'private_chat',
+    });
+    const result = await graph.invoke(state, { threadId: 'v13-2' });
+    expect(result.routing?.level).toBe('L2');
+    expect(result.routing?.reason).toBe('v13_classifier');
+  });
+
+  it('V-13 分类器：分类器失败 → 回退规则版（对话模型不受影响）', async () => {
+    const brokenClassifier: LlmClient = {
+      streamChat: async () => {
+        throw new Error('classifier down');
+      },
+    };
+    // classifierLlm 失败回退规则版；llm（generate）正常
+    const graph = buildChatFlow({ llm: undefined, classifierLlm: brokenClassifier });
+    const normal = await graph.invoke(
+      initialChatFlowState({
+        threadId: 'v13-3',
+        userId: 'u1',
+        deviceId: 'd1',
+        userMessage: '你好',
+        scenario: 'private_chat',
+      }),
+      { threadId: 'v13-3' },
+    );
+    expect(normal.routing?.level).toBe('L1'); // 规则版路由
+    expect(normal.routing?.reason).not.toBe('v13_classifier');
+
+    const crisis = await graph.invoke(
+      initialChatFlowState({
+        threadId: 'v13-4',
+        userId: 'u1',
+        deviceId: 'd1',
+        userMessage: '我不想活了',
+        scenario: 'private_chat',
+      }),
+      { threadId: 'v13-4' },
+    );
+    expect(crisis.crisisLevel).toBe('high');
+    expect(crisis.responseText).toContain('12356');
+  });
+
+  it('危机资源库：high 话术号码取自本地化资源（12356/120/110）', async () => {
+    const graph = buildChatFlow();
+    const result = await graph.invoke(
+      initialChatFlowState({
+        threadId: 'v13-5',
+        userId: 'u1',
+        deviceId: 'd1',
+        userMessage: '我不想活了',
+        scenario: 'private_chat',
+      }),
+      { threadId: 'v13-5' },
+    );
+    expect(result.responseText).toContain('12356');
+    expect(result.responseText).toContain('120');
+    expect(result.responseText).toContain('110');
+    expect(result.responseText).toContain('不承诺替你保密');
+  });
 });

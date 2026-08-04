@@ -10,7 +10,9 @@ import type { LlmClient } from '../llm/types.js';
 import type { NodeFn } from '../runtime/types.js';
 
 import type { ChatFlowState } from './chat-flow-state.js';
+import { crisisResourceFor, highCrisisCopy } from './crisis-resources.js';
 import { detectCrisis } from './crisis-rules.js';
+import { classifyWithLlm, ruleClassification } from './input-classifier.js';
 import { ruleModerateOutput } from './moderation-rules.js';
 import { chunkDialogue, parseModelOutput } from './parse-model-output.js';
 import { ruleRoute } from './route-rules.js';
@@ -25,13 +27,11 @@ export const authNode: NodeFn<ChatFlowState> = async (
   return { authenticated: true };
 };
 
-/** 10.1 输入安全分类（11.8 + 11.7 + 第二轮 sycophancy/永久承诺） */
+/** 10.1 输入安全分类（11.8 / V-13 分类器：LLM 优先，规则版兜底） */
 export const classifyInputNode: NodeFn<ChatFlowState> = async (
   state,
   _ctx,
 ): Promise<Partial<ChatFlowState>> => {
-  // 11.8 危机预筛（规则版，2026-08-02；V-13 自建中文分类器就绪后替换）
-  // 命中 high/medium → 图的 crisis_response 条件边激活（11.8 固定协议）
   const crisis = detectCrisis(state.userMessage);
   return {
     inputClassification: {
@@ -42,17 +42,50 @@ export const classifyInputNode: NodeFn<ChatFlowState> = async (
   };
 };
 
+/** V-13 分类器节点工厂：注入 llm 走 LLM 分类（含多轮上下文）；失败/无 llm 回退规则版 */
+export function classifyInputNodeFactory(llm?: LlmClient): NodeFn<ChatFlowState> {
+  return async (state): Promise<Partial<ChatFlowState>> => {
+    const turns = state.recentTurns?.length
+      ? state.recentTurns
+      : [{ role: 'user' as const, content: state.userMessage }];
+    const classification = llm ? await classifyWithLlm(llm, turns) : null;
+    const rule = ruleClassification(turns);
+    const merged = classification ?? rule;
+    return {
+      inputClassification: {
+        categories: merged.categories,
+        crisisLevel: merged.crisisLevel,
+        confidence: merged.confidence,
+      },
+      // V-13 分类结果驱动路由（10.3 同源）；routeNode 优先消费，缺失回退规则版
+      classification: classification ?? undefined,
+    };
+  };
+}
+
 /** 10.1 / 10.7 按场景和权限检索记忆（实现见 memory-retrieval.ts 的 retrieveMemoryNodeFactory） */
 
 /**
  * 10.3 路由判定：把输入分级到 L0–L3（SAFETY 由 classify 危机预筛先行拦截）。
- * 规则版见 route-rules.ts（动作指令→L0；记忆/情绪信号→L2；长文/多问→L3；
- * 短问候→L1）；V-13 分类器就绪后替换同一出口。
+ * V-13 分类器注入时消费其 routeLevel（同源分类，见 routeNodeFactory）；
+ * 规则版（route-rules.ts：动作指令→L0；记忆/情绪信号→L2；长文/多问→L3；
+ * 短问候→L1）作为无 LLM/分类失败的兜底。
  */
 export const routeNode: NodeFn<ChatFlowState> = async (state): Promise<Partial<ChatFlowState>> => {
   const decision = ruleRoute(state.userMessage);
   return { routing: { level: decision.level, reason: decision.reason } };
 };
+
+/** 路由节点工厂：优先 V-13 分类结果（10.3 同源），缺失回退规则版 */
+export function routeNodeFactory(llm?: LlmClient): NodeFn<ChatFlowState> {
+  return async (state): Promise<Partial<ChatFlowState>> => {
+    if (llm && state.classification) {
+      return { routing: { level: state.classification.routeLevel, reason: 'v13_classifier' } };
+    }
+    const decision = ruleRoute(state.userMessage);
+    return { routing: { level: decision.level, reason: decision.reason } };
+  };
+}
 
 /** 10.1 构造最小上下文（检索记忆进 prompt；10.3 路由判定已由 routeNode 完成） */
 export const buildContextNode: NodeFn<ChatFlowState> = async (
@@ -244,16 +277,13 @@ export const approveActionNode: NodeFn<ChatFlowState> = async (
 /**
  * 11.8 危机三级响应（脱离角色 + 固定策略 + 引导现实资源）。
  * 固定文案原则：不提供方法、不承诺绝对保密、不自动报警；
- * high 附本地化资源（12356 全国心理援助热线；紧急 120/110），
+ * high 附本地化资源（V-13：热线号码取自 crisis-resources，按地区维护 + 季度核验）。
  * medium 软转介，low 角色内温和关怀（低侵入，高召回可接受）。
- * 本地化资源库按地区切换留 V-13 实施。
  */
-const CRISIS_RESPONSES: Record<'low' | 'medium' | 'high', string> = {
-  low: '我听到你说的了。如果愿意，可以多和我说说；需要的时候，也可以和信任的人聊聊。',
-  medium:
-    '听起来你现在很难受。我不是专业的心理帮助，但你此刻的感受值得被认真对待——试着联系一个你信任的人，或拨打免费心理援助热线（12356 全国心理援助热线）。',
-  high: '我很担心你，此刻你的安全最重要。请立即联系你信任的人，或拨打 12356 全国心理援助热线；如有紧急危险，请拨打 120 / 110。我不承诺替你保密这些内容——照顾你是第一位的。',
-};
+const CRISIS_LOW_COPY =
+  '我听到你说的了。如果愿意，可以多和我说说；需要的时候，也可以和信任的人聊聊。';
+const CRISIS_MEDIUM_COPY =
+  '听起来你现在很难受。我不是专业的心理帮助，但你此刻的感受值得被认真对待——试着联系一个你信任的人，或拨打免费心理援助热线（{{hotlines}}）。';
 
 export const crisisResponseNode: NodeFn<ChatFlowState> = async (
   state,
@@ -261,9 +291,17 @@ export const crisisResponseNode: NodeFn<ChatFlowState> = async (
 ): Promise<Partial<ChatFlowState>> => {
   const raw = state.inputClassification?.crisisLevel ?? state.moderation?.crisisLevel ?? 'low';
   const level: 'low' | 'medium' | 'high' = raw === 'none' ? 'low' : raw;
+  const resource = crisisResourceFor();
+  const hotlines = resource.hotlines.map((h) => `${h.name}（${h.number}）`).join('、');
+  const responseText =
+    level === 'high'
+      ? highCrisisCopy(resource)
+      : level === 'medium'
+        ? CRISIS_MEDIUM_COPY.replace('{{hotlines}}', hotlines)
+        : CRISIS_LOW_COPY;
   return {
     crisisLevel: level,
-    responseText: CRISIS_RESPONSES[level],
+    responseText,
     memoryExtractTriggered: false, // 危机场景不抽取记忆
   };
 };
