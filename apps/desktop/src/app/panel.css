@@ -200,12 +200,20 @@
   padding: 2px 4px 8px;
 }
 
-/* 登录页关闭按钮：右上角固定（sticky 不随内容滚动） */
-.auth-shell__close {
+/* 登录页顶部工具栏：关闭按钮独立占位右上角（文档流内，不悬浮、不遮挡内容；
+   吸顶 + 顶层 z-index，滚动时不被内容盖住） */
+.auth-shell__bar {
   position: sticky;
-  top: 4px;
-  margin-left: auto;
-  margin-bottom: -36px;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  height: 36px;
+  background: var(--panel-canvas);
+}
+
+.auth-shell__close {
   color: var(--panel-text-muted);
 }
 

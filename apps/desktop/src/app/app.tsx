@@ -95,15 +95,17 @@ export function AppPanel() {
     return (
       <div className="pet-stage pet-stage--auth">
         <div className="auth-shell">
-          <button
-            className="auth-shell__close icon-button"
-            type="button"
-            aria-label="关闭面板"
-            title="关闭面板"
-            onClick={() => void window.pet.panel.close()}
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
+          <div className="auth-shell__bar">
+            <button
+              className="auth-shell__close icon-button"
+              type="button"
+              aria-label="关闭面板"
+              title="关闭面板"
+              onClick={() => void window.pet.panel.close()}
+            >
+              <X size={18} aria-hidden="true" />
+            </button>
+          </div>
           <LoginPage onAuthed={onAuthed} pendingInvite={pendingInvite} />
           <button className="local-entry" onClick={() => setPhase('local')}>
             先体验本地聊天
