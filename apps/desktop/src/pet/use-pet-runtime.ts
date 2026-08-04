@@ -10,6 +10,7 @@
  * 合并进本地 StarIsleVisualState 供组件消费。卸载清理全部订阅并 dispose。
  * window.pet 缺失（非 Electron）时静默降级，不抛错。
  */
+import { stateToExpression, stateToMotion } from '@pet/pet-state';
 import type { PetProfile, PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -38,16 +39,26 @@ export interface PetRuntimeController {
 /** 气泡自动消失：新内容会刷新计时；超过该时长无更新则清除（设计稿 7.4 短驻留） */
 const BUBBLE_TIMEOUT_MS = 5000;
 
-export function usePetRuntime(): PetRuntimeController {
+/** PetRenderer 工厂类型（供不同皮肤注入） */
+export type RendererFactory = (update: (state: StarIsleVisualState) => void) => PetRenderer;
+
+export interface UsePetRuntimeOptions {
+  /** PetRenderer 工厂；缺省 createSvgPetRenderer（星屿 SVG） */
+  rendererFactory?: RendererFactory;
+}
+
+export function usePetRuntime(options: UsePetRuntimeOptions = {}): PetRuntimeController {
+  const rendererFactory = options.rendererFactory ?? createSvgPetRenderer;
   const [snapshot, setSnapshot] = useState<PetRuntimeSnapshot | null>(null);
   const [profile, setProfile] = useState<PetProfile | null>(null);
   const [visualState, setVisualState] = useState<StarIsleVisualState>(DEFAULT_VISUAL_STATE);
   const [bubbleText, setBubbleText] = useState<string | null>(null);
   const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const receivedVisualRef = useRef(false);
 
   const rendererRef = useRef<PetRenderer | null>(null);
   if (!rendererRef.current) {
-    rendererRef.current = createSvgPetRenderer(setVisualState);
+    rendererRef.current = rendererFactory(setVisualState);
   }
 
   const applyCommand = useCallback((command: PetVisualCommand) => {
@@ -62,6 +73,9 @@ export function usePetRuntime(): PetRuntimeController {
         break;
       case 'speaking':
         renderer.setSpeaking(command.active);
+        break;
+      case 'facing':
+        renderer.setFacing(command.facing);
         break;
       case 'bubble':
         setBubbleText(command.text);
@@ -94,18 +108,27 @@ export function usePetRuntime(): PetRuntimeController {
 
     // 兼容 StrictMode 的双次 effect：cleanup 后重建 renderer
     if (!rendererRef.current) {
-      rendererRef.current = createSvgPetRenderer(setVisualState);
+      rendererRef.current = rendererFactory(setVisualState);
     }
 
     let disposed = false;
+    receivedVisualRef.current = false;
 
     void runtime.getSnapshot().then((next) => {
-      if (!disposed) setSnapshot(next);
+      if (disposed) return;
+      setSnapshot(next);
+      if (!receivedVisualRef.current) {
+        void rendererRef.current?.playMotion(stateToMotion(next.state), 1);
+        rendererRef.current?.setExpression(stateToExpression(next.state));
+      }
     });
 
     const offSnapshot = runtime.onSnapshot(setSnapshot);
     const offVisual = runtime.onVisualCommand((command) => {
-      if (!disposed) applyCommand(command);
+      if (!disposed) {
+        receivedVisualRef.current = true;
+        applyCommand(command);
+      }
     });
 
     if (profileApi) {
@@ -123,7 +146,7 @@ export function usePetRuntime(): PetRuntimeController {
       rendererRef.current?.dispose();
       rendererRef.current = null;
     };
-  }, [applyCommand]);
+  }, [applyCommand, rendererFactory]);
 
   return {
     snapshot,

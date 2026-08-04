@@ -93,6 +93,13 @@ describe('StarIsleVisual（原创分层 SVG 星屿）', () => {
     expect(html).toContain('data-expression="surprised"');
   });
 
+  it('reflects the desktop facing direction on the root svg', () => {
+    const html = renderToStaticMarkup(
+      <StarIsleVisual state={{ ...DEFAULT_VISUAL_STATE, facing: 'left' }} />,
+    );
+    expect(html).toContain('data-facing="left"');
+  });
+
   it('reflects speaking and reducedMotion on the root svg', () => {
     const html = renderToStaticMarkup(
       <StarIsleVisual state={{ ...DEFAULT_VISUAL_STATE, speaking: true, reducedMotion: true }} />,

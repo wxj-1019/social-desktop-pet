@@ -37,7 +37,7 @@ export function StarIsleVisual({
   state = DEFAULT_VISUAL_STATE,
   variant = 'full',
 }: StarIsleVisualProps) {
-  const { motion, expression, intensity, speaking, reducedMotion } = state;
+  const { motion, expression, intensity, speaking, reducedMotion, facing } = state;
   // 渐变 ID 按实例唯一化：面板/桌宠多处复用同一 SVG 时避免 url(#…) 跨实例冲突
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const grad = {
@@ -61,6 +61,7 @@ export function StarIsleVisual({
       data-intensity={intensity}
       data-speaking={speaking ? 'true' : 'false'}
       data-reduced-motion={reducedMotion ? 'true' : 'false'}
+      data-facing={facing}
     >
       <defs>
         <radialGradient id={grad.starGlow} cx="50%" cy="50%" r="50%">

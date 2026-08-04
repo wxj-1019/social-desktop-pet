@@ -11,11 +11,11 @@
  */
 import { join } from 'node:path';
 
-import type { PanelOpen } from '@pet/protocol';
+import type { PanelOpen, PetRuntimeSnapshot } from '@pet/protocol';
 import { app, BrowserWindow, screen } from 'electron';
 
 import { DeepLinkController } from './deep-link-controller.js';
-import { toPersistedPosition } from './display-controller.js';
+import { toPersistedPosition, type PetPosition } from './display-controller.js';
 import { broadcastPetSnapshot, registerIpcAllowlist, sendPetVisual } from './ipc/register.js';
 import type { PetIpcDependencies } from './ipc/register.js';
 import { deliverPanelMessage } from './panel-delivery.js';
@@ -23,6 +23,7 @@ import { PendingInviteStore } from './pending-invite-store.js';
 import { PetDragController } from './pet-drag-controller.js';
 import { PetProfileStore } from './pet-profile-store.js';
 import { PetRuntimeController } from './pet-runtime-controller.js';
+import { PetWanderController } from './pet-wander-controller.js';
 import { PositionStore } from './position-store.js';
 import { SecureStorageController } from './secure-storage-controller.js';
 import { SessionController } from './session-controller.js';
@@ -49,19 +50,19 @@ app.commandLine.appendSwitch(
 // 渲染进程 V8 老生代堆上限（防堆膨胀；128MB 在历史消息+流式渲染下会 OOM 崩渲染进程，取 256MB）
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256');
 
-// 单实例锁
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-}
-
-// ---- E2E 隔离（ready 前）：PET_E2E=1 且提供 PET_E2E_USER_DATA_DIR → 独立 userData ----
+// ---- E2E 隔离（ready / 单实例锁前）：独立 userData 也隔离 Electron 的实例锁 ----
 if (
   process.env['PET_E2E'] &&
   process.env['PET_E2E'] !== '0' &&
   process.env['PET_E2E_USER_DATA_DIR']
 ) {
   app.setPath('userData', process.env['PET_E2E_USER_DATA_DIR']);
+}
+
+// 单实例锁（E2E 已先切换到独立 userData，不会与正在运行的开发实例互斥）
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
 }
 
 // ---- 生命周期状态（模块级，事件处理器跨 whenReady 引用）----
@@ -71,6 +72,7 @@ let quitting = false;
 let tray: TrayController | null = null;
 let runtime: PetRuntimeController | null = null;
 let drag: PetDragController | null = null;
+let wander: PetWanderController | null = null;
 let profileStore: PetProfileStore | null = null;
 let positionStore: PositionStore | null = null;
 let ipcDeps: PetIpcDependencies | null = null;
@@ -82,6 +84,7 @@ let updater: UpdateController | null = null;
 const RENDERER_STABILIZE_MS = 30_000;
 let rendererCrashAttempts = 0;
 let stabilityTimer: ReturnType<typeof setTimeout> | null = null;
+let positionSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let runtimeStarted = false;
 
 /** 桌宠窗存活（未销毁）时返回，否则 null —— 崩溃重建边界：所有窗口操作先判存活 */
@@ -121,22 +124,65 @@ void app.whenReady().then(async () => {
   const pendingStore = new PendingInviteStore(join(app.getPath('userData'), 'pending-invite.json'));
   // Task 6：安全拖动控制器；拖动结束即持久化当前位置（可靠触发点——
   // 部分环境 setPosition 不触发 'moved' 事件，不能依赖窗口事件做唯一保存）
+  const clearScheduledPositionSave = (): void => {
+    if (positionSaveTimer === null) return;
+    clearTimeout(positionSaveTimer);
+    positionSaveTimer = null;
+  };
+  const schedulePetPositionSave = (position: PetPosition): void => {
+    clearScheduledPositionSave();
+    positionSaveTimer = setTimeout(() => {
+      positionSaveTimer = null;
+      positionStore?.save(position);
+    }, 250);
+  };
+  const currentDisplays = () =>
+    screen
+      .getAllDisplays()
+      .map((d) => ({ id: String(d.id), workArea: d.workArea, scaleFactor: d.scaleFactor }));
   const savePetPosition = (): void => {
+    clearScheduledPositionSave();
     const win = alivePetWindow();
     if (!win || !positionStore) return;
     const [x = 0, y = 0] = win.getPosition();
-    const displays = screen
-      .getAllDisplays()
-      .map((d) => ({ id: String(d.id), workArea: d.workArea, scaleFactor: d.scaleFactor }));
-    const persisted = toPersistedPosition(displays, { x, y });
+    const persisted = toPersistedPosition(currentDisplays(), { x, y });
     if (persisted) positionStore.save(persisted);
   };
-  drag = new PetDragController({ onDragEnd: () => savePetPosition() });
+  wander = new PetWanderController({
+    getWindow: () => alivePetWindow(),
+    getDisplays: currentDisplays,
+    emitVisual: (command) => {
+      if (ipcDeps) sendPetVisual(ipcDeps, command);
+    },
+    onPositionChanged: savePetPosition,
+    onError: (error) => console.warn('[pet-wander] movement stopped', error),
+  });
+  drag = new PetDragController({
+    onDragStart: () => {
+      wander?.stop();
+      runtime?.beginManualDrag();
+    },
+    onDragMove: ({ deltaX }) => runtime?.updateManualDrag(deltaX),
+    onDragEnd: () => {
+      runtime?.endManualDrag();
+      savePetPosition();
+    },
+    onDragCancel: () => runtime?.endManualDrag(),
+  });
+
+  const syncWanderToSnapshot = (snapshot: PetRuntimeSnapshot): void => {
+    if (snapshot.state === 'WALKING' && !profileStore?.load().reducedMotion) {
+      wander?.start();
+    } else {
+      wander?.stop();
+    }
+  };
 
   // Task 5/10：桌宠唯一运行时；snapshot/visual 推送经 IPC deps 广播
   //（ipcDeps 在 createPetWindow 后组装，运行时 start 前的早发 snapshot 被忽略）
   runtime = new PetRuntimeController({
     emitSnapshot: (snap) => {
+      syncWanderToSnapshot(snap);
       if (ipcDeps) broadcastPetSnapshot(ipcDeps, snap);
     },
     emitVisual: (cmd) => {
@@ -152,6 +198,10 @@ void app.whenReady().then(async () => {
   const setPassThroughFromMain = (enabled: boolean): void => {
     // 拖动中切换穿透会让窗口跟着光标"鬼畜"：先解除拖动状态
     if (enabled) drag?.cancel();
+    if (enabled) {
+      wander?.stop();
+      runtime?.cancelWander();
+    }
     const win = alivePetWindow();
     if (win) setPassThrough(win, enabled);
     tray?.setPassThroughForced(enabled);
@@ -209,10 +259,12 @@ void app.whenReady().then(async () => {
     const win = createPetWindow({
       savedPosition: positionStore!.load(),
       // 8.5：位置变化 → 持久化
-      onPositionChanged: (pos) => positionStore!.save(pos),
+      onPositionChanged: schedulePetPositionSave,
       // 启动参数：--poc 进窗口能力自检页；--minimized 启动隐藏到托盘
       urlSuffix: startupArgs.poc ? '?poc' : '',
       startHidden: startupArgs.minimized,
+      // 角色皮肤：从持久化档案读取（重启还原选择）
+      character: profileStore!.load().petId,
     });
     petWindow = win;
 
@@ -222,6 +274,7 @@ void app.whenReady().then(async () => {
     win.webContents.on('render-process-gone', () => {
       if (quitting) return;
       drag?.cancel(); // 拖动中的崩溃：先解除拖动状态，避免残留引用
+      wander?.stop();
       if (rendererCrashAttempts >= 1) {
         petWindow = null;
         return;
@@ -240,6 +293,8 @@ void app.whenReady().then(async () => {
       if (!runtimeStarted && runtime) {
         runtimeStarted = true;
         runtime.start();
+      } else if (runtimeStarted && runtime) {
+        syncWanderToSnapshot(runtime.snapshot);
       }
       if (stabilityTimer !== null) {
         clearTimeout(stabilityTimer);
@@ -263,12 +318,7 @@ void app.whenReady().then(async () => {
     runtime: runtime!,
     drag: drag!,
     profile: profileStore!,
-    getDisplays: () =>
-      screen.getAllDisplays().map((d) => ({
-        id: String(d.id),
-        workArea: d.workArea,
-        scaleFactor: d.scaleFactor,
-      })),
+    getDisplays: currentDisplays,
     openPanel: (target: PanelOpen) => openPanel(target.view),
     closePanel,
     showContextMenu,
@@ -280,6 +330,20 @@ void app.whenReady().then(async () => {
     },
     setPassThrough: setPassThroughFromMain,
     setDnd: syncDnd,
+    // 角色皮肤切换：保存 profile 后用新 character 参数重建桌宠窗
+    //（销毁旧窗 → createAndWirePetWindow 读 profileStore.petId 创建新窗；
+    // 重载瞬间空白可接受——角色切换是低频操作，运行时不重启）
+    reloadPetWithCharacter: () => {
+      drag?.cancel();
+      wander?.stop();
+      const old = alivePetWindow();
+      if (old && !old.isDestroyed()) {
+        old.destroy();
+      }
+      petWindow = null;
+      rendererCrashAttempts = 0; // 重建不算崩溃，重置计数
+      createAndWirePetWindow();
+    },
     sessionHandlers: createSessionHandlers(
       createdSession,
       () => void deepLink?.restorePending(),
@@ -348,6 +412,7 @@ void app.whenReady().then(async () => {
       onSetPassThrough: setPassThroughFromMain,
       onHide: () => {
         drag?.cancel(); // 隐藏前解除进行中的拖动，避免残留会话
+        wander?.stop();
         alivePetWindow()?.hide();
         runtime?.setHidden(true);
       },
@@ -410,7 +475,12 @@ app.on('before-quit', () => {
     stabilityTimer = null;
   }
   runtime?.stop();
+  wander?.stop();
   drag?.cancel();
+  if (positionSaveTimer !== null) {
+    clearTimeout(positionSaveTimer);
+    positionSaveTimer = null;
+  }
   tray?.destroy();
   panelHandle?.allowClose();
 });
@@ -424,6 +494,7 @@ app.on('window-all-closed', () => {
 // 读窗口状态（bounds/visible）。生产（PET_E2E 未设置）不定义，测试代码拿不到。
 export interface PetE2EHookShape {
   invokeTrayAction(action: TrayAction): boolean;
+  startWander(): boolean;
   getTrayState(): { dnd: boolean; passThrough: boolean };
   getPetWindowState(): { bounds: Electron.Rectangle; visible: boolean } | null;
   getWindowState(surface: 'pet' | 'panel'): { bounds: Electron.Rectangle; visible: boolean } | null;
@@ -443,6 +514,7 @@ if (process.env['PET_E2E'] === '1') {
         tray.dispatch(action);
         return true;
       },
+      startWander: () => runtime?.tryStartWander() ?? false,
       getTrayState: () => tray?.snapshot ?? { dnd: false, passThrough: false },
       getPetWindowState: () => {
         const win = alivePetWindow();

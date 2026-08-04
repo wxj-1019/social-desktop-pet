@@ -119,6 +119,7 @@ function makeDeps() {
   const setPassThrough = vi.fn();
   // 勿扰单一状态源：与 index.ts syncDnd 一致，先驱动 runtime（emitSnapshot 广播）
   const setDnd = vi.fn((enabled: boolean) => runtime.setDnd(enabled));
+  const reloadPetWithCharacter = vi.fn();
   const deps: PetIpcDependencies = {
     appVersion: '4.5.6-test',
     getPetWindow: () => asWindow(pet),
@@ -133,6 +134,7 @@ function makeDeps() {
     showContextMenu,
     setPassThrough,
     setDnd,
+    reloadPetWithCharacter,
   };
   return {
     pet,
@@ -146,6 +148,7 @@ function makeDeps() {
     showContextMenu,
     setPassThrough,
     setDnd,
+    reloadPetWithCharacter,
     deps,
     snapshots,
     visuals,

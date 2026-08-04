@@ -43,6 +43,25 @@ test('冷启动：星屿可见且角色像素充足（透明窗非空白）', as
   expect(state?.visible).toBe(true);
 });
 
+test('自主溜达：走路动作会真实移动桌宠窗口', async () => {
+  const pet = await app.petWindow();
+  const isle = pet.getByRole('img', { name: '星尾狐猫星屿' });
+  const before = (await app.windowState('pet')) as PetWindowState;
+
+  await app.startWander();
+  await expect(isle).toHaveAttribute('data-motion', 'walk', { timeout: 5_000 });
+  await expect(isle).toHaveAttribute('data-facing', /^(left|right)$/, { timeout: 5_000 });
+  await expect
+    .poll(
+      async () => {
+        const current = await app.windowState('pet');
+        return current !== null && current.bounds.x !== before.bounds.x;
+      },
+      { timeout: 5_000, message: '走路状态下桌宠窗口的横坐标应持续变化' },
+    )
+    .toBe(true);
+});
+
 test('交互：摸头触发 touch 动作；双击身体打开聊天面板', async () => {
   const pet = await app.petWindow();
   const isle = pet.getByRole('img', { name: '星尾狐猫星屿' });
@@ -77,7 +96,12 @@ test('拖动：拖拽后窗口移动，restart() 后位置持久化还原', asyn
   await pet.mouse.move(fromX, fromY);
   await pet.mouse.down();
   await pet.mouse.move(fromX + 60, fromY + 40, { steps: 5 });
+
+  // 按住向右拖动时，窗口位移与角色视觉必须同步；不能只移动透明窗口。
+  await expect(isle).toHaveAttribute('data-motion', 'walk', { timeout: 5_000 });
+  await expect(isle).toHaveAttribute('data-facing', 'right', { timeout: 5_000 });
   await pet.mouse.up();
+  await expect(isle).toHaveAttribute('data-motion', 'idle', { timeout: 5_000 });
 
   // 等窗口真的移动了
   await expect
@@ -195,23 +219,23 @@ test('reduced-motion：档案开启减弱动态后星屿响应', async () => {
   });
 });
 
-test('溜达：90s 内出现过 walk 动作（弱断言，随机性未观察到则跳过）', async () => {
+test('CodeNoNo：切换皮肤后 spritesheet 帧会持续推进', async () => {
+  const panel = await app.openPanel('chat');
+  await panel.evaluate(async () => {
+    const current = await window.pet.petProfile.get();
+    await window.pet.petProfile.set({ ...current, reducedMotion: false });
+    await window.pet.petProfile.setCharacter('codenono');
+  });
+
   const pet = await app.petWindow();
-  const isle = pet.getByRole('img', { name: '星尾狐猫星屿' });
-  const seenWalk = await isle.evaluate(
-    (el) =>
-      new Promise<boolean>((resolve) => {
-        const deadline = Date.now() + 90_000;
-        const timer = setInterval(() => {
-          if (el.getAttribute('data-motion') === 'walk') {
-            clearInterval(timer);
-            resolve(true);
-          } else if (Date.now() > deadline) {
-            clearInterval(timer);
-            resolve(false);
-          }
-        }, 500);
-      }),
-  );
-  test.skip(!seenWalk, '90s 内未观察到溜达（随机性，跳过）');
+  const visual = pet.getByRole('img', { name: 'CodeNoNo' });
+  await expect(visual).toBeVisible({ timeout: 10_000 });
+  await expect(visual).toHaveAttribute('data-animation', 'motion:idle');
+  const initialFrame = await visual.getAttribute('data-frame');
+  await expect
+    .poll(() => visual.getAttribute('data-frame'), {
+      timeout: 3_000,
+      message: 'CodeNoNo 的 spritesheet 帧号应随 requestAnimationFrame 推进',
+    })
+    .not.toBe(initialFrame);
 });

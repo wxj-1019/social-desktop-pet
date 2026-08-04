@@ -111,6 +111,54 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('can start a deterministic wander through the same approved runtime path', () => {
+    vi.useFakeTimers();
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const visuals: PetVisualCommand[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+
+    expect(runtime.tryStartWander()).toBe(true);
+    expect(runtime.snapshot.state).toBe('WALKING');
+    expect(visuals.at(-1)).toEqual({ type: 'motion', motion: 'walk', intensity: 1 });
+
+    expect(runtime.cancelWander()).toBe(true);
+    expect(runtime.snapshot.state).toBe('IDLE');
+    expect(visuals.at(-1)).toEqual({ type: 'motion', motion: 'idle', intensity: 1 });
+
+    runtime.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('plays walk and turns with manual horizontal dragging, then restores the state motion', () => {
+    vi.useFakeTimers();
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const visuals: PetVisualCommand[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+    vi.advanceTimersByTime(1_200);
+
+    expect(runtime.tryStartWander()).toBe(true);
+    expect(runtime.snapshot.state).toBe('WALKING');
+    runtime.beginManualDrag();
+    expect(runtime.snapshot.state).toBe('IDLE');
+    expect(visuals.at(-1)).toEqual({ type: 'motion', motion: 'walk', intensity: 1 });
+
+    runtime.updateManualDrag(18);
+    runtime.updateManualDrag(6);
+    runtime.updateManualDrag(-12);
+    expect(visuals.filter((command) => command.type === 'facing')).toEqual([
+      { type: 'facing', facing: 'right' },
+      { type: 'facing', facing: 'left' },
+    ]);
+
+    runtime.endManualDrag();
+    expect(visuals.at(-1)).toEqual({ type: 'motion', motion: 'idle', intensity: 1 });
+
+    runtime.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('does not wander while QUIET (rearms instead of entering WALKING)', () => {
     vi.useFakeTimers();
     const snapshots: PetRuntimeSnapshot[] = [];
@@ -195,6 +243,24 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     runtime.stop();
   });
 
+  it('returns a transient touch animation to the current state motion', () => {
+    vi.useFakeTimers();
+    const visuals: PetVisualCommand[] = [];
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+    vi.advanceTimersByTime(1_200);
+
+    runtime.handleInteraction({ kind: 'head_touch' });
+    expect(visuals.at(-1)).toEqual({ type: 'motion', motion: 'touch', intensity: 1 });
+    vi.advanceTimersByTime(1_299);
+    expect(visuals.at(-1)).toEqual({ type: 'motion', motion: 'touch', intensity: 1 });
+    vi.advanceTimersByTime(1);
+    expect(visuals.at(-1)).toEqual({ type: 'motion', motion: 'idle', intensity: 1 });
+
+    runtime.stop();
+  });
+
   it('drives chat start/done through speaking, expression, motion and bubble', () => {
     vi.useFakeTimers();
     const visuals: PetVisualCommand[] = [];
@@ -205,6 +271,7 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     runtime.handleChat({ phase: 'start', source: 'local_chat', text: '你好呀' });
     expect(runtime.snapshot.state).toBe('CHATTING');
     expect(visuals).toContainEqual({ type: 'speaking', active: true });
+    expect(visuals).toContainEqual({ type: 'motion', motion: 'talk', intensity: 1 });
 
     runtime.handleChat({ phase: 'update', source: 'local_chat', text: 'x'.repeat(200) });
     expect(visuals).toContainEqual({ type: 'bubble', text: 'x'.repeat(160) });
@@ -215,15 +282,32 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
       output: {
         dialogue: '今天也要元气满满！',
         emotion: 'happy',
-        actionIntent: 'nod',
+        actionIntent: 'cheer',
         intensity: 5,
       },
     });
     expect(visuals).toContainEqual({ type: 'speaking', active: false });
     expect(visuals).toContainEqual({ type: 'expression', expression: 'happy' });
-    expect(visuals).toContainEqual({ type: 'motion', motion: 'talk', intensity: 3 });
+    expect(visuals).toContainEqual({ type: 'motion', motion: 'happy', intensity: 3 });
     expect(visuals).toContainEqual({ type: 'bubble', text: '今天也要元气满满！' });
     expect(runtime.snapshot.state).toBe('IDLE');
+
+    runtime.stop();
+  });
+
+  it('chat interrupts an active wander and enters CHATTING through IDLE', () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const visuals: PetVisualCommand[] = [];
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+    vi.advanceTimersByTime(30_000);
+    expect(runtime.snapshot.state).toBe('WALKING');
+
+    runtime.handleChat({ phase: 'start', source: 'local_chat', text: '停一下' });
+    expect(runtime.snapshot.state).toBe('CHATTING');
+    expect(visuals.at(-1)).toEqual({ type: 'motion', motion: 'talk', intensity: 1 });
 
     runtime.stop();
   });

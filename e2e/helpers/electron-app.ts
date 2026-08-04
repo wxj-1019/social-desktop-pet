@@ -35,6 +35,7 @@ export type TrayAction =
 /** __petE2E hook 在 Main 进程暴露的最小契约（与 index.ts 保持一致） */
 export interface PetE2EHook {
   invokeTrayAction(action: TrayAction): boolean;
+  startWander(): boolean;
   getTrayState(): TrayState;
   getPetWindowState(): PetWindowState | null;
   getWindowState(surface: PetSurface): PetWindowState | null;
@@ -101,6 +102,23 @@ export class PetApp {
           timeout: 15_000,
           message: `托盘动作 ${action} 未生效（tray 未就绪或 dispatch 失败）`,
         },
+      )
+      .toBe(true);
+  }
+
+  /** 通过 Main 运行时的正常审批路径立即开始一次溜达。 */
+  async startWander(): Promise<void> {
+    await expect
+      .poll(
+        () =>
+          this._app.evaluate(() => {
+            const hook = (globalThis as unknown as { __petE2E?: PetE2EHook }).__petE2E;
+            if (!hook?.startWander) {
+              throw new Error('__petE2E.startWander hook 缺失（PET_E2E=1 时才有）');
+            }
+            return hook.startWander();
+          }),
+        { timeout: 20_000, message: '等待桌宠运行时进入可溜达状态' },
       )
       .toBe(true);
   }

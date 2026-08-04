@@ -54,6 +54,11 @@ body,
   --amp-surprised-x: 1.07;
 }
 
+/* 自主漫步转向：只翻转角色 SVG，不影响外层气泡与命中手势坐标。 */
+.star-isle[data-facing='left'] {
+  transform: scaleX(-1);
+}
+
 /* 强度 → 动画幅度：intensity 由模型输出经 svg-pet-renderer 写入 data-intensity */
 [data-intensity='2'] {
   --amp-bounce-y: -10px;
@@ -730,6 +735,34 @@ body,
   position: relative;
   padding: 0;
   background: transparent;
+}
+
+/* ---- spritesheet 角色皮肤（CodeNoNo）---- */
+/* 外层：撑满容器，水平居中 + 底部锚定（与星屿 xMidYMax meet 一致） */
+.spritesheet-pet {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background-color: transparent;
+}
+
+/* 视口：固定为单帧放大后的精确尺寸，裁掉所有相邻帧（杜绝串台） */
+.spritesheet-pet__viewport {
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* 完整 spritesheet 原始尺寸；由内联 transform 偏移到当前帧 + scale 放大 */
+.spritesheet-pet__sheet {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  max-width: none;
 }
 
 /* 说话气泡：棉花糖浅色风；顶部锚定（bottom:94% 会被窗口上边缘裁掉），

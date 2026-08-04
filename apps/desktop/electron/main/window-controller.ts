@@ -47,6 +47,8 @@ export interface WindowOptions {
   urlSuffix?: string;
   /** 启动隐藏（--minimized：启动后最小化到托盘，不显示主窗） */
   startHidden?: boolean;
+  /** 角色皮肤 id（拼入 ?character= 参数；缺省星屿） */
+  character?: string;
   /** 测试注入：窗口/显示器端口（默认 BrowserWindow + screen） */
   runtime?: WindowControllerRuntime;
 }
@@ -162,6 +164,7 @@ export function createPetWindow(options: WindowOptions = {}): BrowserWindow {
   // 兼容旧 ?poc（窗口能力自检页）：urlSuffix 存在时附加 poc 参数
   const extra = new URLSearchParams();
   if (options.urlSuffix) extra.set('poc', '1');
+  if (options.character) extra.set('character', options.character);
   loadRendererSurface(win, 'pet', extra);
 
   return win;

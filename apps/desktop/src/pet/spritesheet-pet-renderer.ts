@@ -1,9 +1,9 @@
 /**
- * SVG 星屿渲染器适配层 —— 实现 PetRenderer 契约。
+ * SpritesheetPetRenderer —— 实现 PetRenderer 契约（spritesheet 皮肤）。
  *
- * 内部维护 StarIsleVisualState，任何 set 合并 patch 后立即回调
- * `update(state)`（React 侧由此 setState 驱动重绘）；dispose 后忽略一切调用。
- * playMotion 返回 resolved Promise（SVG 动画由 CSS 驱动，无需等待）。
+ * 与 createSvgPetRenderer 同构：维护 StarIsleVisualState，patch 合并后回调 update。
+ * 渲染状态（motion/expression/intensity/speaking/reducedMotion）字段与 SVG 星屿完全一致，
+ * 帧循环由 SpritesheetVisual 组件根据 motion 驱动（rAF），本适配层只负责状态传递。
  */
 import {
   DEFAULT_VISUAL_STATE,
@@ -11,7 +11,9 @@ import {
   type StarIsleVisualState,
 } from './pet-renderer.js';
 
-export function createSvgPetRenderer(update: (state: StarIsleVisualState) => void): PetRenderer {
+export function createSpritesheetPetRenderer(
+  update: (state: StarIsleVisualState) => void,
+): PetRenderer {
   let state: StarIsleVisualState = { ...DEFAULT_VISUAL_STATE };
   let disposed = false;
 

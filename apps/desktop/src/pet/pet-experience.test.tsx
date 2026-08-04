@@ -171,12 +171,13 @@ describe('PetExperience（星屿直连交互面）', () => {
     expect(pet.panel.open).toHaveBeenCalledWith({ view: 'chat' });
   });
 
-  it('starts a drag after moving beyond the threshold and ends it on pointer up', () => {
+  it('starts from the original pointer and forwards the threshold-crossing move', () => {
     render(<PetExperience />);
     const container = document.querySelector('.pet-experience');
     firePointer(container!, 'down', { screenX: 100, screenY: 100 });
     firePointer(container!, 'move', { screenX: 130, screenY: 120 });
-    expect(pet.petRuntime.dragStart).toHaveBeenCalledWith({ x: 130, y: 120 });
+    expect(pet.petRuntime.dragStart).toHaveBeenCalledWith({ x: 100, y: 100 });
+    expect(pet.petRuntime.dragMove).toHaveBeenCalledWith({ x: 130, y: 120 });
     firePointer(container!, 'up', { screenX: 130, screenY: 120 });
     expect(pet.petRuntime.dragEnd).toHaveBeenCalledTimes(1);
   });

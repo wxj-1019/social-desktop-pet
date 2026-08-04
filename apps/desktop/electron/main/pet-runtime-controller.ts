@@ -15,6 +15,7 @@ import {
   emotionToExpression,
   normalizeIntensity,
   PetStateMachine,
+  shouldInterrupt,
   stateToMotion,
 } from '@pet/pet-state';
 import type {
@@ -22,7 +23,9 @@ import type {
   PetActionDecision,
   PetActionRequest,
   PetChatEvent,
+  PetFacing,
   PetInteraction,
+  PetMotion,
   PetRuntimeSnapshot,
   PetSocialEvent,
   PetState,
@@ -41,6 +44,20 @@ const WANDER_DURATION_MIN_MS = 3_000;
 const WANDER_DURATION_MAX_MS = 5_000;
 /** 活动窗口：距最近一次用户/系统活动超过该时长后停止溜达，让空闲降级（SITTING）可达 */
 const WANDER_STOP_IDLE_MS = 150_000;
+
+/** 瞬时动作播放时长；结束后按届时的状态回到基础动作。 */
+const ACTION_DURATION_MS: Readonly<Record<ActionIntent, number>> = {
+  idle: 0,
+  wave: 1_600,
+  nod: 900,
+  shake_head: 1_100,
+  touch: 1_300,
+  sit: 3_000,
+  sleep: 4_000,
+  walk: 3_000,
+  cheer: 1_200,
+  comfort: 1_500,
+};
 
 /** 点心名称映射（送礼气泡显示文案；未知 id 回退"点心"） */
 export function snackLabel(snackId: string): string {
@@ -87,6 +104,10 @@ export class PetRuntimeController {
   private bootTimeout: ReturnType<typeof globalThis.setTimeout> | null = null;
   private wanderTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   private wanderEndTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  private actionResetTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  private activeTransientMotion: PetMotion | null = null;
+  private manualDragging = false;
+  private manualDragFacing: PetFacing | null = null;
   private online = true;
   private dnd = false;
   private hidden = false;
@@ -170,14 +191,7 @@ export class PetRuntimeController {
         // double_click / context_menu：纯 UI 层事件，无视觉动作
         return;
     }
-    const decision = this.machine.requestAction({ intent, source: 'local_interaction' });
-    if (decision.approved) {
-      this.emitVisual({
-        type: 'motion',
-        motion: actionIntentToMotion(intent),
-        intensity: 1,
-      });
-    }
+    this.requestAction({ intent, source: 'local_interaction' });
   }
 
   handleChat(event: PetChatEvent): void {
@@ -213,12 +227,12 @@ export class PetRuntimeController {
 
     const decision = this.machine.requestAction({ intent: 'cheer', source: 'system' });
     if (decision.approved) {
-      this.emitVisual({ type: 'motion', motion: 'happy', intensity: 1 });
+      this.playAction('cheer', 1);
     } else if (decision.reason === 'cooldown') {
       // 冷却补偿：cheer 被冷却挡住时尝试 wave（节奏内仍有庆祝动作）
       const fallback = this.machine.requestAction({ intent: 'wave', source: 'system' });
       if (fallback.approved) {
-        this.emitVisual({ type: 'motion', motion: 'wave', intensity: 1 });
+        this.playAction('wave', 1);
       }
     }
     // 其余拒绝（dnd/not_allowed/offline）：仅气泡，不动作
@@ -231,25 +245,86 @@ export class PetRuntimeController {
   requestAction(request: PetActionRequest): PetActionDecision {
     const decision = this.machine.requestAction(request);
     if (!this.stopped && decision.approved) {
-      this.emitVisual({
-        type: 'motion',
-        motion: actionIntentToMotion(request.intent),
-        intensity: normalizeIntensity(1),
-      });
+      this.playAction(request.intent, normalizeIntensity(1));
     }
     return decision;
+  }
+
+  /** 立即尝试开始一次溜达；供受控触发与 E2E 验证复用正常状态/动作审批路径。 */
+  tryStartWander(): boolean {
+    if (this.stopped) return false;
+    if (this.wanderTimer !== null) {
+      this.clearTimeoutFn(this.wanderTimer);
+      this.wanderTimer = null;
+    }
+    return this.startWander();
+  }
+
+  /** 用户拖动等高优先级交互会结束当前溜达，并恢复 IDLE 基础动作。 */
+  cancelWander(): boolean {
+    if (this.stopped || this.machine.current !== 'WALKING') return false;
+    if (this.wanderEndTimer !== null) {
+      this.clearTimeoutFn(this.wanderEndTimer);
+      this.wanderEndTimer = null;
+    }
+    this.lastActivityAt = this.nowMs();
+    this.machine.transition('IDLE', 'wander_cancelled');
+    this.emitSnapshot();
+    this.emitStateMotion();
+    this.armWanderTimer();
+    return true;
+  }
+
+  /** 手动拖拽开始：取得视觉动作所有权，并沿用正常 walk 动画。 */
+  beginManualDrag(): void {
+    if (this.stopped || this.manualDragging) return;
+    this.manualDragging = true;
+    this.manualDragFacing = null;
+    this.lastActivityAt = this.nowMs();
+    this.cancelWander();
+    this.emitPersistentMotion('walk', 1);
+  }
+
+  /** 按实际窗口横向位移更新朝向；同方向连续事件不重复广播。 */
+  updateManualDrag(deltaX: number): void {
+    if (this.stopped || !this.manualDragging || !Number.isFinite(deltaX) || deltaX === 0) return;
+    const facing: PetFacing = deltaX < 0 ? 'left' : 'right';
+    if (facing === this.manualDragFacing) return;
+    this.manualDragFacing = facing;
+    this.emitVisual({ type: 'facing', facing });
+  }
+
+  /** 手动拖拽结束/取消：释放视觉所有权，恢复当前状态的基础动作。 */
+  endManualDrag(): void {
+    if (this.stopped || !this.manualDragging) return;
+    this.manualDragging = false;
+    this.manualDragFacing = null;
+    this.emitStateMotion();
+    this.armWanderTimer();
   }
 
   private handleChatStart(_event: Extract<PetChatEvent, { phase: 'start' }>): void {
     // 勿扰 / 隐藏：忽略聊天（7.3 不弹气泡 / 不播音 / 不动作）
     if (this.machine.current === 'QUIET' || this.machine.current === 'HIDDEN') return;
-    this.emitVisual({ type: 'speaking', active: true });
     // OFFLINE：本地动画继续，保持 OFFLINE 状态（7.1）
-    if (this.machine.current === 'OFFLINE') return;
+    if (this.machine.current === 'OFFLINE') {
+      this.emitVisual({ type: 'speaking', active: true });
+      this.emitPersistentMotion('talk', 1);
+      return;
+    }
+
+    const before = this.machine.current;
+    if (this.machine.current !== 'IDLE' && this.machine.current !== 'CHATTING') {
+      this.machine.transition('IDLE', 'chat_interrupt');
+    }
     if (this.machine.current === 'IDLE') {
       this.machine.transition('CHATTING', 'chat_start');
+    }
+    if (this.machine.current !== before) {
       this.emitSnapshot();
     }
+    this.emitVisual({ type: 'speaking', active: true });
+    this.emitPersistentMotion('talk', 1);
   }
 
   private handleChatUpdate(event: Extract<PetChatEvent, { phase: 'update' }>): void {
@@ -261,25 +336,25 @@ export class PetRuntimeController {
     const { output } = event;
     this.emitVisual({ type: 'speaking', active: false });
     this.emitVisual({ type: 'expression', expression: emotionToExpression(output.emotion) });
-    const decision = this.machine.requestAction({
-      intent: output.actionIntent,
-      source: event.source,
-    });
-    if (decision.approved) {
-      this.emitVisual({
-        type: 'motion',
-        motion: actionIntentToMotion(output.actionIntent),
-        intensity: normalizeIntensity(output.intensity),
-      });
-    }
-    if (this.isBubbleAllowed()) {
-      this.emitVisual({ type: 'bubble', text: output.dialogue.slice(-160) });
-    }
-    // 回到活动态：仅在确实在 CHATTING 时回收（QUIET/HIDDEN/OFFLINE 由 reconcileMode 维护）
+    // 正常聊天结束先回到 IDLE，再按活动态白名单审批最终动作；否则 cheer/walk/sit
+    // 会被 CHATTING 白名单误拒绝，模型虽输出动作但视觉层永远收不到。
     if (this.machine.current === 'CHATTING') {
       this.machine.transition('IDLE', 'chat_done');
       this.emitSnapshot();
     }
+    const decision = this.machine.requestAction({
+      intent: output.actionIntent,
+      source: event.source,
+    });
+    let playedAction = false;
+    if (decision.approved) {
+      playedAction = this.playAction(output.actionIntent, normalizeIntensity(output.intensity));
+    }
+    if (this.isBubbleAllowed()) {
+      this.emitVisual({ type: 'bubble', text: output.dialogue.slice(-160) });
+    }
+    if (!playedAction) this.emitStateMotion();
+    this.armWanderTimer();
   }
 
   private handleChatError(event: Extract<PetChatEvent, { phase: 'error' }>): void {
@@ -290,6 +365,8 @@ export class PetRuntimeController {
     if (this.machine.transition('IDLE', 'chat_error')) {
       this.emitSnapshot();
     }
+    this.emitStateMotion();
+    this.armWanderTimer();
   }
 
   /** 气泡仅在非勿扰 / 非隐藏时允许（7.3） */
@@ -303,6 +380,67 @@ export class PetRuntimeController {
 
   private emitVisual(command: PetVisualCommand): void {
     this.options.emitVisual(command);
+  }
+
+  /** 状态基础动作：强制结束瞬时动作，并同步到当前状态。 */
+  private emitStateMotion(): void {
+    this.clearBootTimeout();
+    this.clearActionResetTimer();
+    this.activeTransientMotion = null;
+    this.emitVisual({
+      type: 'motion',
+      motion: stateToMotion(this.machine.current),
+      intensity: 1,
+    });
+  }
+
+  /** 持续到显式状态变化的动作（聊天说话态等）。 */
+  private emitPersistentMotion(motion: PetMotion, intensity: 1 | 2 | 3): void {
+    this.clearBootTimeout();
+    this.clearActionResetTimer();
+    this.activeTransientMotion = null;
+    this.emitVisual({ type: 'motion', motion, intensity });
+  }
+
+  /** 播放一次动作；高优先级瞬时动作不会被仍在播放的低优先级请求覆盖。 */
+  private playAction(intent: ActionIntent, intensity: 1 | 2 | 3): boolean {
+    const duration = ACTION_DURATION_MS[intent];
+    if (duration === 0) {
+      this.emitStateMotion();
+      return true;
+    }
+    const motion = actionIntentToMotion(intent);
+    if (this.activeTransientMotion && shouldInterrupt(motion, this.activeTransientMotion)) {
+      return false;
+    }
+
+    this.clearBootTimeout();
+    this.clearActionResetTimer();
+    this.activeTransientMotion = motion;
+    this.emitVisual({ type: 'motion', motion, intensity });
+    this.actionResetTimer = this.setTimeoutFn(() => {
+      this.actionResetTimer = null;
+      this.activeTransientMotion = null;
+      if (this.stopped) return;
+      this.emitVisual({
+        type: 'motion',
+        motion: stateToMotion(this.machine.current),
+        intensity: 1,
+      });
+    }, duration);
+    return true;
+  }
+
+  private clearActionResetTimer(): void {
+    if (this.actionResetTimer === null) return;
+    this.clearTimeoutFn(this.actionResetTimer);
+    this.actionResetTimer = null;
+  }
+
+  private clearBootTimeout(): void {
+    if (this.bootTimeout === null) return;
+    this.clearTimeoutFn(this.bootTimeout);
+    this.bootTimeout = null;
   }
 
   /** 模式优先级：HIDDEN > QUIET > OFFLINE > activity */
@@ -331,11 +469,7 @@ export class PetRuntimeController {
     const stateChanged = this.enterModeState('mode_reconcile');
     if (stateChanged) {
       this.emitSnapshot();
-      this.emitVisual({
-        type: 'motion',
-        motion: stateToMotion(this.machine.current),
-        intensity: 1,
-      });
+      this.emitStateMotion();
     } else if (flagChanged) {
       // 状态未变（如 hidden 中改 online/dnd）只更新 flags 快照
       this.emitSnapshot();
@@ -350,11 +484,7 @@ export class PetRuntimeController {
     this.machine.tick();
     if (this.machine.current !== before) {
       this.emitSnapshot();
-      this.emitVisual({
-        type: 'motion',
-        motion: stateToMotion(this.machine.current),
-        intensity: 1,
-      });
+      this.emitStateMotion();
     }
   }
 
@@ -378,7 +508,7 @@ export class PetRuntimeController {
 
   /** 挂起溜达开始定时器（30-90s 随机；已挂起/隐藏时不重复挂） */
   private armWanderTimer(): void {
-    if (this.stopped || this.hidden || this.wanderTimer !== null) return;
+    if (this.stopped || this.hidden || this.manualDragging || this.wanderTimer !== null) return;
     if (this.nowMs() - this.lastActivityAt > WANDER_STOP_IDLE_MS) return; // 久置无活动：停止溜达，让空闲降级可达
     const delay =
       WANDER_MIN_DELAY_MS + Math.floor(Math.random() * (WANDER_MAX_DELAY_MS - WANDER_MIN_DELAY_MS));
@@ -389,20 +519,21 @@ export class PetRuntimeController {
   }
 
   /** 溜达开始：仅 IDLE 时进入 WALKING（QUIET/SLEEPING/OFFLINE 等重新挂起）；walk 经动作审批 */
-  private startWander(): void {
-    if (this.stopped) return;
+  private startWander(): boolean {
+    if (this.stopped) return false;
     if (this.machine.current !== 'IDLE') {
       this.armWanderTimer();
-      return;
+      return false;
     }
     this.machine.transition('WALKING', 'wander_start');
-    const decision = this.requestAction({ intent: 'walk', source: 'system' });
+    const decision = this.machine.requestAction({ intent: 'walk', source: 'system' });
     if (!decision.approved) {
       // walk 冷却中（聊天输出可能刚用过 walk）：本轮跳过，重新挂起下一轮
       this.machine.transition('IDLE', 'wander_abort');
       this.armWanderTimer();
-      return;
+      return false;
     }
+    this.emitStateMotion();
     this.emitSnapshot();
     this.wanderEndTimer = this.setTimeoutFn(
       () => {
@@ -412,6 +543,7 @@ export class PetRuntimeController {
       WANDER_DURATION_MIN_MS +
         Math.floor(Math.random() * (WANDER_DURATION_MAX_MS - WANDER_DURATION_MIN_MS)),
     );
+    return true;
   }
 
   /** 溜达结束：仍在 WALKING 才回 IDLE；随后重新挂起下一轮 */
@@ -420,11 +552,7 @@ export class PetRuntimeController {
     if (this.machine.current === 'WALKING') {
       this.machine.transition('IDLE', 'wander_done');
       this.emitSnapshot();
-      this.emitVisual({
-        type: 'motion',
-        motion: stateToMotion(this.machine.current),
-        intensity: 1,
-      });
+      this.emitStateMotion();
     }
     this.armWanderTimer();
   }
@@ -439,7 +567,7 @@ export class PetRuntimeController {
     this.bootTimeout = this.setTimeoutFn(() => {
       this.bootTimeout = null;
       if (this.stopped) return;
-      this.emitVisual({ type: 'motion', motion: 'idle', intensity: 1 });
+      this.emitStateMotion();
     }, BOOT_STRETCH_MS);
   }
 
@@ -452,6 +580,10 @@ export class PetRuntimeController {
       this.clearTimeoutFn(this.bootTimeout);
       this.bootTimeout = null;
     }
+    this.clearActionResetTimer();
+    this.activeTransientMotion = null;
+    this.manualDragging = false;
+    this.manualDragFacing = null;
     if (this.wanderTimer !== null) {
       this.clearTimeoutFn(this.wanderTimer);
       this.wanderTimer = null;

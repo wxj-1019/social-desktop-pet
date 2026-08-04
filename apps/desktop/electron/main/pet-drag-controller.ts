@@ -22,9 +22,22 @@ export interface DragPointer {
   y: number;
 }
 
+export interface DragMovement {
+  /** 本次实际窗口横向位移（已应用显示器边界约束） */
+  deltaX: number;
+  /** 本次实际窗口纵向位移（已应用显示器边界约束） */
+  deltaY: number;
+}
+
 export interface PetDragControllerOptions {
+  /** 拖动取得窗口位置所有权前触发（用于停止自主漫步，避免两个控制器竞态） */
+  onDragStart?: () => void;
+  /** 每次窗口实际移动后触发（供运行时按 deltaX 更新左右朝向） */
+  onDragMove?: (movement: DragMovement) => void;
   /** 拖动结束回调（end() 时触发，携带最后一次指针点；供调用方持久化位置） */
   onDragEnd?: (pointer: DragPointer) => void;
+  /** 活跃拖动被穿透/隐藏等外部事件取消时触发 */
+  onDragCancel?: () => void;
 }
 
 /** 拖动会话：记录按下瞬间鼠标与窗口左上角的偏移（屏幕指针与窗口坐标同坐标系） */
@@ -49,6 +62,7 @@ export class PetDragController {
 
   /** 按下：记录鼠标相对窗口左上角的偏移，之后 move 按指针位置 + 偏移移动窗口 */
   start(win: DragWindowPort, pointer: DragPointer): void {
+    this.options.onDragStart?.();
     const bounds = win.getBounds();
     this.session = {
       offsetX: bounds.x - pointer.x,
@@ -68,7 +82,13 @@ export class PetDragController {
       width: bounds.width,
       height: bounds.height,
     });
-    win.setPosition(Math.round(x), Math.round(y));
+    const nextX = Math.round(x);
+    const nextY = Math.round(y);
+    win.setPosition(nextX, nextY);
+    const movement = { deltaX: nextX - bounds.x, deltaY: nextY - bounds.y };
+    if (movement.deltaX !== 0 || movement.deltaY !== 0) {
+      this.options.onDragMove?.(movement);
+    }
   }
 
   /** 松手：通知 onDragEnd 并结束拖动、清理会话 */
@@ -80,6 +100,8 @@ export class PetDragController {
 
   /** 取消拖动（如窗口被穿透/隐藏）：清理会话，之后的 move 被忽略 */
   cancel(): void {
+    const wasDragging = this.session !== null;
     this.session = null;
+    if (wasDragging) this.options.onDragCancel?.();
   }
 }
