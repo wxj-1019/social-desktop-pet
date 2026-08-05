@@ -44,6 +44,27 @@ describe('PetDragController (安全拖动)', () => {
     expect(win.calls).toEqual([{ x: 200, y: 150 }]);
   });
 
+  it('reports the actual window delta so visual direction follows manual dragging', () => {
+    const win = makeWin({ x: 100, y: 50, width: 280, height: 320 });
+    const onDragMove = vi.fn();
+    const c = new PetDragController({ onDragMove });
+    c.start(win, { x: 120, y: 70 });
+
+    c.move(win, { x: 220, y: 170 }, displays);
+    c.move(win, { x: 190, y: 160 }, displays);
+
+    expect(onDragMove).toHaveBeenNthCalledWith(1, { deltaX: 100, deltaY: 100 });
+    expect(onDragMove).toHaveBeenNthCalledWith(2, { deltaX: -30, deltaY: -10 });
+  });
+
+  it('starting a drag interrupts autonomous wandering before taking ownership', () => {
+    const win = makeWin();
+    const onDragStart = vi.fn();
+    const c = new PetDragController({ onDragStart });
+    c.start(win, { x: 120, y: 70 });
+    expect(onDragStart).toHaveBeenCalledTimes(1);
+  });
+
   it('clamps out-of-bounds targets so the window stays fully visible', () => {
     const win = makeWin({ x: 100, y: 50, width: 280, height: 320 });
     const c = new PetDragController();
@@ -111,6 +132,16 @@ describe('PetDragController (安全拖动)', () => {
     expect(c.isDragging).toBe(false);
     c.move(win, { x: 300, y: 300 }, displays);
     expect(win.setPosition).not.toHaveBeenCalled();
+  });
+
+  it('cancel() reports an active drag exactly once so its visual can be restored', () => {
+    const win = makeWin();
+    const onDragCancel = vi.fn();
+    const c = new PetDragController({ onDragCancel });
+    c.start(win, { x: 120, y: 70 });
+    c.cancel();
+    c.cancel();
+    expect(onDragCancel).toHaveBeenCalledTimes(1);
   });
 
   it('rounds the final clamped position to integers', () => {

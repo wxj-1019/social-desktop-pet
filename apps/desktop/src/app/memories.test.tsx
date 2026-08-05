@@ -104,7 +104,7 @@ describe('MemoriesPage（11.3 记忆中心）', () => {
     render(<MemoriesPage />);
     expect(await screen.findByText('我有糖尿病')).not.toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: '记住', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: '记住' }));
     await vi.waitFor(() =>
       expect(api.confirmMemory).toHaveBeenCalledWith(PENDING.confirmationId, undefined),
     );

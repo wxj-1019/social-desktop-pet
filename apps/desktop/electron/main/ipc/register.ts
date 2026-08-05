@@ -14,6 +14,7 @@ import {
   PetActionRequestSchema,
   PetChatEventSchema,
   PetDragPointSchema,
+  PetIdSchema,
   PetInteractionSchema,
   PetProfileSchema,
   PetSetSizeSchema,
@@ -73,6 +74,8 @@ export interface PetIpcDependencies {
   setPetScale: (scale: number) => void;
   /** 当前缩放比例（设置页滑块初始值） */
   getPetScale: () => number;
+  /** 切换角色皮肤：保存 profile.petId + 用新 ?character= 重载桌宠窗 */
+  reloadPetWithCharacter: (petId: string) => void;
   /** 会话 handler（Task 1；可选，缺省不注册会话通道） */
   sessionHandlers?: SessionServiceHandlers;
 }
@@ -252,6 +255,15 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
     const next = parseIpcPayload(PetProfileSchema, payload);
     profile.save(next);
     return next;
+  });
+
+  // ---- 角色皮肤切换：校验 petId 枚举 → 保存 profile → 重载桌宠窗（仅 panel）----
+  registerInvoke(deps, 'pet:set-character', 'panel', (_win, payload) => {
+    const petId = parseIpcPayload(PetIdSchema, payload);
+    const next = { ...profile.load(), petId };
+    profile.save(next);
+    deps.reloadPetWithCharacter(petId);
+    return petId;
   });
 
   // ---- PoC 专用：多屏信息（第 1–2 周窗口能力 PoC；第 3 周由 DisplayController 正式接入）----

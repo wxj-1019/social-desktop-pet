@@ -33,7 +33,7 @@ import {
   type PointerSample,
 } from './pointer-interaction.js';
 import { StarIsleVisual } from './star-isle-visual.js';
-import { usePetRuntime } from './use-pet-runtime.js';
+import { usePetRuntime, type RendererFactory } from './use-pet-runtime.js';
 
 type HitPart = 'head' | 'body' | 'tail';
 
@@ -46,16 +46,21 @@ const HIT_INTERACTION: Record<HitPart, PetInteraction['kind']> = {
 
 export interface PetExperienceProps {
   /** 主视觉组件；可注入抛出渲染错误的组件以测试降级路径 */
-  VisualComponent?: ComponentType<{ state: StarIsleVisualState }>;
+  VisualComponent?: ComponentType<{ state?: StarIsleVisualState }>;
   /** 视觉降级组件 */
   FallbackComponent?: ComponentType;
+  /** PetRenderer 工厂（皮肤注入；缺省 SVG 星屿） */
+  rendererFactory?: RendererFactory;
 }
 
 export function PetExperience({
   VisualComponent = StarIsleVisual,
   FallbackComponent = PetFallback,
+  rendererFactory,
 }: PetExperienceProps) {
-  const { profile, visualState, bubbleText } = usePetRuntime();
+  const { profile, visualState, bubbleText } = usePetRuntime(
+    rendererFactory ? { rendererFactory } : undefined,
+  );
 
   const gestureRef = useRef<{
     start: PointerSample | null;
@@ -129,9 +134,13 @@ export function PetExperience({
       if (distance >= 6) {
         gesture.dragging = true;
         setIsDragging(true);
-        runtime.dragStart({ x: sample.x, y: sample.y });
-        // 拖动时给惊讶表情（摇头）——用户看到"被拎起来了"
+        // 拖动时先给惊讶表情（摇头）——用户看到"被拎起来了"；
+        // 随后 dragStart 的 walk（persistent）会覆盖该瞬时动作
         runtime.interaction({ kind: 'tail_touch' });
+        // Main 必须从真实按下点记录窗口偏移；随后立即补发越过阈值的当前点，
+        // 否则首段 6px+ 位移会被吃掉，短拖拽也无法产生方向反馈。
+        runtime.dragStart({ x: gesture.start.x, y: gesture.start.y });
+        runtime.dragMove({ x: sample.x, y: sample.y });
         if (!schedulerRef.current) {
           schedulerRef.current = createDragMoveScheduler((point) => {
             const runtimeNow = window.pet?.petRuntime;

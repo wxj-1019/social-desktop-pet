@@ -166,7 +166,9 @@ describe('api 记忆接口（10.6 / D-3 确认队列）', () => {
 
   it('confirmMemory 可携带修改值（POST /memories/confirm）', async () => {
     vi.stubGlobal('window', { pet: { getApiBase: async () => 'http://api.test' } });
-    const fetchMock = vi.fn(async () => jsonResponse({ memoryId: 'm-9' }));
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      jsonResponse({ memoryId: 'm-9' }),
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await api.confirmMemory('c-1', '我有二型糖尿病');
@@ -181,7 +183,9 @@ describe('api 记忆接口（10.6 / D-3 确认队列）', () => {
 
   it('rejectMemory / invalidateMemory 走对应端点', async () => {
     vi.stubGlobal('window', { pet: { getApiBase: async () => 'http://api.test' } });
-    const fetchMock = vi.fn(async () => jsonResponse({ ok: true }));
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      jsonResponse({ ok: true }),
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     await api.rejectMemory('c-2');

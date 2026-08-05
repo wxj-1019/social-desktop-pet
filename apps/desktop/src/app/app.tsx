@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { initApi, setAccessToken } from '../lib/api/client.js';
 
+import { CharacterSelect } from './character-select.js';
 import { ChatPanel } from './chat-panel.js';
 import { FriendsPage } from './friends.js';
 import { LocalChat } from './local-chat.js';
@@ -12,12 +13,13 @@ import { PanelBrand } from './panel-brand.js';
 import { SettingsPage } from './settings.js';
 
 type SessionPhase = 'booting' | 'signed_out' | 'local' | 'active';
-type ActiveTab = 'friends' | 'chat' | 'memories' | 'settings';
+type ActiveTab = 'friends' | 'chat' | 'character' | 'memories' | 'settings';
 
 /** 主应用面板：会话状态机驱动登录、本地聊天与已登录界面。 */
 export function AppPanel() {
   const [phase, setPhase] = useState<SessionPhase>('booting');
   const [tab, setTab] = useState<ActiveTab>('friends');
+  const [localTab, setLocalTab] = useState<'chat' | 'character'>('chat');
   const [user, setUser] = useState<AuthResult | null>(null);
   const [pendingInvite, setPendingInvite] = useState(false);
   const phaseRef = useRef<SessionPhase>('booting');
@@ -64,6 +66,11 @@ export function AppPanel() {
       }
     });
     return off;
+  }, []);
+
+  const onCharacterBack = useCallback(() => {
+    setTab('friends');
+    setLocalTab('chat');
   }, []);
 
   const onAuthed = useCallback((result: AuthResult) => {
@@ -119,7 +126,29 @@ export function AppPanel() {
     return (
       <div className="pet-stage pet-stage--app">
         <PanelHeader />
-        <LocalChat onLoginClick={() => setPhase('signed_out')} />
+        <nav className="app-tabs" role="tablist" aria-label="面板页面">
+          <button
+            className={localTab === 'chat' ? 'tab active' : 'tab'}
+            role="tab"
+            aria-selected={localTab === 'chat'}
+            onClick={() => setLocalTab('chat')}
+          >
+            聊天
+          </button>
+          <button
+            className={localTab === 'character' ? 'tab active' : 'tab'}
+            role="tab"
+            aria-selected={localTab === 'character'}
+            onClick={() => setLocalTab('character')}
+          >
+            角色
+          </button>
+        </nav>
+        {localTab === 'character' ? (
+          <CharacterSelect onBack={onCharacterBack} />
+        ) : (
+          <LocalChat onLoginClick={() => setPhase('signed_out')} />
+        )}
       </div>
     );
   }
@@ -133,7 +162,7 @@ export function AppPanel() {
         aria-label="面板页面"
         onKeyDown={(e) => {
           if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            const tabs: ActiveTab[] = ['friends', 'chat', 'memories', 'settings'];
+            const tabs: ActiveTab[] = ['friends', 'chat', 'character', 'memories', 'settings'];
             const current = tabs.indexOf(tab);
             const next = e.key === 'ArrowLeft' ? current - 1 : current + 1;
             if (next >= 0 && next < tabs.length) setTab(tabs[next]!);
@@ -161,6 +190,16 @@ export function AppPanel() {
           聊天
         </button>
         <button
+          className={tab === 'character' ? 'tab active' : 'tab'}
+          role="tab"
+          id="tab-character"
+          aria-selected={tab === 'character'}
+          aria-controls="panel-character"
+          onClick={() => setTab('character')}
+        >
+          角色
+        </button>
+        <button
           className={tab === 'memories' ? 'tab active' : 'tab'}
           role="tab"
           id="tab-memories"
@@ -186,6 +225,8 @@ export function AppPanel() {
           <FriendsPage userId={user?.userId ?? ''} />
         ) : tab === 'chat' ? (
           <ChatPanel />
+        ) : tab === 'character' ? (
+          <CharacterSelect onBack={onCharacterBack} />
         ) : tab === 'memories' ? (
           <MemoriesPage />
         ) : (

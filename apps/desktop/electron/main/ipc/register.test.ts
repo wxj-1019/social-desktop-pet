@@ -121,6 +121,7 @@ function makeDeps() {
   const setDnd = vi.fn((enabled: boolean) => runtime.setDnd(enabled));
   const setPetScale = vi.fn();
   const getPetScale = vi.fn(() => 1);
+  const reloadPetWithCharacter = vi.fn();
   const deps: PetIpcDependencies = {
     appVersion: '4.5.6-test',
     getPetWindow: () => asWindow(pet),
@@ -137,6 +138,7 @@ function makeDeps() {
     setDnd,
     setPetScale,
     getPetScale,
+    reloadPetWithCharacter,
   };
   return {
     pet,
@@ -152,6 +154,7 @@ function makeDeps() {
     setDnd,
     setPetScale,
     getPetScale,
+    reloadPetWithCharacter,
     deps,
     snapshots,
     visuals,

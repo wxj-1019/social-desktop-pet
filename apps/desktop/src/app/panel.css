@@ -1,4 +1,4 @@
-/* Light marshmallow theme for the fixed 360 × 480 panel surface. */
+﻿/* Light marshmallow theme for the fixed 360 × 480 panel surface. */
 .pet-stage,
 .pet-stage *,
 .pet-stage *::before,
@@ -1623,4 +1623,146 @@
 .settings-item__range {
   width: 96px;
   accent-color: var(--panel-accent);
+}
+/* ===== 角色选择页 ===== */
+.character-select {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 2px 16px;
+}
+
+.character-select__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.character-select__back {
+  background: none;
+  border: none;
+  color: var(--panel-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+.character-select__back:hover {
+  background: var(--panel-soft);
+  color: var(--panel-text);
+}
+
+.character-select__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--panel-text);
+  margin: 0;
+}
+
+.character-select__hint {
+  font-size: 12px;
+  color: var(--panel-text-muted);
+  margin: 0 0 4px;
+  line-height: 1.5;
+}
+
+.character-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.character-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 2px solid var(--panel-border);
+  border-radius: 14px;
+  background: var(--panel-surface);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.1s;
+}
+.character-card:hover:not(:disabled) {
+  border-color: var(--panel-accent-tint);
+  box-shadow: var(--panel-shadow);
+}
+.character-card:active:not(:disabled) {
+  transform: scale(0.99);
+}
+.character-card:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.character-card--selected {
+  border-color: var(--panel-accent);
+  background: var(--panel-accent-tint);
+}
+
+.character-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  flex-shrink: 0;
+  background: var(--panel-soft-blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* 星屿缩略图：蓝紫渐变圆 + 星点（SVG 星屿配色简化） */
+.character-thumb--star-isle {
+  background: radial-gradient(circle at 50% 40%, #e4edfc 0%, #cbdaf5 60%, #a9bce8 100%);
+  position: relative;
+}
+.character-thumb--star-isle::after {
+  content: '★';
+  position: absolute;
+  font-size: 18px;
+  color: #ffe094;
+  text-shadow: 0 0 6px rgba(255, 224, 148, 0.6);
+}
+/* CodeNoNo 缩略图：深色屏脸 + 青蓝眼（角色特征简化） */
+.character-thumb--codenono {
+  background: radial-gradient(circle at 50% 45%, #2a2a35 0%, #1a1a22 100%);
+  position: relative;
+}
+.character-thumb--codenono::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow:
+    -14px 0 0 1px #5ce0d6,
+    14px 0 0 1px #5ce0d6;
+  background: #5ce0d6;
+}
+
+.character-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.character-card__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--panel-text);
+}
+.character-card__desc {
+  font-size: 12px;
+  color: var(--panel-text-muted);
+  line-height: 1.4;
+}
+
+.character-card__badge {
+  color: var(--panel-accent);
+  font-size: 16px;
+  font-weight: 700;
+  flex-shrink: 0;
 }

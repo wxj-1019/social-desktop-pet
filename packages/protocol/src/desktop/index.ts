@@ -33,11 +33,19 @@ export type PetMotion = z.infer<typeof PetMotionSchema>;
 export const PetExpressionSchema = z.enum(['neutral', 'warm', 'happy', 'sad', 'surprised', 'shy']);
 export type PetExpression = z.infer<typeof PetExpressionSchema>;
 
+/** 桌宠在桌面上的水平朝向（Main 自主移动与 Renderer 帧选择共享） */
+export const PetFacingSchema = z.enum(['left', 'right']);
+export type PetFacing = z.infer<typeof PetFacingSchema>;
+
+/** 可选角色 id（皮肤枚举）—— 新增角色在此扩展 */
+export const PetIdSchema = z.enum(['star-isle', 'codenono']);
+export type PetId = z.infer<typeof PetIdSchema>;
+
 /** 星屿桌宠档案 */
 export const PetProfileSchema = z
   .object({
     version: z.literal(1),
-    petId: z.literal('star-isle'),
+    petId: PetIdSchema,
     displayName: z.string().trim().min(1).max(24),
     reducedMotion: z.boolean(),
     dnd: z.boolean(),
@@ -192,6 +200,12 @@ export const PetVisualCommandSchema = z.discriminatedUnion('type', [
     .object({
       type: z.literal('speaking'),
       active: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('facing'),
+      facing: PetFacingSchema,
     })
     .strict(),
   z

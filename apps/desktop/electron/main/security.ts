@@ -63,4 +63,5 @@ export const IPC_ALLOWLIST = [
   'panel:navigate', // 面板内导航
   'pet-profile:get',
   'pet-profile:set',
+  'pet:set-character', // 切换角色皮肤（保存 profile + 重载桌宠窗）
 ] as const;

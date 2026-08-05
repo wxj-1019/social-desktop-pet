@@ -16,9 +16,6 @@ import type { BrowserWindow, MenuItemConstructorOptions, NativeImage } from 'ele
 export type TrayAction =
   'open-chat' | 'open-friends' | 'toggle-dnd' | 'toggle-pass-through' | 'hide' | 'show' | 'quit';
 
-export type TrayAction =
-  'open-chat' | 'open-friends' | 'toggle-dnd' | 'toggle-pass-through' | 'hide' | 'show' | 'quit';
-
 /** 桌宠大小预设档位（右键菜单/托盘子菜单；滑块可任意微调） */
 export const PET_SCALE_PRESETS: Array<{ label: string; value: number }> = [
   { label: '小', value: 0.75 },

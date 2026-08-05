@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, renderHook } from '@testing-library/react';
+import type { PetRuntimeSnapshot } from '@pet/protocol';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { usePetRuntime } from './use-pet-runtime.js';
@@ -7,7 +8,31 @@ import { usePetRuntime } from './use-pet-runtime.js';
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  Reflect.deleteProperty(window, 'pet');
 });
+
+function installRuntimeSnapshot(snapshot: PetRuntimeSnapshot): void {
+  Object.defineProperty(window, 'pet', {
+    configurable: true,
+    value: {
+      petRuntime: {
+        getSnapshot: vi.fn(async () => snapshot),
+        onSnapshot: vi.fn(() => vi.fn()),
+        onVisualCommand: vi.fn(() => vi.fn()),
+      },
+      petProfile: {
+        get: vi.fn(async () => ({
+          version: 1,
+          petId: 'star-isle',
+          displayName: '星屿',
+          reducedMotion: false,
+          dnd: false,
+          bubbleEnabled: true,
+        })),
+      },
+    },
+  });
+}
 
 describe('usePetRuntime · 气泡自动消失（7.4 短驻留）', () => {
   it('气泡文本在 5s 无更新后自动清除', () => {
@@ -39,5 +64,16 @@ describe('usePetRuntime · 气泡自动消失（7.4 短驻留）', () => {
     expect(result.current.bubbleText).toBeNull();
     act(() => vi.advanceTimersByTime(10_000));
     expect(result.current.bubbleText).toBeNull();
+  });
+});
+
+describe('usePetRuntime · 窗口重建状态恢复', () => {
+  it('hydrates the initial visual motion and expression from the runtime snapshot', async () => {
+    installRuntimeSnapshot({ state: 'SLEEPING', online: true, dnd: false, hidden: false });
+    const { result } = renderHook(() => usePetRuntime());
+
+    await waitFor(() => expect(result.current.snapshot?.state).toBe('SLEEPING'));
+    expect(result.current.visualState.motion).toBe('sleep');
+    expect(result.current.visualState.expression).toBe('neutral');
   });
 });

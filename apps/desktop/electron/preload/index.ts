@@ -110,6 +110,9 @@ const api = {
     get: () => ipcRenderer.invoke('pet-profile:get') as Promise<PetProfile>,
     set: (profile: PetProfile) =>
       ipcRenderer.invoke('pet-profile:set', profile) as Promise<PetProfile>,
+    /** 切换角色皮肤（保存 petId + 重载桌宠窗；返回切换后的 petId） */
+    setCharacter: (petId: 'star-isle' | 'codenono') =>
+      ipcRenderer.invoke('pet:set-character', petId) as Promise<'star-isle' | 'codenono'>,
   },
 } as const;
 

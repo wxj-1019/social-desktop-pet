@@ -12,6 +12,7 @@ import {
   PetChatSourceSchema,
   PetDragPointSchema,
   PetExpressionSchema,
+  PetFacingSchema,
   PetInteractionSchema,
   PetMotionSchema,
   PetProfileSchema,
@@ -43,6 +44,31 @@ describe('protocol/desktop/profile', () => {
     });
     expect(profile.petId).toBe('star-isle');
     expect(profile.displayName).toBe('星屿');
+  });
+
+  it('parses a codenono profile', () => {
+    const profile = PetProfileSchema.parse({
+      version: 1,
+      petId: 'codenono',
+      displayName: 'CodeNoNo',
+      reducedMotion: false,
+      dnd: false,
+      bubbleEnabled: true,
+    });
+    expect(profile.petId).toBe('codenono');
+  });
+
+  it('rejects an unknown petId', () => {
+    expect(() =>
+      PetProfileSchema.parse({
+        version: 1,
+        petId: 'unknown-pet',
+        displayName: '?',
+        reducedMotion: false,
+        dnd: false,
+        bubbleEnabled: true,
+      }),
+    ).toThrow();
   });
 
   it('rejects extra fields on the profile', () => {
@@ -119,6 +145,10 @@ describe('protocol/desktop/visual command', () => {
       'expression',
     );
     expect(PetVisualCommandSchema.parse({ type: 'speaking', active: true }).type).toBe('speaking');
+    expect(PetVisualCommandSchema.parse({ type: 'facing', facing: 'left' })).toMatchObject({
+      type: 'facing',
+      facing: 'left',
+    });
     expect(PetVisualCommandSchema.parse({ type: 'bubble', text: '你好' })).toMatchObject({
       type: 'bubble',
       text: '你好',
@@ -413,6 +443,7 @@ describe('protocol/desktop/root reuse', () => {
     expect(ActionSourceSchema.options).toContain('system');
     expect(PetMotionSchema.options).toContain('wave');
     expect(PetExpressionSchema.options).toContain('shy');
+    expect(PetFacingSchema.options).toEqual(['left', 'right']);
     expect(PetChatSourceSchema.options).toContain('cloud_ai');
   });
 
