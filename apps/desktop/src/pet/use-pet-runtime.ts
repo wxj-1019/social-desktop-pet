@@ -45,10 +45,13 @@ export type RendererFactory = (update: (state: StarIsleVisualState) => void) => 
 export interface UsePetRuntimeOptions {
   /** PetRenderer 工厂；缺省 createSvgPetRenderer（星屿 SVG） */
   rendererFactory?: RendererFactory;
+  /** 角色名（onboarding 引导气泡自称；缺省星屿） */
+  petName?: string;
 }
 
 export function usePetRuntime(options: UsePetRuntimeOptions = {}): PetRuntimeController {
   const rendererFactory = options.rendererFactory ?? createSvgPetRenderer;
+  const petName = options.petName ?? '星屿';
   const [snapshot, setSnapshot] = useState<PetRuntimeSnapshot | null>(null);
   const [profile, setProfile] = useState<PetProfile | null>(null);
   const [visualState, setVisualState] = useState<StarIsleVisualState>(DEFAULT_VISUAL_STATE);
@@ -139,7 +142,7 @@ export function usePetRuntime(options: UsePetRuntimeOptions = {}): PetRuntimeCon
         // 首次运行引导：未标记过 onboarding 时给 3 条提示气泡（经 chatEvent 走真实链路）
         if (!localStorage.getItem('pet:onboarded')) {
           const hints = [
-            '你好呀，我是星屿！可以摸摸我的头～',
+            `你好呀，我是${petName}！可以摸摸我的头～`,
             '拖我可以移动，右键有菜单哦',
             '双击我可以打开聊天面板',
           ];
@@ -163,7 +166,7 @@ export function usePetRuntime(options: UsePetRuntimeOptions = {}): PetRuntimeCon
       rendererRef.current?.dispose();
       rendererRef.current = null;
     };
-  }, [applyCommand, rendererFactory]);
+  }, [applyCommand, rendererFactory, petName]);
 
   return {
     snapshot,

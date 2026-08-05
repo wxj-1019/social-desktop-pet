@@ -84,6 +84,11 @@ export class PetWanderController {
     try {
       const bounds = win.getBounds();
       const step = (WANDER_SPEED_PX_PER_SECOND * WANDER_FRAME_MS) / 1000;
+      // 自愈：窗口被外部移动（恢复位置/显示器重排/DPI 变化）时以真实 x 重同步，
+      // 防止精确坐标长期漂移（否则边缘转向点会逐渐偏离实际窗口位置）
+      if (Math.abs(bounds.x - this.exactX) > step * 2) {
+        this.exactX = bounds.x;
+      }
       let targetX = this.exactX + (this.facing === 'right' ? step : -step);
       let target = clampPetWindowToDisplays({ x: targetX, y: bounds.y }, displays, {
         width: bounds.width,

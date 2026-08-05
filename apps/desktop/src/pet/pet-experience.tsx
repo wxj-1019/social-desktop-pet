@@ -51,15 +51,18 @@ export interface PetExperienceProps {
   FallbackComponent?: ComponentType;
   /** PetRenderer 工厂（皮肤注入；缺省 SVG 星屿） */
   rendererFactory?: RendererFactory;
+  /** 角色名（onboarding 引导气泡自称用；缺省星屿） */
+  petName?: string;
 }
 
 export function PetExperience({
   VisualComponent = StarIsleVisual,
   FallbackComponent = PetFallback,
   rendererFactory,
+  petName,
 }: PetExperienceProps) {
   const { profile, visualState, bubbleText } = usePetRuntime(
-    rendererFactory ? { rendererFactory } : undefined,
+    rendererFactory ? { rendererFactory, petName } : { petName },
   );
 
   const gestureRef = useRef<{
@@ -89,11 +92,12 @@ export function PetExperience({
       runtime.dragEnd();
       schedulerRef.current?.cancel();
       setIsDragging(false);
-      // 落地回常态：拖动时给了惊讶（shake_head），松手后用 chatEvent done 回 idle
+      // 落地回常态：拖动时给了惊讶（shake_head），松手后经 chatEvent done 回 idle
+      //（actionIntent 取 idle → 直接回基础动作，不播多余点头）
       window.pet?.petRuntime?.chatEvent({
         phase: 'done',
         source: 'local_chat',
-        output: { dialogue: '', emotion: 'warm', actionIntent: 'nod', intensity: 1 },
+        output: { dialogue: '', emotion: 'warm', actionIntent: 'idle', intensity: 1 },
       });
     }
     gestureRef.current = { start: null, hit: null, dragging: false };

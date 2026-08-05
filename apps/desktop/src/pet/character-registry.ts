@@ -23,6 +23,8 @@ import { createSvgPetRenderer } from './svg-pet-renderer.js';
 
 export interface CharacterConfig {
   id: PetId;
+  /** 角色名（onboarding 气泡/自称文案用；与 displayName 同值，语义上供运行时消费） */
+  petName: string;
   displayName: string;
   description: string;
   /** 渲染组件（消费 StarIsleVisualState；state 可选——与 StarIsleVisual/SpritesheetVisual 一致） */
@@ -35,6 +37,7 @@ export interface CharacterConfig {
 export const CHARACTERS: readonly CharacterConfig[] = [
   {
     id: 'star-isle',
+    petName: '星屿',
     displayName: '星屿',
     description: '原创 SVG 星尾狐猫，蓝紫大耳，温暖陪伴。',
     VisualComponent: StarIsleVisual,
@@ -42,6 +45,7 @@ export const CHARACTERS: readonly CharacterConfig[] = [
   },
   {
     id: 'codenono',
+    petName: 'CodeNoNo',
     displayName: 'CodeNoNo',
     description: 'spritesheet 帧动画角色，编程伙伴气质。',
     VisualComponent: SpritesheetVisual,

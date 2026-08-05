@@ -24,6 +24,7 @@ if (params.has('poc')) {
     <PetExperience
       VisualComponent={character.VisualComponent}
       rendererFactory={character.rendererFactory}
+      petName={character.petName}
     />
   );
 } else {

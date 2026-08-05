@@ -91,4 +91,23 @@ describe('PetWanderController（桌面自主移动）', () => {
     controller.start();
     expect(controller.isActive).toBe(false);
   });
+
+  it('re-syncs exact position when the window is moved externally (drift self-heal)', () => {
+    vi.useFakeTimers();
+    const win = makeWindow({ x: 100, y: 500, width: 240, height: 260 });
+    const controller = new PetWanderController({
+      getWindow: () => win,
+      getDisplays: () => displays,
+      emitVisual: vi.fn(),
+      random: () => 0.9, // right
+    });
+
+    controller.start();
+    // 外部把窗口搬到 400（远超单帧步长）→ 下一 tick 应从 400 继续右移，而不是从旧 exactX 跳回
+    win.setPosition(400, 500);
+    vi.advanceTimersByTime(33); // 单帧（54px/s × 33ms ≈ 1.78px）
+    const afterHeal = win.getBounds().x;
+    expect(afterHeal).toBeGreaterThan(400);
+    expect(afterHeal).toBeLessThan(400 + 4);
+  });
 });

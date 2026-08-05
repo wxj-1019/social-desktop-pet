@@ -21,6 +21,7 @@ import {
   MIN_PET_SCALE,
   resolvePetPosition,
   toPersistedPosition,
+  type DisplayInfo,
   type PetPosition,
 } from './display-controller.js';
 import { broadcastPetSnapshot, registerIpcAllowlist, sendPetVisual } from './ipc/register.js';
@@ -98,6 +99,8 @@ let rendererCrashAttempts = 0;
 let stabilityTimer: ReturnType<typeof setTimeout> | null = null;
 let positionSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let runtimeStarted = false;
+/** 显示器列表缓存（app ready 后由 refreshDisplays 填充；显示器事件刷新） */
+let cachedDisplays: DisplayInfo[] = [];
 
 /** 桌宠窗存活（未销毁）时返回，否则 null —— 崩溃重建边界：所有窗口操作先判存活 */
 function alivePetWindow(): BrowserWindow | null {
@@ -148,10 +151,19 @@ void app.whenReady().then(async () => {
       positionStore?.save(position);
     }, 250);
   };
-  const currentDisplays = () =>
-    screen
+  // 显示器列表缓存：wander tick（30fps）与拖动 move 每帧查询显示器，
+  // screen.getAllDisplays() 是同步原生调用，显示器变化频率极低 →
+  // 缓存 + 显示器事件刷新（语义不变，省掉高频 IPC 往返）。
+  const refreshDisplays = (): void => {
+    cachedDisplays = screen
       .getAllDisplays()
       .map((d) => ({ id: String(d.id), workArea: d.workArea, scaleFactor: d.scaleFactor }));
+  };
+  refreshDisplays();
+  screen.on('display-added', refreshDisplays);
+  screen.on('display-removed', refreshDisplays);
+  screen.on('display-metrics-changed', refreshDisplays);
+  const currentDisplays = (): DisplayInfo[] => cachedDisplays;
   const savePetPosition = (): void => {
     clearScheduledPositionSave();
     const win = alivePetWindow();
@@ -244,9 +256,7 @@ void app.whenReady().then(async () => {
     const s = Math.min(Math.max(scale, MIN_PET_SCALE), MAX_PET_SCALE);
     const size = petWindowSizeFor(s);
     // 以窗口中心为锚 resize + 夹进所在显示器工作区（复用 8.5 位置钳制）
-    const displays = screen
-      .getAllDisplays()
-      .map((d) => ({ id: String(d.id), workArea: d.workArea, scaleFactor: d.scaleFactor }));
+    const displays = currentDisplays();
     const restored = resolvePetPosition(
       { ...positionStore.load(), scale: s, savedAt: Date.now() },
       displays,
