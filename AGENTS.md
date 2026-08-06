@@ -88,4 +88,16 @@ pnpm dev:server          # 自动应用未执行的 migrations（幂等）
 - Live2D Cubism SDK 集成 —— 待 V-1 许可确认后引入
 - 13.2 邀请邮件/状态机：MailProvider + SMTP 已接入（waitlist 报名确认 + 邮箱 OTP 登录，`/auth/otp/request` + `/auth/otp/login`，验证码 sha256 落库/15min TTL/5 次尝试/60s 冷却；`PET_DEV_OTP_CODE_IN_RESPONSE` 仅本地开发返回验证码）；**邀请状态机已落地**（`WaitlistService`：pending → invited（8 位兑换码 sha256 落库 + 邀请邮件 + 30 天过期）→ claim 兑换 joined → register 绑定 claimed_by；invited 超期惰性 expired；`POST /waitlist/invite` 运营端点（WAITLIST_ADMIN_TOKEN，未配置 404）+ `POST /waitlist/claim` 公开兑换 + landing 兑换页）
 
+## 后续迭代方向（2026-08-03）
+
+详见 `docs/status-2026-08-03.md` §五；摘要如下：
+
+| 优先级 | 方向                                                                             | 落点                                                 |
+| ------ | -------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 🟢 P0  | **桌宠目测反馈调优**：缓动曲线/幅度微调（基于用户运行后反馈的"生硬瞬间"）        | `apps/desktop/src/styles.css`                        |
+| 🟡 P1  | **authNode 清理**：收窄为"配额/限流"（12.7 成本保护）独立待办                    | `packages/ai-graph/src/graphs/chat-flow-nodes.ts:25` |
+| 🟡 P1  | **e2e 全量验证**：11 个 e2e 端到端跑通，确认本地环境一致                         | `e2e/*.spec.ts`                                      |
+| ⚪ P2  | **向量检索实测**：配置 `EMBEDDING_API_KEY` 后端到端验证 embedding 落库+检索+回填 | `apps/server/src/ai/embedding.ts`                    |
+| ⚪ P2  | **输出审核接入**：`OutputModerator` 供应商实现待密钥                             | `packages/ai-graph/src/graphs/moderation-rules.ts`   |
+
 详见设计稿 14.2 实施路线与决策清单 V 类验证项。
