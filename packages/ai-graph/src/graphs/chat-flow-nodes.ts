@@ -22,8 +22,9 @@ export const authNode: NodeFn<ChatFlowState> = async (
   _state,
   _ctx,
 ): Promise<Partial<ChatFlowState>> => {
-  // TODO(第11-14周): 校验 JWT、活动设备、配额、限流（9.4）
-  // 配额检查用 @pet/config LIMITS.dailyTokenBudgetPerUser
+  // JWT 校验 / 活动设备校验已由路由层完成（routes/business.ts requireAuth + session），
+  // 此处仅剩 12.7 成本保护：配额（LIMITS.dailyTokenBudgetPerUser）与限流
+  // （chat.ts 已有每设备 60s 滑动窗口 + 并发上限——剩余额度校验待接入）
   return { authenticated: true };
 };
 
@@ -279,12 +280,21 @@ export function moderateOutputNodeFactory(moderator?: OutputModerator): NodeFn<C
       const { passed, blockedCategories } = ruleModerateOutput(text);
       return { moderation: { passed, blockedCategories, crisisLevel: 'none' } };
     }
-    return {
-      moderation: await moderator.moderate(
-        state.modelOutput?.dialogue ?? '',
-        state.retrievedMemoryIds ?? [],
-      ),
-    };
+    try {
+      return {
+        moderation: await moderator.moderate(
+          state.modelOutput?.dialogue ?? '',
+          state.retrievedMemoryIds ?? [],
+        ),
+      };
+    } catch (e) {
+      // 12.5 供应商失败（端点不可达/超时/非 2xx）→ 安全降级规则版：
+      // 审核是增强能力，绝不让聊天因审核失败而中断
+      console.warn('[moderation] 供应商调用失败，回退规则版：', (e as Error).message);
+      const text = state.modelOutput?.dialogue ?? '';
+      const { passed, blockedCategories } = ruleModerateOutput(text);
+      return { moderation: { passed, blockedCategories, crisisLevel: 'none' } };
+    }
   };
 }
 

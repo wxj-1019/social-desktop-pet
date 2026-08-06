@@ -135,7 +135,8 @@ const EXTRACT_SYSTEM_PROMPT =
   '"sourceType":"user_stated|inferred",' +
   '"sensitivity":"low|medium|high"}]' +
   '规则：只抽用户明确说出的内容（inferred 为推断，不可当作已确认事实）；' +
-  '健康/财务/亲密关系/身份类 sensitivity 必须 high 或 medium；不要输出空数组之外的东西。';
+  '**value 必须保留用户原话措辞**（不改写人称、不润色——如"我喜欢抹茶"保留为"我喜欢抹茶"而非"用户喜欢抹茶"），' +
+  '仅可省略口语冗余；健康/财务/亲密关系/身份类 sensitivity 必须 high 或 medium；不要输出空数组之外的东西。';
 
 /** 候选数量上限（防 LLM 一次刷爆） */
 const MAX_CANDIDATES = 8;

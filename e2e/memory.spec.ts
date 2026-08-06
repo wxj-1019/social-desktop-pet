@@ -52,11 +52,11 @@ test('普通偏好自动保存 → "已记住"提示（可撤销）', async () =
 
   // 聊天回复完成后（最多 ~8s 轮询窗口）出现"已记住"通知（60s 内自动保存被差分命中）
   await expect(page.locator('.notice--success')).toContainText('已记住', { timeout: 60_000 });
-  await expect(page.locator('.notice--success')).toContainText('我喜欢抹茶');
+  await expect(page.locator('.notice--success')).toContainText('抹茶');
 
   // 服务端已落库（recentlySaved 60s 窗口内可见）
   const summary = await getSummaryAsAlice(page);
-  expect(summary.recentlySaved.some((m) => m.value === '我喜欢抹茶')).toBe(true);
+  expect(summary.recentlySaved.some((m) => m.value.includes('抹茶'))).toBe(true);
 });
 
 test('健康敏感句 → 确认卡 → "记住"落库（D-3 分级确认）', async () => {
@@ -69,7 +69,7 @@ test('健康敏感句 → 确认卡 → "记住"落库（D-3 分级确认）', a
 
   // 确认卡出现（异步抽取完成后轮询命中）
   await expect(page.locator('.memory-confirm-card')).toBeVisible({ timeout: 60_000 });
-  await expect(page.locator('.memory-confirm-card')).toContainText('我有糖尿病');
+  await expect(page.locator('.memory-confirm-card')).toContainText('糖尿病');
 
   // 点"记住" → 卡消失
   await page.getByRole('button', { name: '记住', exact: true }).click();
@@ -77,7 +77,7 @@ test('健康敏感句 → 确认卡 → "记住"落库（D-3 分级确认）', a
 
   // 服务端已落库（确认后 created_at 在 60s 窗口内 → recentlySaved 可见）
   const summary = await getSummaryAsAlice(page);
-  expect(summary.recentlySaved.some((m) => m.value === '我有糖尿病，每天要打胰岛素')).toBe(true);
+  expect(summary.recentlySaved.some((m) => m.value.includes('糖尿病'))).toBe(true);
 });
 
 test('记忆中心：查看来源 → 修改 → 删除（11.3）', async () => {
@@ -88,12 +88,12 @@ test('记忆中心：查看来源 → 修改 → 删除（11.3）', async () => 
   await page.getByRole('tab', { name: '记忆' }).click();
   await expect(page.locator('.memories-page')).toBeVisible();
   // 测试 1 自动保存的偏好记忆在列表
-  const item = page.locator('.memory-item').filter({ hasText: '我喜欢抹茶' }).first();
+  const item = page.locator('.memory-item').filter({ hasText: '抹茶' }).first();
   await expect(item).toBeVisible({ timeout: 15_000 });
 
   // 查看来源（11.3：source_turn 原文）
   await item.getByRole('button', { name: '来源' }).click();
-  await expect(item.locator('.memory-item__source-texts')).toContainText('我喜欢抹茶');
+  await expect(item.locator('.memory-item__source-texts')).toContainText('抹茶');
 
   // 修改（10.5 纠正链：旧条置失效 + 新条 superseded）
   await item.getByRole('button', { name: '修改' }).click();

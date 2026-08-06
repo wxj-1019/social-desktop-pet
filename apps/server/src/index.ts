@@ -13,6 +13,7 @@ import type pg from 'pg';
 
 import { createOpenAiCompatibleEmbeddingClient, embeddingConfigFromEnv } from './ai/embedding.js';
 import { createOpenAiCompatibleClient, llmConfigFromEnv } from './ai/llm.js';
+import { createOpenAiCompatibleModerator, moderationConfigFromEnv } from './ai/moderation.js';
 import { JwtService } from './auth/jwt.js';
 import { OtpService } from './auth/otp.js';
 import { SessionManager, type SessionStore } from './auth/session.js';
@@ -47,6 +48,8 @@ export interface AppDeps {
   memoryStore?: BusinessDeps['memoryStore'];
   /** 记忆检索存储（10.7；与 memoryStore 同一实例） */
   retrievalStore?: BusinessDeps['retrievalStore'];
+  /** 输出审核 provider（12.5 免费 Moderation；无则图内规则版兜底） */
+  outputModerator?: BusinessDeps['outputModerator'];
   /** 13.2 邮箱 OTP 登录服务（未注入则 /auth/otp/* 返回 501） */
   otp?: AuthDeps['otp'];
   /** 13.2 事务邮件（waitlist 确认；SMTP 配置就绪发真实邮件，否则降级日志） */
@@ -68,6 +71,9 @@ export function buildApp(deps: AppDeps) {
       await deps.pool.query('delete from gift_events');
       await deps.pool.query('delete from chat_usage');
       await deps.pool.query('delete from user_inbox');
+      // 聊天记录（10.x）：抽取窗口按 thread 取最近 N 条——历史残留（含危机句）
+      // 会污染 memory e2e 的抽取/分类上下文，重置环境必须一并清空
+      await deps.pool.query('delete from chat_messages');
       // 记忆表（10.6）：确认队列/审计/已存记忆，供 memory e2e 反复执行
       await deps.pool.query('delete from memory_confirmations');
       await deps.pool.query('delete from memory_audit_log');
@@ -153,6 +159,15 @@ export async function main(): Promise<void> {
     ? createOpenAiCompatibleEmbeddingClient(embeddingConfig)
     : undefined;
 
+  // ---- 输出审核（12.5 免费 Moderation；未配置密钥则图内规则版兜底）----
+  const moderationConfig = moderationConfigFromEnv();
+  if (moderationConfig) {
+    console.info('[server] 输出审核已启用：OpenAI 兼容 /moderations（12.5）');
+  }
+  const outputModerator = moderationConfig
+    ? createOpenAiCompatibleModerator(moderationConfig)
+    : undefined;
+
   // ---- 记忆存储（10.6 落库/检索/审计；RLS 纵深防御在 store 事务内 set claims）----
   const memoryStore = new PgMemoryExtractStore(pool, embeddingProvider);
 
@@ -167,6 +182,7 @@ export async function main(): Promise<void> {
     llm,
     memoryStore,
     retrievalStore: memoryStore, // 同一实例实现双接口（10.7 检索）
+    outputModerator,
     otp, // 13.2 邮箱 OTP 登录
     mail: mailProvider, // 13.2 事务邮件（waitlist 确认）
     devReset: process.env['PET_DEV_RESET'] === 'true',

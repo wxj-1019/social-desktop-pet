@@ -38,7 +38,7 @@ export interface LlmClassification {
 
 /** 分类 prompt：单行 JSON 契约（与 generate/抽取同一容错解析哲学） */
 const CLASSIFY_SYSTEM_PROMPT =
-  '你是中文输入安全分类器。判断最近对话是否存在心理危机信号，并给出路由级别。' +
+  '你是中文输入安全分类器。判断**最后一条用户消息**是否存在心理危机信号，并给出路由级别。' +
   '输出严格单行 JSON（不要 Markdown、不要额外文字）：' +
   '{"crisisLevel":"none|low|medium|high",' +
   '"categories":["self_harm"|"violence"|"minor_risk"|"harassment"|"hate"|"sexual_exploitation"|"medical_overreach"|"pii_credential"|"prompt_injection"|"friend_privacy_leak"|"dangerous_illegal"|"none"],' +
@@ -47,7 +47,9 @@ const CLASSIFY_SYSTEM_PROMPT =
   '分级规则：' +
   'high=明确表达自伤/自杀/伤人意图或计划；medium=明显情绪恶化、绝望感、自伤暗示（无明确计划）；' +
   'low=轻微负面情绪（疲劳/低落/烦躁），无危机信号；none=正常对话。' +
-  '多轮判定：结合最近几轮看情绪恶化趋势——多轮持续恶化→升级一档；单条口语化表达（可能是歌词/玩笑）→不升级。' +
+  '多轮判定：历史对话仅用于理解语境（如代词指代）；危机只针对最后一条用户消息本身——' +
+  '若历史轮次已出现过危机并已响应，本条是正常内容（如日常偏好、闲聊），必须判 none，不得因历史危机升级。' +
+  '仅当最后一条消息本身含危机信号时，历史情绪恶化趋势可升级一档；单条口语化表达（可能是歌词/玩笑）→不升级。' +
   'categories 无命中填 ["none"]。routeLevel：宠物动作指令→L0；短问候闲聊→L1；' +
   '涉及记忆/情绪/稍长文本→L2；超长或复杂多问→L3；危机/骚扰/未成年风险→SAFETY。';
 

@@ -2,7 +2,12 @@
  * 业务路由 —— 挂载 invite/gift/visit/sync 真实实现（9.3–9.6/6.3）+ chat（10.1 SSE）。
  * 统一结构：鉴权 → 校验 → 事务 → Inbox → WS 通知（9.4 可靠写入流程）。
  */
-import type { LlmClient, MemoryExtractStore, MemoryRetrievalStore } from '@pet/ai-graph';
+import type {
+  LlmClient,
+  MemoryExtractStore,
+  MemoryRetrievalStore,
+  OutputModerator,
+} from '@pet/ai-graph';
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
 import type pg from 'pg';
@@ -28,6 +33,8 @@ export interface BusinessDeps {
   memoryStore?: MemoryExtractStore;
   /** 记忆检索存储（10.7；与 memoryStore 通常同一实例，无则 chat 跳过检索） */
   retrievalStore?: MemoryRetrievalStore;
+  /** 输出审核 provider（12.5 免费 Moderation；无则图内规则版兜底） */
+  outputModerator?: OutputModerator;
 }
 
 /** 鉴权注入的上下文变量 */
