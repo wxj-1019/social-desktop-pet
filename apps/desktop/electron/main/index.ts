@@ -170,7 +170,9 @@ void app.whenReady().then(async () => {
     if (!win || !positionStore) return;
     const [x = 0, y = 0] = win.getPosition();
     const persisted = toPersistedPosition(currentDisplays(), { x, y });
-    if (persisted) positionStore.save(persisted);
+    // toPersistedPosition 只负责位置（scale 恒为 1）——必须保留当前持久化的
+    // 缩放比例，否则拖动/溜达结束保存会把用户调好的桌宠大小重置为 100%
+    if (persisted) positionStore.save({ ...persisted, scale: positionStore.load().scale });
   };
   wander = new PetWanderController({
     getWindow: () => alivePetWindow(),
