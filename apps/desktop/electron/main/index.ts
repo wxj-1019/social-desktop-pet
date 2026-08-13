@@ -43,6 +43,7 @@ import { createUpdateApi } from './update-source.js';
 import {
   createPanelWindow,
   createPetWindow,
+  correctedBounds,
   petWindowSizeFor,
   setPassThrough,
 } from './window-controller.js';
@@ -183,6 +184,21 @@ void app.whenReady().then(async () => {
     onPositionChanged: savePetPosition,
     onError: (error) => console.warn('[pet-wander] movement stopped', error),
   });
+  // 拖动/溜达结束：校正窗口尺寸（跨 DPI 拖动可能被系统改动 → 恢复 scale×基准），
+  // 再保存位置（基于校正后的窗口位置）
+  const correctPetWindowSize = (): void => {
+    const win = alivePetWindow();
+    if (!win || !positionStore) return;
+    const expected = petWindowSizeFor(positionStore.load().scale);
+    const bounds = win.getBounds();
+    const corrected = correctedBounds(bounds, expected);
+    if (corrected !== bounds) {
+      win.setBounds(corrected);
+      console.info(
+        `[window] 尺寸校正：${bounds.width}×${bounds.height} → ${corrected.width}×${corrected.height}`,
+      );
+    }
+  };
   drag = new PetDragController({
     onDragStart: () => {
       wander?.stop();
@@ -191,6 +207,7 @@ void app.whenReady().then(async () => {
     onDragMove: ({ deltaX }) => runtime?.updateManualDrag(deltaX),
     onDragEnd: () => {
       runtime?.endManualDrag();
+      correctPetWindowSize();
       savePetPosition();
     },
     onDragCancel: () => runtime?.endManualDrag(),

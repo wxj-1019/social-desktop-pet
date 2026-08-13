@@ -13,6 +13,7 @@ import {
   createPanelWindow,
   createPetWindow,
   loadRendererSurface,
+  correctedBounds,
   petWindowSizeFor,
   setPassThrough,
   PANEL_WINDOW_SIZE,
@@ -131,6 +132,30 @@ describe('petWindowSizeFor（桌宠缩放尺寸）', () => {
     expect(petWindowSizeFor(0.75)).toEqual({ width: 180, height: 195 });
     expect(petWindowSizeFor(0.4)).toEqual({ width: 120, height: 130 }); // clamp 到 MIN 0.5
     expect(petWindowSizeFor(3)).toEqual({ width: 480, height: 520 }); // clamp 到 MAX 2
+  });
+});
+
+describe('correctedBounds（跨 DPI 拖动后的尺寸校正）', () => {
+  it('尺寸一致 → 原样返回（不触发 setBounds）', () => {
+    const bounds = { x: 100, y: 200, width: 240, height: 260 };
+    expect(correctedBounds(bounds, { width: 240, height: 260 })).toBe(bounds);
+  });
+
+  it('尺寸偏离 → 中心锚定纠正到期望尺寸', () => {
+    // 系统把 300×325 的窗口改成了 360×390（+60/+65）→ 中心不变，左上角左移/上移 30/32.5
+    const corrected = correctedBounds(
+      { x: 100, y: 200, width: 360, height: 390 },
+      { width: 300, height: 325 },
+    );
+    expect(corrected).toEqual({ x: 130, y: 233, width: 300, height: 325 });
+  });
+
+  it('仅宽度偏离 → 只校正宽度（中心锚定）', () => {
+    const corrected = correctedBounds(
+      { x: 100, y: 200, width: 250, height: 260 },
+      { width: 240, height: 260 },
+    );
+    expect(corrected).toEqual({ x: 105, y: 200, width: 240, height: 260 });
   });
 });
 

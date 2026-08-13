@@ -43,6 +43,23 @@ export function petWindowSizeFor(scale: number): { width: number; height: number
   };
 }
 
+/**
+ * 窗口尺寸校正（跨 DPI 拖动等系统改动后恢复 scale×基准）：
+ * 尺寸偏离预期时以窗口中心为锚纠正；一致时原样返回（不触发 setBounds）。
+ */
+export function correctedBounds(
+  bounds: { x: number; y: number; width: number; height: number },
+  expected: { width: number; height: number },
+): { x: number; y: number; width: number; height: number } {
+  if (bounds.width === expected.width && bounds.height === expected.height) return bounds;
+  return {
+    x: Math.round(bounds.x + (bounds.width - expected.width) / 2),
+    y: Math.round(bounds.y + (bounds.height - expected.height) / 2),
+    width: expected.width,
+    height: expected.height,
+  };
+}
+
 /** 测试注入端口：生产默认由 BrowserWindow + screen 实现 */
 export interface WindowControllerRuntime {
   /** 创建窗口（对应 new BrowserWindow(...)） */
