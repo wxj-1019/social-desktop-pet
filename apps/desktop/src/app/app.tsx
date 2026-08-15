@@ -1,4 +1,4 @@
-import { LogOut, UserRound, X } from 'lucide-react';
+import { LogOut, Sparkles, UserRound, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { initApi, setAccessToken } from '../lib/api/client.js';
@@ -115,6 +115,7 @@ export function AppPanel() {
           </div>
           <LoginPage onAuthed={onAuthed} pendingInvite={pendingInvite} />
           <button className="local-entry" onClick={() => setPhase('local')}>
+            <Sparkles size={14} style={{ marginRight: 6 }} aria-hidden="true" />
             先体验本地聊天
           </button>
         </div>
@@ -144,11 +145,13 @@ export function AppPanel() {
             角色
           </button>
         </nav>
-        {localTab === 'character' ? (
-          <CharacterSelect onBack={onCharacterBack} />
-        ) : (
-          <LocalChat onLoginClick={() => setPhase('signed_out')} />
-        )}
+        <div className="app-viewport" role="tabpanel" id={`panel-${localTab}`} aria-label="本地内容">
+          {localTab === 'character' ? (
+            <CharacterSelect onBack={onCharacterBack} />
+          ) : (
+            <LocalChat onLoginClick={() => setPhase('signed_out')} />
+          )}
+        </div>
       </div>
     );
   }
@@ -220,7 +223,7 @@ export function AppPanel() {
           设置
         </button>
       </nav>
-      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+      <div className="app-viewport" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
         {tab === 'friends' ? (
           <FriendsPage userId={user?.userId ?? ''} />
         ) : tab === 'chat' ? (

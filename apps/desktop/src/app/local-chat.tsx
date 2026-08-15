@@ -6,7 +6,7 @@
  * （start → done，source: local_chat）；动作由 Main petRuntime 驱动，
  * 不再在 renderer 用 setTimeout 模拟 CHATTING。window.pet 缺失时跳过事件。
  */
-import { HardDrive, Send } from 'lucide-react';
+import { HardDrive, Send, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import {
@@ -55,22 +55,7 @@ export function LocalChat({ onLoginClick }: LocalChatProps) {
   }
 
   return (
-    <main className="local-chat" aria-labelledby="local-chat-title">
-      <div className="chat-heading chat-heading--character">
-        <div className="character-presence">
-          <div className="character-presence__avatar" aria-hidden="true">
-            <StarIsleVisual />
-          </div>
-          <div className="character-presence__copy">
-            <h2 id="local-chat-title">星屿</h2>
-            <p>不联网也能陪你</p>
-          </div>
-        </div>
-        <span className="status-chip">
-          <HardDrive size={13} aria-hidden="true" />
-          仅此设备
-        </span>
-      </div>
+    <main className="local-chat" aria-label="本地聊天">
       <ul className="chat-list" role="log" aria-label="对话记录">
         {history.length === 0 && (
           <li className="chat-empty">
@@ -94,6 +79,7 @@ export function LocalChat({ onLoginClick }: LocalChatProps) {
         <div ref={bottomRef} />
       </ul>
       <button className="local-login-prompt" onClick={onLoginClick}>
+        <Sparkles size={13} style={{ marginRight: 6 }} aria-hidden="true" />
         登录后解锁好友与云端记忆
       </button>
       <form className="chat-input-row" onSubmit={send}>

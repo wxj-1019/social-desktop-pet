@@ -1,5 +1,5 @@
 /** 好友页：邀请、送礼、拜访与实时动态。 */
-import { Copy, Gift, RefreshCw, Send, Sparkles, UsersRound } from 'lucide-react';
+import { Check, Copy, Gift, RefreshCw, Send, Sparkles, UsersRound } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, apiBase, getAccessToken, type Friend, type SyncEvent } from '../lib/api/client.js';
@@ -259,7 +259,11 @@ export function FriendsPage({ userId }: FriendsPageProps) {
               title="复制邀请链接"
               onClick={() => void copyInvite()}
             >
-              <Copy size={16} aria-hidden="true" />
+              {copied ? (
+                <Check size={16} color="var(--panel-success)" aria-hidden="true" />
+              ) : (
+                <Copy size={16} aria-hidden="true" />
+              )}
             </button>
           </div>
           {copied && <small>已复制</small>}

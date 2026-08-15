@@ -285,19 +285,18 @@ export function ChatPanel() {
   }
 
   return (
-    <main className="chat-panel" aria-labelledby="cloud-chat-title">
-      <div className="chat-heading chat-heading--character">
+    <main className="chat-panel" aria-label="云端聊天">
+      <div className="chat-heading chat-heading--compact">
         <div className="character-presence">
           <div className="character-presence__avatar" aria-hidden="true">
             <StarIsleVisual state={{ ...DEFAULT_VISUAL_STATE, speaking: streaming }} />
           </div>
-          <div className="character-presence__copy">
-            <h2 id="cloud-chat-title">星屿</h2>
-            <p>{streaming ? '正在输入…' : '在呢，想聊什么？'}</p>
-          </div>
+          <span className="character-presence__status">
+            {streaming ? '星屿正在思考与回复…' : '星屿在身边'}
+          </span>
         </div>
         <span className="status-chip status-chip--ai">
-          <Sparkles size={13} aria-hidden="true" />
+          <Sparkles size={11} aria-hidden="true" />
           AI 生成
         </span>
       </div>
