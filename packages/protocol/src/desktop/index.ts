@@ -41,6 +41,10 @@ export type PetFacing = z.infer<typeof PetFacingSchema>;
 export const PetIdSchema = z.enum(['star-isle', 'codenono']);
 export type PetId = z.infer<typeof PetIdSchema>;
 
+/** 桌宠环形菜单 UI 风格：SAO 左侧链式弧 / 经典环状 */
+export const PetMenuStyleSchema = z.enum(['sao', 'classic']);
+export type PetMenuStyle = z.infer<typeof PetMenuStyleSchema>;
+
 /** 星屿桌宠档案 */
 export const PetProfileSchema = z
   .object({
@@ -50,6 +54,8 @@ export const PetProfileSchema = z
     reducedMotion: z.boolean(),
     dnd: z.boolean(),
     bubbleEnabled: z.boolean(),
+    /** 环形菜单 UI 风格（老档案缺省，由 store 迁移补齐） */
+    menuStyle: PetMenuStyleSchema.optional(),
   })
   .strict();
 export type PetProfile = z.infer<typeof PetProfileSchema>;
@@ -154,13 +160,53 @@ export const PetSetSizeSchema = z
   .strict();
 export type PetSetSize = z.infer<typeof PetSetSizeSchema>;
 
-/** 面板打开指令（view 与面板 5 个主 tab + 登录页一一对应） */
+/** 面板打开指令（view 与面板 tab + 登录页一一对应） */
 export const PanelOpenSchema = z
   .object({
-    view: z.enum(['login', 'chat', 'friends', 'character', 'memories', 'settings']),
+    view: z.enum(['login', 'chat', 'friends', 'character', 'memories', 'settings', 'model']),
   })
   .strict();
 export type PanelOpen = z.infer<typeof PanelOpenSchema>;
+
+/** 本地 BYOK 模型配置（OpenAI 兼容端点；密钥仅在 Main 侧加解密存储） */
+export const LocalLlmConfigSchema = z
+  .object({
+    enabled: z.boolean(),
+    /** OpenAI 兼容基址，如 https://api.openai.com/v1 */
+    baseUrl: z.string().trim().min(1).max(500),
+    /** 允许为空：留空表示保留已保存的密钥（仅更新其它字段时） */
+    apiKey: z.string().max(500),
+    model: z.string().trim().min(1).max(200),
+  })
+  .strict();
+export type LocalLlmConfig = z.infer<typeof LocalLlmConfigSchema>;
+
+/** 渲染层可见的配置视图（密钥不回传，仅 hasApiKey） */
+export const LocalLlmConfigViewSchema = z
+  .object({
+    enabled: z.boolean(),
+    baseUrl: z.string(),
+    model: z.string(),
+    hasApiKey: z.boolean(),
+  })
+  .strict();
+export type LocalLlmConfigView = z.infer<typeof LocalLlmConfigViewSchema>;
+
+/** 本地 LLM 聊天请求（OpenAI messages 子集；条数/长度上限防滥用） */
+export const LocalLlmChatMessageSchema = z
+  .object({
+    role: z.enum(['system', 'user', 'assistant']),
+    content: z.string().max(4000),
+  })
+  .strict();
+export type LocalLlmChatMessage = z.infer<typeof LocalLlmChatMessageSchema>;
+
+export const LocalLlmChatRequestSchema = z
+  .object({
+    messages: z.array(LocalLlmChatMessageSchema).min(1).max(30),
+  })
+  .strict();
+export type LocalLlmChatRequest = z.infer<typeof LocalLlmChatRequestSchema>;
 
 /** 布尔开关设置 */
 export const BooleanSettingSchema = z
@@ -170,13 +216,14 @@ export const BooleanSettingSchema = z
   .strict();
 export type BooleanSetting = z.infer<typeof BooleanSettingSchema>;
 
-/** 运行时快照（渲染层展示状态） */
+/** 运行时快照（渲染层展示状态；passThrough 供菜单/设置页反射当前穿透态） */
 export const PetRuntimeSnapshotSchema = z
   .object({
     state: PetStateSchema,
     online: z.boolean(),
     dnd: z.boolean(),
     hidden: z.boolean(),
+    passThrough: z.boolean(),
   })
   .strict();
 export type PetRuntimeSnapshot = z.infer<typeof PetRuntimeSnapshotSchema>;

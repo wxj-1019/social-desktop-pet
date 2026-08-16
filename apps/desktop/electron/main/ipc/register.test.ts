@@ -48,7 +48,12 @@ const PROD_URL = (surface: 'pet' | 'panel') =>
   `file:///E:/app/out/renderer/index.html?surface=${surface}`;
 
 /** 推送专用通道：main→renderer，无 renderer→main handler */
-const PUSH_ONLY = new Set(['pet:runtime:snapshot', 'pet:visual-command', 'deeplink:payload']);
+const PUSH_ONLY = new Set([
+  'pet:runtime:snapshot',
+  'pet:visual-command',
+  'deeplink:payload',
+  'pet:profile-changed',
+]);
 
 type FakeWindow = {
   id: string;
@@ -121,6 +126,13 @@ function makeDeps() {
   const setDnd = vi.fn((enabled: boolean) => runtime.setDnd(enabled));
   const setPetScale = vi.fn();
   const getPetScale = vi.fn(() => 1);
+  const hidePet = vi.fn();
+  const showPet = vi.fn();
+  const localLlm = {
+    view: vi.fn(() => ({ enabled: false, baseUrl: '', model: '', hasApiKey: false })),
+    save: vi.fn(),
+    chat: vi.fn(async () => ({ error: 'not_configured' })),
+  };
   const reloadPetWithCharacter = vi.fn();
   const deps: PetIpcDependencies = {
     appVersion: '4.5.6-test',
@@ -138,6 +150,9 @@ function makeDeps() {
     setDnd,
     setPetScale,
     getPetScale,
+    hidePet,
+    showPet,
+    localLlm,
     reloadPetWithCharacter,
   };
   return {
@@ -260,8 +275,7 @@ describe('channel-to-surface binding（Task 7）', () => {
       ['pet:drag-start', { x: 10, y: 20 }],
       ['pet:drag-move', { x: 30, y: 40 }],
       ['pet:drag-end', undefined],
-      ['pet:set-dnd', { enabled: true }],
-      ['pet:set-pass-through', { enabled: true }],
+      ['pet:set-hidden', { enabled: true }],
       ['pet:show-context-menu', undefined],
     ];
     for (const [channel, payload] of petOnly) {

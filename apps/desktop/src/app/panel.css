@@ -1925,3 +1925,207 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---- 本地模式 · 云端功能登录引导（好友/记忆） ---- */
+.login-required {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.login-required__icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: var(--panel-accent-tint);
+  color: var(--panel-accent);
+  box-shadow: 0 0 0 6px var(--panel-accent-glow);
+}
+
+.login-required h2 {
+  margin: 4px 0 0;
+  font-size: 15px;
+  color: var(--panel-text);
+}
+
+.login-required p {
+  margin: 0;
+  max-width: 260px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--panel-text-muted, #64748b);
+}
+
+.login-required__cta {
+  margin-top: 8px;
+  padding: 8px 22px;
+  border: none;
+  border-radius: 10px;
+  background: var(--panel-accent-gradient);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.login-required__cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px var(--panel-accent-glow);
+}
+
+/* ---- 设置页 · 本地模型（BYOK，OpenAI 兼容）---- */
+.settings-section {
+  margin-top: 14px;
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  border-radius: 14px;
+  background: var(--panel-surface);
+  overflow: hidden;
+}
+
+.settings-section__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.12);
+  background: var(--panel-accent-light);
+}
+
+.settings-section__head .settings-item__icon {
+  width: 30px;
+  height: 30px;
+  flex: none;
+}
+
+.settings-section__head strong {
+  display: block;
+  font-size: 13px;
+  color: var(--panel-text);
+}
+
+.settings-section__head small {
+  display: block;
+  max-width: 220px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--panel-text-muted, #64748b);
+}
+
+.settings-section__head input[type='checkbox'] {
+  margin-left: auto;
+  flex: none;
+}
+
+.settings-section__body {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.settings-field {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-field span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--panel-text-muted, #64748b);
+}
+
+.settings-field input {
+  padding: 8px 10px;
+  border: 1px solid rgba(99, 102, 241, 0.22);
+  border-radius: 8px;
+  background: var(--panel-surface-subtle, #f1f5f9);
+  font-size: 12px;
+  color: var(--panel-text);
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.settings-field input:focus {
+  border-color: var(--panel-accent);
+  box-shadow: 0 0 0 3px var(--panel-accent-glow);
+}
+
+.settings-section__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-section__actions button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 9px;
+  background: var(--panel-accent-gradient);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.settings-section__actions button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px var(--panel-accent-glow);
+}
+
+.settings-section__actions button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.settings-section__actions small {
+  font-size: 11px;
+}
+
+.settings-section__actions small.ok {
+  color: #16a34a;
+}
+
+.settings-section__actions small.err {
+  color: #dc2626;
+}
+
+/* ---- 本地聊天 · LLM 思考中气泡 ---- */
+.chat-bubble--typing {
+  position: relative;
+  color: transparent;
+  animation: chat-typing-pulse 1s ease-in-out infinite;
+}
+
+.chat-bubble--typing::after {
+  content: '···';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--panel-text-muted, #64748b);
+  letter-spacing: 2px;
+}
+
+@keyframes chat-typing-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}

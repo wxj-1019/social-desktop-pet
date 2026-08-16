@@ -10,6 +10,8 @@
  */
 import {
   BooleanSettingSchema,
+  LocalLlmChatRequestSchema,
+  LocalLlmConfigSchema,
   PanelOpenSchema,
   PetActionRequestSchema,
   PetChatEventSchema,
@@ -21,7 +23,14 @@ import {
   PetSocialEventSchema,
   PetVisualCommandSchema,
 } from '@pet/protocol';
-import type { PanelOpen, PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
+import type {
+  LocalLlmChatRequest,
+  LocalLlmConfig,
+  LocalLlmConfigView,
+  PanelOpen,
+  PetRuntimeSnapshot,
+  PetVisualCommand,
+} from '@pet/protocol';
 import { ipcMain, screen } from 'electron';
 import type { BrowserWindow } from 'electron';
 
@@ -74,6 +83,16 @@ export interface PetIpcDependencies {
   setPetScale: (scale: number) => void;
   /** 当前缩放比例（设置页滑块初始值） */
   getPetScale: () => number;
+  /** 隐藏桌宠单一入口（窗口 hide + 运行时 HIDDEN；托盘同源） */
+  hidePet: () => void;
+  /** 显示桌宠单一入口（窗口 show + 解除穿透 + 运行时恢复；托盘同源） */
+  showPet: () => void;
+  /** 本地 BYOK 模型（OpenAI 兼容）：配置视图 / 保存 / 聊天 */
+  localLlm: {
+    view: () => LocalLlmConfigView;
+    save: (config: LocalLlmConfig) => LocalLlmConfigView;
+    chat: (request: LocalLlmChatRequest) => Promise<{ reply: string } | { error: string }>;
+  };
   /** 切换角色皮肤：保存 profile.petId + 用新 ?character= 重载桌宠窗 */
   reloadPetWithCharacter: (petId: string) => void;
   /** 会话 handler（Task 1；可选，缺省不注册会话通道） */
@@ -209,14 +228,22 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
     deps.setPetScale(scale);
   });
   registerInvoke(deps, 'pet:get-size', 'panel', () => deps.getPetScale());
-  registerOn(deps, 'pet:set-dnd', 'pet', (_win, payload) => {
+  // 勿扰：SAO 菜单（pet）与设置页（panel）共入口；Main 端 syncDnd 统一
+  // runtime / 档案 / 托盘（快照广播由 runtime emit 驱动）
+  registerOn(deps, 'pet:set-dnd', ['pet', 'panel'], (_win, payload) => {
     const { enabled } = parseIpcPayload(BooleanSettingSchema, payload);
-    // 单一状态源：Main 端 syncDnd 统一 runtime / 档案 / 托盘（快照广播由 runtime emit 驱动）
     deps.setDnd(enabled);
   });
-  registerOn(deps, 'pet:set-pass-through', 'pet', (_win, payload) => {
+  // 穿透：同上，设置页需要反射与切换（关闭穿透即恢复交互）
+  registerOn(deps, 'pet:set-pass-through', ['pet', 'panel'], (_win, payload) => {
     const { enabled } = parseIpcPayload(BooleanSettingSchema, payload);
     deps.setPassThrough(enabled);
+  });
+  // 隐藏/显示桌宠（SAO 菜单快捷项；与托盘 hide/show 同源入口）
+  registerOn(deps, 'pet:set-hidden', 'pet', (_win, payload) => {
+    const { enabled } = parseIpcPayload(BooleanSettingSchema, payload);
+    if (enabled) deps.hidePet();
+    else deps.showPet();
   });
   registerOn(deps, 'pet:show-context-menu', 'pet', () => deps.showContextMenu());
   // 面板 → 桌宠气泡（记忆"已记住"/确认提示；复用 PetVisualCommandSchema.bubble 契约）
@@ -254,6 +281,8 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
   registerInvoke(deps, 'pet-profile:set', 'panel', (_win, payload) => {
     const next = parseIpcPayload(PetProfileSchema, payload);
     profile.save(next);
+    // 推送给桌宠窗：气泡开关/减弱动态等即时生效（否则只在挂载时读一次）
+    deps.getPetWindow()?.webContents.send('pet:profile-changed', next);
     return next;
   });
 
@@ -265,6 +294,15 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
     deps.reloadPetWithCharacter(petId);
     return petId;
   });
+
+  // ---- 本地 BYOK 模型（OpenAI 兼容）：设置页读写视图；本地聊天经 Main 调用 ----
+  registerInvoke(deps, 'local-llm:get', ['pet', 'panel'], () => deps.localLlm.view());
+  registerInvoke(deps, 'local-llm:set', 'panel', (_win, payload) =>
+    deps.localLlm.save(parseIpcPayload(LocalLlmConfigSchema, payload)),
+  );
+  registerInvoke(deps, 'local-llm:chat', 'panel', (_win, payload) =>
+    deps.localLlm.chat(parseIpcPayload(LocalLlmChatRequestSchema, payload)),
+  );
 
   // ---- PoC 专用：多屏信息（第 1–2 周窗口能力 PoC；第 3 周由 DisplayController 正式接入）----
   registerInvoke(deps, 'poc:getDisplays', 'pet', () => {

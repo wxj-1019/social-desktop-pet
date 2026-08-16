@@ -1,4 +1,4 @@
-import { LogOut, Sparkles, UserRound, X } from 'lucide-react';
+import { LogOut, ShieldQuestion, Sparkles, UserRound, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { initApi, setAccessToken } from '../lib/api/client.js';
@@ -9,17 +9,28 @@ import { FriendsPage } from './friends.js';
 import { LocalChat } from './local-chat.js';
 import { LoginPage, type AuthResult } from './login.js';
 import { MemoriesPage } from './memories.js';
+import { ModelSettingsPage } from './model-settings.js';
 import { PanelBrand } from './panel-brand.js';
 import { SettingsPage } from './settings.js';
 
 type SessionPhase = 'booting' | 'signed_out' | 'local' | 'active';
-type ActiveTab = 'friends' | 'chat' | 'character' | 'memories' | 'settings';
+type ActiveTab = 'friends' | 'chat' | 'character' | 'memories' | 'settings' | 'model';
+
+const ALL_TABS: ActiveTab[] = ['friends', 'chat', 'character', 'memories', 'model', 'settings'];
+const TAB_LABELS: Record<ActiveTab, string> = {
+  friends: '好友',
+  chat: '聊天',
+  character: '角色',
+  memories: '记忆',
+  model: '模型',
+  settings: '设置',
+};
 
 /** 主应用面板：会话状态机驱动登录、本地聊天与已登录界面。 */
 export function AppPanel() {
   const [phase, setPhase] = useState<SessionPhase>('booting');
   const [tab, setTab] = useState<ActiveTab>('friends');
-  const [localTab, setLocalTab] = useState<'chat' | 'character'>('chat');
+  const [localTab, setLocalTab] = useState<ActiveTab>('chat');
   const [user, setUser] = useState<AuthResult | null>(null);
   const [pendingInvite, setPendingInvite] = useState(false);
   const phaseRef = useRef<SessionPhase>('booting');
@@ -61,9 +72,16 @@ export function AppPanel() {
     const off = window.pet.panel.onNavigate((nav) => {
       if (nav.view === 'login') {
         setPhase('signed_out');
-      } else if (phaseRef.current === 'active') {
-        // 除 login 外协议 view 与 ActiveTab 一一对应（PanelOpenSchema）
+        return;
+      }
+      // 除 login 外协议 view 与 ActiveTab 一一对应（PanelOpenSchema）。
+      // 未登录（signed_out/local）也不静默丢弃：切进本地模式并定位目标 tab，
+      // 云端专属页（好友/记忆）由 LoginRequired 引导登录。
+      if (phaseRef.current === 'active') {
         setTab(nav.view);
+      } else {
+        setPhase('local');
+        setLocalTab(nav.view);
       }
     });
     return off;
@@ -128,34 +146,23 @@ export function AppPanel() {
     return (
       <div className="pet-stage pet-stage--app">
         <PanelHeader />
-        <nav className="app-tabs" role="tablist" aria-label="面板页面">
-          <button
-            className={localTab === 'chat' ? 'tab active' : 'tab'}
-            role="tab"
-            aria-selected={localTab === 'chat'}
-            onClick={() => setLocalTab('chat')}
-          >
-            聊天
-          </button>
-          <button
-            className={localTab === 'character' ? 'tab active' : 'tab'}
-            role="tab"
-            aria-selected={localTab === 'character'}
-            onClick={() => setLocalTab('character')}
-          >
-            角色
-          </button>
-        </nav>
+        <PanelTabs tab={localTab} onChange={setLocalTab} />
         <div
           className="app-viewport"
           role="tabpanel"
           id={`panel-${localTab}`}
-          aria-label="本地内容"
+          aria-labelledby={`tab-${localTab}`}
         >
-          {localTab === 'character' ? (
-            <CharacterSelect onBack={onCharacterBack} />
-          ) : (
+          {localTab === 'chat' ? (
             <LocalChat onLoginClick={() => setPhase('signed_out')} />
+          ) : localTab === 'character' ? (
+            <CharacterSelect onBack={onCharacterBack} />
+          ) : localTab === 'settings' ? (
+            <SettingsPage />
+          ) : localTab === 'model' ? (
+            <ModelSettingsPage />
+          ) : (
+            <LoginRequired view={localTab} onLogin={() => setPhase('signed_out')} />
           )}
         </div>
       </div>
@@ -165,70 +172,7 @@ export function AppPanel() {
   return (
     <div className="pet-stage pet-stage--app">
       <PanelHeader nickname={user?.nickname} onLogout={onLogout} />
-      <nav
-        className="app-tabs"
-        role="tablist"
-        aria-label="面板页面"
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            const tabs: ActiveTab[] = ['friends', 'chat', 'character', 'memories', 'settings'];
-            const current = tabs.indexOf(tab);
-            const next = e.key === 'ArrowLeft' ? current - 1 : current + 1;
-            if (next >= 0 && next < tabs.length) setTab(tabs[next]!);
-          }
-        }}
-      >
-        <button
-          className={tab === 'friends' ? 'tab active' : 'tab'}
-          role="tab"
-          id="tab-friends"
-          aria-selected={tab === 'friends'}
-          aria-controls="panel-friends"
-          onClick={() => setTab('friends')}
-        >
-          好友
-        </button>
-        <button
-          className={tab === 'chat' ? 'tab active' : 'tab'}
-          role="tab"
-          id="tab-chat"
-          aria-selected={tab === 'chat'}
-          aria-controls="panel-chat"
-          onClick={() => setTab('chat')}
-        >
-          聊天
-        </button>
-        <button
-          className={tab === 'character' ? 'tab active' : 'tab'}
-          role="tab"
-          id="tab-character"
-          aria-selected={tab === 'character'}
-          aria-controls="panel-character"
-          onClick={() => setTab('character')}
-        >
-          角色
-        </button>
-        <button
-          className={tab === 'memories' ? 'tab active' : 'tab'}
-          role="tab"
-          id="tab-memories"
-          aria-selected={tab === 'memories'}
-          aria-controls="panel-memories"
-          onClick={() => setTab('memories')}
-        >
-          记忆
-        </button>
-        <button
-          className={tab === 'settings' ? 'tab active' : 'tab'}
-          role="tab"
-          id="tab-settings"
-          aria-selected={tab === 'settings'}
-          aria-controls="panel-settings"
-          onClick={() => setTab('settings')}
-        >
-          设置
-        </button>
-      </nav>
+      <PanelTabs tab={tab} onChange={setTab} />
       <div
         className="app-viewport"
         role="tabpanel"
@@ -243,11 +187,61 @@ export function AppPanel() {
           <CharacterSelect onBack={onCharacterBack} />
         ) : tab === 'memories' ? (
           <MemoriesPage />
+        ) : tab === 'model' ? (
+          <ModelSettingsPage />
         ) : (
           <SettingsPage />
         )}
       </div>
     </div>
+  );
+}
+
+/** 面板 tab 栏（active 与 local 两阶段共用；local 下好友/记忆渲染登录引导） */
+function PanelTabs({ tab, onChange }: { tab: ActiveTab; onChange: (tab: ActiveTab) => void }) {
+  return (
+    <nav
+      className="app-tabs"
+      role="tablist"
+      aria-label="面板页面"
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          const current = ALL_TABS.indexOf(tab);
+          const next = e.key === 'ArrowLeft' ? current - 1 : current + 1;
+          if (next >= 0 && next < ALL_TABS.length) onChange(ALL_TABS[next]!);
+        }
+      }}
+    >
+      {ALL_TABS.map((t) => (
+        <button
+          key={t}
+          className={tab === t ? 'tab active' : 'tab'}
+          role="tab"
+          id={`tab-${t}`}
+          aria-selected={tab === t}
+          aria-controls={`panel-${t}`}
+          onClick={() => onChange(t)}
+        >
+          {TAB_LABELS[t]}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+/** 本地模式下云端功能的登录引导：给明确出口而非静默失败 */
+function LoginRequired({ view, onLogin }: { view: ActiveTab; onLogin: () => void }) {
+  return (
+    <main className="login-required" aria-label={`${TAB_LABELS[view]}（需登录）`}>
+      <span className="login-required__icon" aria-hidden="true">
+        <ShieldQuestion size={26} />
+      </span>
+      <h2>{TAB_LABELS[view]}需要登录后使用</h2>
+      <p>本地模式可以聊天、换角色、改设置；{TAB_LABELS[view]}的数据保存在云端账号里。</p>
+      <button className="login-required__cta" type="button" onClick={onLogin}>
+        去登录
+      </button>
+    </main>
   );
 }
 

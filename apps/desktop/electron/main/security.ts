@@ -56,6 +56,8 @@ export const IPC_ALLOWLIST = [
   'pet:set-size', // 桌宠大小调节（设置页滑块）
   'pet:get-size', // 桌宠大小查询（设置页初始值）
   'pet:set-pass-through', // 整窗穿透
+  'pet:set-hidden', // 隐藏/显示桌宠（SAO 菜单）
+  'pet:profile-changed', // main→pet 推送（设置页写档案后广播，气泡/减弱动态实时生效）
   'pet:show-context-menu', // 桌宠右键菜单
   'pet:show-bubble', // 面板 → 桌宠气泡（记忆"已记住"等提示）
   'panel:open', // 面板打开（8.2）
@@ -64,4 +66,7 @@ export const IPC_ALLOWLIST = [
   'pet-profile:get',
   'pet-profile:set',
   'pet:set-character', // 切换角色皮肤（保存 profile + 重载桌宠窗）
+  'local-llm:get', // 本地 BYOK 模型配置视图（无密钥）
+  'local-llm:set', // 保存本地模型配置（密钥 Main 侧加密落盘）
+  'local-llm:chat', // 本地模式聊天 → OpenAI 兼容端点（Main 侧发起）
 ] as const;

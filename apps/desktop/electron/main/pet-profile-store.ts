@@ -19,6 +19,7 @@ export const DEFAULT_PET_PROFILE: PetProfile = {
   reducedMotion: false,
   dnd: false,
   bubbleEnabled: true,
+  menuStyle: 'sao',
 };
 
 export class PetProfileStore {
@@ -33,7 +34,9 @@ export class PetProfileStore {
   }
 
   load(): PetProfile {
-    return this.store.load();
+    // 迁移：老档案无 menuStyle 时补默认 'sao'（持久化即升级）
+    const loaded = this.store.load();
+    return { ...loaded, menuStyle: loaded.menuStyle ?? 'sao' };
   }
 
   save(profile: PetProfile): void {

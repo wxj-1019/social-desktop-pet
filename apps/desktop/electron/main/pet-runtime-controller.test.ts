@@ -23,7 +23,13 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     const runtime = makeRuntime(visuals, snapshots);
 
     runtime.start();
-    expect(snapshots.at(-1)).toEqual({ state: 'IDLE', online: true, dnd: false, hidden: false });
+    expect(snapshots.at(-1)).toEqual({
+      state: 'IDLE',
+      online: true,
+      dnd: false,
+      hidden: false,
+      passThrough: false,
+    });
     expect(visuals).toContainEqual({ type: 'motion', motion: 'happy', intensity: 1 });
 
     // 启动伸懒腰 1.2s 后回到 idle 动作
@@ -58,6 +64,7 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
       online: true,
       dnd: false,
       hidden: true,
+      passThrough: false,
     });
     expect(vi.getTimerCount()).toBe(0);
 
