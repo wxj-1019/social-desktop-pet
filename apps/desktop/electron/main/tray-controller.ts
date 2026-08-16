@@ -14,7 +14,15 @@ import { app, Menu, Tray, nativeImage } from 'electron';
 import type { BrowserWindow, MenuItemConstructorOptions, NativeImage } from 'electron';
 
 export type TrayAction =
-  'open-chat' | 'open-friends' | 'toggle-dnd' | 'toggle-pass-through' | 'hide' | 'show' | 'quit';
+  | 'open-chat'
+  | 'open-friends'
+  | 'open-settings'
+  | 'toggle-dnd'
+  | 'toggle-pass-through'
+  | 'set-menu-style'
+  | 'hide'
+  | 'show'
+  | 'quit';
 
 /** 桌宠大小预设档位（右键菜单/托盘子菜单；滑块可任意微调） */
 export const PET_SCALE_PRESETS: Array<{ label: string; value: number }> = [
@@ -31,7 +39,7 @@ export function scalePresetLabel(scale: number): string {
 
 export interface TrayHandlers {
   /** 打开聊天/好友面板（Main 端接 openPanel） */
-  onOpenPanel(view: 'chat' | 'friends'): void;
+  onOpenPanel(view: 'chat' | 'friends' | 'settings'): void;
   /** 勿扰开关（Main 端接 runtime.setDnd） */
   onSetDnd(enabled: boolean): void;
   /** 穿透开关（Main 端接窗口 setIgnoreMouseEvents + snapshot 同步） */
@@ -42,6 +50,8 @@ export interface TrayHandlers {
   onHide(): void;
   /** 显示桌宠（Main 端接 petWindow.show + 解除穿透 + runtime.setHidden(false)） */
   onShow(): void;
+  /** 切换环形菜单 UI 皮肤（写档案 + 广播给桌宠窗即时切换） */
+  onSetMenuStyle(style: 'sao' | 'classic'): void;
   /** 完全退出 */
   onQuit(): void;
 }
@@ -105,6 +115,7 @@ export class TrayController {
   private passThrough = false;
   private dnd = false;
   private scale = 1;
+  private menuStyle: 'sao' | 'classic' = 'sao';
   private readonly options: Required<
     Pick<TrayControllerOptions, 'createTray' | 'buildMenu' | 'loadIcon' | 'popupMenu'>
   > &
@@ -153,6 +164,12 @@ export class TrayController {
     this.refresh();
   }
 
+  /** Main 同步菜单皮肤（档案启动加载 / SAO 内换肤后回写），不触发 handler 避免循环 */
+  setMenuStyleForced(style: 'sao' | 'classic'): void {
+    this.menuStyle = style;
+    this.refresh();
+  }
+
   /** Main 同步外部桌宠缩放（单一状态源入口 setPetScale 驱动），不触发 handler 避免循环 */
   setScaleForced(scale: number): void {
     this.scale = scale;
@@ -176,10 +193,18 @@ export class TrayController {
         return;
       case 'open-friends':
         this.options.handlers.onOpenPanel('friends');
+        break;
+      case 'open-settings':
+        this.options.handlers.onOpenPanel('settings');
         return;
       case 'toggle-dnd':
         this.dnd = !this.dnd;
         this.options.handlers.onSetDnd(this.dnd);
+        this.refresh();
+        return;
+      case 'set-menu-style':
+        this.menuStyle = this.menuStyle === 'sao' ? 'classic' : 'sao';
+        this.options.handlers.onSetMenuStyle(this.menuStyle);
         this.refresh();
         return;
       case 'toggle-pass-through':
@@ -216,6 +241,7 @@ export class TrayController {
     return [
       { label: '打开聊天', click: () => this.dispatch('open-chat') },
       { label: '好友面板', click: () => this.dispatch('open-friends') },
+      { label: '设置', click: () => this.dispatch('open-settings') },
       { type: 'separator' },
       {
         label: `鼠标穿透：${this.passThrough ? '开' : '关'}`,
@@ -239,6 +265,10 @@ export class TrayController {
             this.refresh();
           },
         })),
+      },
+      {
+        label: `菜单皮肤：${this.menuStyle === 'sao' ? 'SAO 链式弧' : '经典环状'}`,
+        click: () => this.dispatch('set-menu-style'),
       },
       { type: 'separator' },
       { label: '隐藏桌宠', click: () => this.dispatch('hide') },
