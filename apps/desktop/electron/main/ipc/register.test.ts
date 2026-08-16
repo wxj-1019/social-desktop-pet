@@ -609,7 +609,7 @@ describe('panel 通道（Task 7）', () => {
     registerIpcAllowlist(deps);
     const handler = electronMocks.onHandlers.get('panel:open');
 
-    expect(() => handler?.(eventFrom(panel), { view: 'settings' })).toThrow(IpcPayloadError);
+    expect(() => handler?.(eventFrom(panel), { view: 'unknown' })).toThrow(IpcPayloadError);
   });
 
   it('panel:close hides the panel via closePanel', () => {

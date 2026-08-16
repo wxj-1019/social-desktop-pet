@@ -62,7 +62,8 @@ export function AppPanel() {
       if (nav.view === 'login') {
         setPhase('signed_out');
       } else if (phaseRef.current === 'active') {
-        setTab(nav.view === 'chat' ? 'chat' : 'friends');
+        // 除 login 外协议 view 与 ActiveTab 一一对应（PanelOpenSchema）
+        setTab(nav.view);
       }
     });
     return off;
@@ -145,7 +146,12 @@ export function AppPanel() {
             角色
           </button>
         </nav>
-        <div className="app-viewport" role="tabpanel" id={`panel-${localTab}`} aria-label="本地内容">
+        <div
+          className="app-viewport"
+          role="tabpanel"
+          id={`panel-${localTab}`}
+          aria-label="本地内容"
+        >
           {localTab === 'character' ? (
             <CharacterSelect onBack={onCharacterBack} />
           ) : (
@@ -223,7 +229,12 @@ export function AppPanel() {
           设置
         </button>
       </nav>
-      <div className="app-viewport" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+      <div
+        className="app-viewport"
+        role="tabpanel"
+        id={`panel-${tab}`}
+        aria-labelledby={`tab-${tab}`}
+      >
         {tab === 'friends' ? (
           <FriendsPage userId={user?.userId ?? ''} />
         ) : tab === 'chat' ? (

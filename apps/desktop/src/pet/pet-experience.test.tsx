@@ -88,16 +88,17 @@ function installFakePet(): void {
 function firePointer(
   el: Element,
   type: 'down' | 'move' | 'up' | 'cancel',
-  init: { screenX: number; screenY: number },
+  init: { screenX: number; screenY: number; button?: number },
 ): void {
+  const button = init.button ?? 0;
   el.dispatchEvent(
     new PointerEvent(`pointer${type}`, {
       bubbles: true,
       cancelable: true,
       pointerId: 1,
       pointerType: 'touch',
-      button: 0,
-      buttons: type === 'up' ? 0 : 1,
+      button,
+      buttons: type === 'up' ? 0 : button === 0 ? 1 : button,
       screenX: init.screenX,
       screenY: init.screenY,
     }),
@@ -171,6 +172,17 @@ describe('PetExperience（星屿直连交互面）', () => {
     expect(pet.panel.open).toHaveBeenCalledWith({ view: 'chat' });
   });
 
+  it('double right-click is not classified as double click (no panel)', () => {
+    render(<PetExperience />);
+    const head = document.querySelector('[data-hit="head"]');
+    for (const screenX of [100, 101]) {
+      firePointer(head!, 'down', { screenX, screenY: 100, button: 2 });
+      firePointer(head!, 'up', { screenX, screenY: 100, button: 2 });
+    }
+    expect(pet.panel.open).not.toHaveBeenCalled();
+    expect(pet.petRuntime.interaction).not.toHaveBeenCalled();
+  });
+
   it('starts from the original pointer and forwards the threshold-crossing move', () => {
     render(<PetExperience />);
     const container = document.querySelector('.pet-experience');
@@ -239,12 +251,15 @@ describe('PetExperience（星屿直连交互面）', () => {
     expect(screen.getByTestId('custom-fallback')).not.toBeNull();
   });
 
-  it('opens the context menu and prevents default on contextmenu', () => {
+  it('opens the SAO menu (not the native one) and prevents default on contextmenu', () => {
     render(<PetExperience />);
     const container = document.querySelector('.pet-experience');
     const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
-    container!.dispatchEvent(event);
-    expect(pet.petRuntime.showContextMenu).toHaveBeenCalledTimes(1);
+    act(() => {
+      container!.dispatchEvent(event);
+    });
+    expect(screen.getByTestId('sao-menu')).not.toBeNull();
     expect(event.defaultPrevented).toBe(true);
+    expect(pet.petRuntime.showContextMenu).not.toHaveBeenCalled();
   });
 });

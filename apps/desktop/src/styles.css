@@ -860,3 +860,325 @@ body,
   border-right: 1px solid #f0cfdd;
   border-bottom: 1px solid #f0cfdd;
 }
+
+/* ============================================================
+   刀剑神域 (Sword Art Online) 经典纯正【左侧全息系统菜单】
+   ============================================================ */
+
+.sao-radial-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  pointer-events: auto;
+  background: transparent;
+  user-select: none;
+  overflow: visible;
+}
+
+.sao-left-menu {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+/* 全息能量动线轨道：固定 240×260 设计坐标（与节点像素定位 1:1）。
+   不能用 inset:0/100% —— 那会随宠物窗口用户缩放而缩放，
+   缩放≠1 时弧线整体飘离图标、终点戳向宠物（"线跟着宠物动"的根因）。 */
+.sao-left-track-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 240px;
+  height: 260px;
+  pointer-events: none;
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.5));
+}
+
+/* 珠链式能量弧段：底座静止发光 */
+.sao-seg-base {
+  fill: none;
+  stroke: rgba(186, 230, 253, 0.75);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* 每段一颗高亮能量珠巡游（流动感）：
+   dash 周期 = 珠长(--comet-len) + 段长(--seg-len)，起点 offset=珠长时整段藏于 gap；
+   结束 offset=-段长 与起点同相位（mod 周期）→ 无缝循环；
+   逐段 animation-delay 形成自上而下的级联流。
+   reduced-motion 下动画被全局禁用，静态 offset=珠长使能量珠不可见。 */
+.sao-seg-run {
+  fill: none;
+  stroke: #e0f2fe;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: var(--comet-len) var(--seg-len);
+  stroke-dashoffset: var(--comet-len);
+  animation: sao-seg-run 1.2s linear infinite;
+  filter: drop-shadow(0 0 4px rgba(224, 242, 254, 0.9));
+}
+
+@keyframes sao-seg-run {
+  from {
+    stroke-dashoffset: var(--comet-len);
+  }
+  to {
+    stroke-dashoffset: calc(-1 * var(--seg-len));
+  }
+}
+
+/* 顶部全息关闭按钮 */
+.sao-left-close {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  color: #94a3b8;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: all 0.15s ease;
+  z-index: 10;
+  -webkit-app-region: no-drag;
+}
+
+.sao-left-close:hover {
+  color: #ffffff;
+  border-color: rgba(239, 68, 68, 0.6);
+  background: rgba(239, 68, 68, 0.3);
+  transform: scale(1.1);
+}
+
+/* 左侧插槽与晶体节点 */
+.sao-left-slot {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  animation: sao-left-node-pop 0.25s cubic-bezier(0.16, 1.4, 0.3, 1) both;
+  -webkit-app-region: no-drag;
+}
+
+@keyframes sao-left-node-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-16px) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.sao-ring-node {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  color: #f8fafc;
+  cursor: pointer;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.35),
+    0 0 10px rgba(56, 189, 248, 0.2);
+  transition: all 0.18s cubic-bezier(0.16, 1.3, 0.3, 1);
+  -webkit-app-region: no-drag;
+}
+
+.sao-ring-node:hover,
+.sao-ring-node--active {
+  transform: scale(1.22);
+  z-index: 20;
+}
+
+/* 不同节点的 SAO 水晶主题色 */
+.sao-ring-node--cyan {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.8);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.45);
+}
+
+.sao-ring-node--cyan:hover {
+  background: rgba(56, 189, 248, 0.25);
+}
+
+.sao-ring-node--indigo {
+  color: #818cf8;
+  border-color: rgba(129, 140, 248, 0.8);
+  box-shadow: 0 0 14px rgba(129, 140, 248, 0.45);
+}
+
+.sao-ring-node--indigo:hover {
+  background: rgba(129, 140, 248, 0.25);
+}
+
+.sao-ring-node--purple {
+  color: #c084fc;
+  border-color: rgba(192, 132, 252, 0.8);
+  box-shadow: 0 0 14px rgba(192, 132, 252, 0.45);
+}
+
+.sao-ring-node--purple:hover {
+  background: rgba(192, 132, 252, 0.25);
+}
+
+.sao-ring-node--amber {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.8);
+  box-shadow: 0 0 14px rgba(251, 191, 36, 0.45);
+}
+
+.sao-ring-node--amber:hover {
+  background: rgba(251, 191, 36, 0.25);
+}
+
+.sao-ring-node--teal {
+  color: #2dd4bf;
+  border-color: rgba(45, 212, 191, 0.8);
+  box-shadow: 0 0 14px rgba(45, 212, 191, 0.45);
+}
+
+.sao-ring-node--teal:hover,
+.sao-ring-node--teal.sao-ring-node--active {
+  background: rgba(45, 212, 191, 0.25);
+}
+
+/* 悬停时向右侧内侧浮现的 SAO 全息发光胶囊标签（宽阔安全区，永不被裁切） */
+.sao-ring-pill--right {
+  position: absolute;
+  left: 38px;
+  top: 50%;
+  transform: translateY(-50%) translateX(-6px);
+  opacity: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.45),
+    0 0 8px rgba(56, 189, 248, 0.3);
+  white-space: nowrap;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 30;
+}
+
+.sao-ring-node:hover .sao-ring-pill--right {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.sao-ring-pill--right strong {
+  font-size: 11px;
+  font-weight: 600;
+  color: #f8fafc;
+  line-height: 1.2;
+}
+
+.sao-ring-pill--right small {
+  font-size: 8.5px;
+  color: #38bdf8;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  letter-spacing: 0.05em;
+}
+
+/* SAO 环形二级全息快捷面板（展开时位于右侧安全区） */
+.sao-radial-sub--right {
+  position: absolute;
+  width: 160px;
+  padding: 6px 8px;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(45, 212, 191, 0.45);
+  border-radius: 10px;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.5),
+    0 0 12px rgba(45, 212, 191, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: sao-sub-pop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 40;
+  -webkit-app-region: no-drag;
+}
+
+@keyframes sao-sub-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.sao-radial-sub__title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #5eead4;
+  padding-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sao-gem-mini {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  transform: rotate(45deg);
+  background: #2dd4bf;
+  box-shadow: 0 0 6px #2dd4bf;
+}
+
+.sao-radial-sub__items {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+}
+
+.sao-sub-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  -webkit-app-region: no-drag;
+}
+
+.sao-sub-chip:hover {
+  background: rgba(45, 212, 191, 0.22);
+  border-color: rgba(45, 212, 191, 0.5);
+  color: #5eead4;
+}
+
+.sao-sub-chip--active {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+}
+
+.sao-sub-chip--native {
+  color: #94a3b8;
+}

@@ -344,10 +344,10 @@ describe('protocol/desktop/social events', () => {
 
 describe('protocol/desktop/panel & settings', () => {
   it('parses every panel view and rejects unknown views', () => {
-    for (const view of ['login', 'chat', 'friends'] as const) {
+    for (const view of ['login', 'chat', 'friends', 'character', 'memories', 'settings'] as const) {
       expect(PanelOpenSchema.parse({ view }).view).toBe(view);
     }
-    expect(() => PanelOpenSchema.parse({ view: 'settings' })).toThrow();
+    expect(() => PanelOpenSchema.parse({ view: 'unknown' })).toThrow();
   });
 
   it('parses a boolean setting and rejects extras', () => {

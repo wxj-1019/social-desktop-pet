@@ -154,10 +154,10 @@ export const PetSetSizeSchema = z
   .strict();
 export type PetSetSize = z.infer<typeof PetSetSizeSchema>;
 
-/** 面板打开指令 */
+/** 面板打开指令（view 与面板 5 个主 tab + 登录页一一对应） */
 export const PanelOpenSchema = z
   .object({
-    view: z.enum(['login', 'chat', 'friends']),
+    view: z.enum(['login', 'chat', 'friends', 'character', 'memories', 'settings']),
   })
   .strict();
 export type PanelOpen = z.infer<typeof PanelOpenSchema>;

@@ -8,7 +8,7 @@
  *   避免单击误触发窗口移动
  * - 未达阈值的抬起由 classifyPointer 决定 click（按命中区发 interaction）或
  *   double_click（打开聊天面板）
- * - contextmenu → showContextMenu + preventDefault
+ * - contextmenu → 切换 SAO 左侧环形菜单 + preventDefault
  *
  * StarIsleVisual 渲染抛错时由 PetVisualBoundary 降级为 PetFallback（同样可交互）。
  * window.pet 缺失（非 Electron）时所有指针处理静默跳过。
@@ -32,6 +32,7 @@ import {
   createDragMoveScheduler,
   type PointerSample,
 } from './pointer-interaction.js';
+import { SaoMenu } from './sao-menu.js';
 import { StarIsleVisual } from './star-isle-visual.js';
 import { usePetRuntime, type RendererFactory } from './use-pet-runtime.js';
 
@@ -104,6 +105,9 @@ export function PetExperience({
   };
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // 手势/点击只认主键（左键）：右键交给 SAO 菜单（contextmenu），
+    // 快速双击右键不得被分类为 double_click 弹出面板
+    if (e.button !== 0) return;
     const runtime = window.pet?.petRuntime;
     if (!runtime) return;
     const sample = screenSample(e);
@@ -158,6 +162,8 @@ export function PetExperience({
   };
 
   const handlePointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // 只处理主键抬起：左键拖拽中松开其它按钮不得提前终止手势
+    if (e.button !== 0) return;
     const runtime = window.pet?.petRuntime;
     if (!runtime) return;
     const gesture = gestureRef.current;
@@ -195,11 +201,12 @@ export function PetExperience({
     }
   };
 
+  const [saoOpen, setSaoOpen] = useState(false);
+
   const handleContextMenu = (e: ReactMouseEvent<HTMLDivElement>) => {
-    const runtime = window.pet?.petRuntime;
-    if (!runtime) return;
+    // 右键只切换 SAO 左侧环形菜单（原生菜单经其"控制 → 系统托盘"入口触达）
     e.preventDefault();
-    runtime.showContextMenu();
+    setSaoOpen((prev) => !prev);
   };
 
   return (
@@ -216,6 +223,7 @@ export function PetExperience({
         <VisualComponent state={visualState} />
       </PetVisualBoundary>
       {profile?.bubbleEnabled ? <PetBubble text={bubbleText} /> : null}
+      <SaoMenu isOpen={saoOpen} onClose={() => setSaoOpen(false)} dnd={profile?.dnd} />
     </div>
   );
 }

@@ -39,10 +39,11 @@
   --panel-border: rgba(226, 232, 240, 0.85);
   --panel-border-focus: rgba(99, 102, 241, 0.45);
   --panel-border-highlight: rgba(255, 255, 255, 0.9);
-  
+
   --panel-shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
   --panel-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
-  --panel-shadow-lg: 0 12px 32px -4px rgba(15, 23, 42, 0.12), 0 4px 12px -2px rgba(15, 23, 42, 0.06);
+  --panel-shadow-lg:
+    0 12px 32px -4px rgba(15, 23, 42, 0.12), 0 4px 12px -2px rgba(15, 23, 42, 0.06);
   --panel-shadow-glow: 0 0 20px -3px rgba(99, 102, 241, 0.25);
 
   /* 语义色彩 (Semantic Colors) */
@@ -66,7 +67,9 @@
 
 /* 基础字体、平滑渲染与全局拖拽把手 */
 .pet-stage {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color-scheme: light;
@@ -78,7 +81,7 @@
   justify-content: flex-start;
   overflow: hidden;
   color: var(--panel-text);
-  background: 
+  background:
     radial-gradient(circle at 10% 10%, rgba(99, 102, 241, 0.08) 0%, transparent 45%),
     radial-gradient(circle at 90% 90%, rgba(236, 72, 153, 0.06) 0%, transparent 50%),
     linear-gradient(160deg, #ffffff 0%, #f8fafc 100%);
@@ -140,7 +143,9 @@
 
 .pet-stage button:focus-visible,
 .pet-stage summary:focus-visible {
-  box-shadow: 0 0 0 2px var(--panel-surface), 0 0 0 4px var(--panel-accent);
+  box-shadow:
+    0 0 0 2px var(--panel-surface),
+    0 0 0 4px var(--panel-accent);
 }
 
 .pet-stage input:focus,
@@ -281,8 +286,12 @@
 }
 
 @keyframes panel-loading-shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(350%); }
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
 }
 
 .auth-shell {
@@ -306,7 +315,9 @@
 
 .auth-shell__close {
   color: var(--panel-text-subtle);
-  transition: color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s;
   -webkit-app-region: no-drag;
 }
 
@@ -431,7 +442,9 @@
   background: var(--panel-surface);
   font-size: 12.5px;
   user-select: text;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
   -webkit-app-region: no-drag;
 }
 
@@ -931,11 +944,17 @@
   animation: typing-bounce 0.9s ease-in-out infinite;
 }
 
-.typing-dots span:nth-child(2) { animation-delay: 0.15s; }
-.typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
 
 @keyframes typing-bounce {
-  0%, 60%, 100% {
+  0%,
+  60%,
+  100% {
     transform: translateY(0);
     opacity: 0.4;
   }
@@ -1011,7 +1030,9 @@
   overflow-y: auto;
   user-select: text;
   field-sizing: content;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
   -webkit-app-region: no-drag;
 }
 
@@ -1194,7 +1215,9 @@
   width: 7px;
   height: 7px;
   border-radius: var(--radius-full);
-  box-shadow: -10px 0 0 1px #22d3ee, 10px 0 0 1px #22d3ee;
+  box-shadow:
+    -10px 0 0 1px #22d3ee,
+    10px 0 0 1px #22d3ee;
   background: #22d3ee;
 }
 
@@ -1245,7 +1268,9 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+  padding: 2px 2px;
+  min-height: 28px;
   -webkit-app-region: drag;
 }
 
@@ -1253,13 +1278,13 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   -webkit-app-region: drag;
 }
 
 .view-heading__avatar {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   overflow: hidden;
   flex: 0 0 auto;
   border-radius: var(--radius-full);
@@ -1273,14 +1298,16 @@
 .view-heading h2 {
   margin: 0;
   color: var(--panel-text);
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
+  line-height: 1.2;
 }
 
 .eyebrow {
-  margin: 0 0 1px;
+  margin: 0;
   color: var(--panel-text-muted);
-  font-size: 10.5px;
+  font-size: 10px;
+  line-height: 1.2;
 }
 
 .secondary-button {
@@ -1837,7 +1864,9 @@
 }
 
 @keyframes soft-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .sr-only {
