@@ -40,7 +40,13 @@ let onVisualCommandCleanup: ReturnType<typeof vi.fn>;
 let visualCommandHandler: (command: PetVisualCommand) => void;
 
 function installFakePet(): void {
-  const snapshot: PetRuntimeSnapshot = { state: 'IDLE', online: true, dnd: false, hidden: false };
+  const snapshot: PetRuntimeSnapshot = {
+    state: 'IDLE',
+    online: true,
+    dnd: false,
+    hidden: false,
+    passThrough: false,
+  };
   const profile: PetProfile = {
     version: 1,
     petId: 'star-isle',

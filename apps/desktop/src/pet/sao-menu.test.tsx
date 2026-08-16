@@ -23,17 +23,18 @@ describe('SaoMenu · 刀剑神域风格环形轮盘托盘', () => {
     expect(screen.getByRole('menuitem', { name: /好友/ })).not.toBeNull();
     expect(screen.getByRole('menuitem', { name: /角色/ })).not.toBeNull();
     expect(screen.getByRole('menuitem', { name: /记忆/ })).not.toBeNull();
+    expect(screen.getByRole('menuitem', { name: /模型/ })).not.toBeNull();
     expect(screen.getByRole('menuitem', { name: /控制/ })).not.toBeNull();
   });
 
-  it('点击主菜单项触发面板打开并关闭菜单', () => {
-    const onOpenPanel = vi.fn();
-    const onClose = vi.fn();
-    render(<SaoMenu isOpen={true} onClose={onClose} onOpenPanel={onOpenPanel} />);
+  it('点击【对话】展开迷你聊天二级菜单（不直接跳面板）', () => {
+    render(<SaoMenu isOpen={true} onClose={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('menuitem', { name: /对话/ }));
-    expect(onOpenPanel).toHaveBeenCalledWith('chat');
-    expect(onClose).toHaveBeenCalled();
+    // 二级迷你聊天出现，且未关闭主菜单
+    expect(screen.getByRole('region', { name: '迷你聊天' })).not.toBeNull();
+    expect(screen.getByPlaceholderText('说点什么…')).not.toBeNull();
+    expect(screen.getByTestId('sao-menu')).not.toBeNull();
   });
 
   it('点击【控制】展开二级全息子面板并支持切换勿扰与穿透', () => {
@@ -60,11 +61,11 @@ describe('SaoMenu · 刀剑神域风格环形轮盘托盘', () => {
     fireEvent.click(dndButton);
     expect(onToggleDnd).toHaveBeenCalledWith(true);
 
-    // 点击鼠标穿透
-    const passButton = screen.getByRole('button', { name: /鼠标穿透/ });
+    // 点击穿透切换（快照驱动开关态：默认关 → 调用开启；切换类操作不关菜单）
+    const passButton = screen.getByRole('button', { name: /穿透/ });
     fireEvent.click(passButton);
     expect(onTogglePassThrough).toHaveBeenCalledWith(true);
-    expect(onClose).toHaveBeenCalled();
+    expect(screen.getByTestId('sao-menu')).not.toBeNull();
   });
 
   it('按 Escape 键关闭 SAO 菜单', () => {
