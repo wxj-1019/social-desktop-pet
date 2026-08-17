@@ -81,3 +81,69 @@ export class PgAdminSessionStore implements AdminSessionStore {
     );
   }
 }
+
+export interface AdminUserRow {
+  id: string;
+  email: string;
+  passwordHash: string;
+  status: 'active' | 'disabled';
+  lastLoginAt: number | null;
+  createdAt: number;
+}
+
+export class PgAdminUserStore {
+  constructor(private readonly pool: pg.Pool) {}
+
+  async findByEmail(email: string): Promise<AdminUserRow | null> {
+    const { rows } = await this.pool.query(
+      `select id, email, password_hash, status,
+              extract(epoch from last_login_at) * 1000 as last_login_at,
+              extract(epoch from created_at) * 1000 as created_at
+       from admin_users where email = $1`,
+      [email],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      email: row.email as string,
+      passwordHash: row.password_hash as string,
+      status: row.status as 'active' | 'disabled',
+      lastLoginAt: row.last_login_at ? Number(row.last_login_at) : null,
+      createdAt: Number(row.created_at),
+    };
+  }
+
+  async getById(id: string): Promise<Pick<AdminUserRow, 'id' | 'email' | 'status'> | null> {
+    const { rows } = await this.pool.query(
+      'select id, email, status from admin_users where id = $1',
+      [id],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      email: row.email as string,
+      status: row.status as 'active' | 'disabled',
+    };
+  }
+
+  async create(email: string, passwordHash: string): Promise<string> {
+    const { rows } = await this.pool.query(
+      `insert into admin_users (email, password_hash) values ($1, $2) returning id`,
+      [email, passwordHash],
+    );
+    return String(rows[0]!.id);
+  }
+
+  async setStatus(id: string, status: 'active' | 'disabled'): Promise<void> {
+    await this.pool.query('update admin_users set status = $2, updated_at = now() where id = $1', [
+      id,
+      status,
+    ]);
+  }
+
+  async recordLogin(id: string): Promise<void> {
+    await this.pool.query('update admin_users set last_login_at = now() where id = $1', [id]);
+  }
+}
