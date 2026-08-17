@@ -104,4 +104,122 @@ describe('admin sensitive routes', () => {
     const body = (await res.json()) as { items: Array<{ category: string }> };
     expect(body.items[0]!.category).toBe('preference');
   });
+
+  it('creates a single-use grant bound to admin/user/type', async () => {
+    const { app, pool } = buildRouter([
+      { fragment: 'select 1 from auth.users', rows: [{ exists: 1 }], rowCount: 1 },
+      { fragment: 'insert into admin_sensitive_grants', rows: [], rowCount: 1 },
+    ]);
+    const token = await JWT.signAdmin('a1');
+    const res = await app.request('/sensitive-access', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        targetUserId: 'u1',
+        resourceType: 'chat',
+        reason: '用户投诉需要核查对话',
+        scope: {},
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      grantId: string;
+      token: string;
+      expiresAt: string;
+    };
+    expect(body.grantId).toBeTruthy();
+    expect(body.token.length).toBeGreaterThan(20);
+    expect(new Date(body.expiresAt).getTime()).toBeGreaterThan(Date.now());
+    // insert SQL 参数里只存哈希，不存明文
+    const insertCall = pool.query.mock.calls.find(([sql]: [string]) =>
+      String(sql).includes('insert into admin_sensitive_grants'),
+    ) as unknown as [string, unknown[]];
+    expect(insertCall[1]!.includes(body.token)).toBe(false);
+  });
+
+  it('rejects grant with too-short reason', async () => {
+    const { app } = buildRouter([]);
+    const token = await JWT.signAdmin('a1');
+    const res = await app.request('/sensitive-access', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        targetUserId: 'u1',
+        resourceType: 'chat',
+        reason: '短',
+        scope: {},
+      }),
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it('consumes the grant once and returns raw chat content', async () => {
+    const { app } = buildRouter([
+      {
+        fragment: 'select g.grant_id',
+        rows: [
+          {
+            grant_id: 'g1',
+            target_user_id: 'u1',
+            resource_type: 'chat',
+            resource_scope: '{}',
+            reason: '测试',
+            expires_at: 9999999999999,
+            used_at: null,
+          },
+        ],
+      },
+      // token 哈希校验查询
+      { fragment: 'select 1 from admin_sensitive_grants', rows: [{ '?column?': 1 }] },
+      { fragment: 'update admin_sensitive_grants set used_at', rows: [], rowCount: 1 },
+      {
+        fragment: 'from chat_messages',
+        rows: [
+          {
+            message_id: 'm1',
+            role: 'user',
+            content: '完整原文',
+            created_at: '2026-08-18T00:00:00Z',
+          },
+        ],
+      },
+    ]);
+    const token = await JWT.signAdmin('a1');
+    const res = await app.request('/sensitive-access/g1/content', {
+      headers: { authorization: `Bearer ${token}`, 'x-grant-token': 'raw-token' },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: Array<{ content: string }> };
+    expect(body.items[0]!.content).toBe('完整原文');
+  });
+
+  it('rejects a used grant with 410', async () => {
+    const { app } = buildRouter([
+      {
+        fragment: 'select g.grant_id',
+        rows: [
+          {
+            grant_id: 'g1',
+            target_user_id: 'u1',
+            resource_type: 'chat',
+            resource_scope: '{}',
+            reason: '测试',
+            expires_at: 9999999999999,
+            used_at: '2026-08-18T00:00:00Z',
+          },
+        ],
+      },
+    ]);
+    const token = await JWT.signAdmin('a1');
+    const res = await app.request('/sensitive-access/g1/content', {
+      headers: { authorization: `Bearer ${token}`, 'x-grant-token': 'raw-token' },
+    });
+    expect(res.status).toBe(410);
+  });
 });
