@@ -9,7 +9,7 @@ import type pg from 'pg';
 
 import type { JwtService } from '../auth/jwt.js';
 import { createInviteToken, hashToken, normalizeFriendshipPair } from '../lib/business-rules.js';
-import { deliverEvent } from '../lib/inbox.js';
+import { deliverEvent, flushPendingDeliveries } from '../lib/inbox.js';
 import { findActiveFriendship, findOrCreateRoom, isBlocked } from '../lib/relationships.js';
 import type { RealtimeServer } from '../realtime/ws.js';
 
@@ -112,6 +112,8 @@ export function registerInviteRoutes(
       });
 
       await client.query('commit');
+      // 提交后才推 WS（9.4：deliverEvent 外部事务不提前推送）
+      flushPendingDeliveries(deps.realtime, result.pendingDeliveries);
       return c.json({ friendshipId, roomId, eventId: result.eventId }, 201);
     } catch (e) {
       await client.query('rollback');

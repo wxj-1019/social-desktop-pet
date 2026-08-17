@@ -14,7 +14,7 @@ import type pg from 'pg';
 
 import type { JwtService } from '../auth/jwt.js';
 import { canSendGift } from '../lib/business-rules.js';
-import { deliverEvent } from '../lib/inbox.js';
+import { deliverEvent, flushPendingDeliveries } from '../lib/inbox.js';
 import {
   findActiveFriendship,
   findOrCreateRoom,
@@ -121,6 +121,8 @@ export function registerGiftRoutes(
       );
 
       await client.query('commit');
+      // 提交后才推 WS（9.4：deliverEvent 外部事务不提前推送）
+      flushPendingDeliveries(deps.realtime, delivered.pendingDeliveries);
       return c.json({ giftId, eventId: delivered.eventId, inboxSeq: delivered.inboxSeqs[userId] });
     } catch (e) {
       await client.query('rollback');

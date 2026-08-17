@@ -62,6 +62,13 @@ export class PgMemoryExtractStore implements MemoryExtractStore, MemoryRetrieval
     }
   }
 
+  /** 10.7 sensitivity 范围（AGENTS.md #5 权限过滤维度）：
+   *  private_chat 自己对话 → 全部；friend_visit 对好友场景 → 排除 high
+   *  （健康/财务等敏感记忆不入对好友的上下文） */
+  private sensitivityScope(purpose: MemorySearchInput['purpose']): string[] {
+    return purpose === 'friend_visit' ? ['low', 'medium'] : ['low', 'medium', 'high'];
+  }
+
   async recallMemories(input: MemorySearchInput): Promise<{
     vectorHits: RetrievedMemory[];
     ftsHits: RetrievedMemory[];
@@ -72,9 +79,11 @@ export class PgMemoryExtractStore implements MemoryExtractStore, MemoryRetrieval
       await client.query("select set_config('request.jwt.claims', $1, true)", [
         rlsClaimsJson(input.ownerUserId),
       ]);
-      // 权限过滤（先于检索，10.7）：owner + active + purpose + visibility 范围 + 时间有效性
+      // 权限过滤（先于检索，10.7）：owner + active + purpose + visibility +
+      // sensitivity + 时间有效性（AGENTS.md 约定 #5）
       const filter = `owner_user_id = $1 and memory_status = 'active' and purpose = $2
         and visibility = any($3)
+        and sensitivity = any($6)
         and (expires_at is null or expires_at > now())
         and (valid_from is null or valid_from <= now())
         and (valid_to is null or valid_to >= now())`;
@@ -86,6 +95,7 @@ export class PgMemoryExtractStore implements MemoryExtractStore, MemoryRetrieval
         visibilityScope(input.purpose),
         input.query,
         RECALL_ARM_LIMIT,
+        this.sensitivityScope(input.purpose),
       ] as const;
 
       // FTS 臂：tsvector @@ plainto_tsquery + ts_rank_cd 排序（GIN 索引）
@@ -102,7 +112,12 @@ export class PgMemoryExtractStore implements MemoryExtractStore, MemoryRetrieval
       let vecRows: Array<Record<string, unknown>> = [];
       const queryEmbedding = await this.queryEmbedding(input.query);
       if (queryEmbedding && queryEmbedding.length > 0) {
-        const vecArgs = [...args.slice(0, 3), JSON.stringify(queryEmbedding), RECALL_ARM_LIMIT];
+        const vecArgs = [
+          ...args.slice(0, 3),
+          JSON.stringify(queryEmbedding),
+          RECALL_ARM_LIMIT,
+          this.sensitivityScope(input.purpose),
+        ];
         const { rows } = await client.query(
           `select ${cols}
            from private_memories
@@ -165,23 +180,23 @@ export class PgMemoryExtractStore implements MemoryExtractStore, MemoryRetrieval
   }
 
   async persistMemory(input: PersistMemoryInput): Promise<{ memoryId: string }> {
+    // 10.7 向量臂：embedding 在**事务外**生成（外部 HTTP；事务内长占连接会拖垮
+    // 连接池——input.value 不依赖事务数据，先算后落库；失败降级 FTS-only 由回填脚本兜底）
+    let embedding: number[] | null = null;
+    if (this.embeddingProvider) {
+      try {
+        const vectors = await this.embeddingProvider.embed([input.value]);
+        embedding = vectors[0] ?? null;
+      } catch (e) {
+        console.warn('[memory] embedding 生成失败，降级 FTS-only：', (e as Error).message);
+      }
+    }
     const client = await this.pool.connect();
     try {
       await client.query('begin');
       await client.query("select set_config('request.jwt.claims', $1, true)", [
         rlsClaimsJson(input.ownerUserId),
       ]);
-      // 10.7 向量臂：provider 就绪时生成 embedding 落库（无 → null，FTS-only）
-      let embedding: number[] | null = null;
-      if (this.embeddingProvider) {
-        try {
-          const vectors = await this.embeddingProvider.embed([input.value]);
-          embedding = vectors[0] ?? null;
-        } catch (e) {
-          // 嵌入失败不阻塞记忆落库（降级 FTS-only；后续回填脚本可补齐）
-          console.warn('[memory] embedding 生成失败，降级 FTS-only：', (e as Error).message);
-        }
-      }
       const { rows } = await client.query(
         `insert into private_memories (
            owner_user_id, category, value, source_turn_ids, confidence, user_confirmed,

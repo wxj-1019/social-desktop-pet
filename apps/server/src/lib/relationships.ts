@@ -66,29 +66,41 @@ export async function findReceipt(
   return { event_id: row.event_id as string | null, result: row.result as unknown };
 }
 
-/** 好友关系的共享房间：恰好包含两位成员的 friend 房间，不存在则创建 */
+/** 好友关系的共享房间：恰好包含两位成员的 friend 房间，不存在则创建。
+ *  幂等（migration 0014）：rooms.member_key 唯一索引 + insert on conflict，
+ *  并发互送礼/拜访不会建重复房间。 */
 export async function findOrCreateRoom(
   client: pg.PoolClient,
   userA: string,
   userB: string,
 ): Promise<string> {
-  const { rows } = await client.query(
-    `select r.room_id from rooms r
-     join room_members rm1 on rm1.room_id = r.room_id and rm1.user_id = $1
-     join room_members rm2 on rm2.room_id = r.room_id and rm2.user_id = $2
-     where r.type = 'friend'
-     limit 1`,
-    [userA, userB],
+  const memberKey = [userA, userB].sort().join(':');
+  // 先查（常规路径一次查询）
+  const { rows: found } = await client.query(
+    `select room_id from rooms where type = 'friend' and member_key = $1 limit 1`,
+    [memberKey],
   );
-  if (rows[0]) return String(rows[0].room_id);
+  if (found[0]) return String(found[0].room_id);
 
+  // 幂等创建：并发下只有一个 insert 成功（on conflict do nothing）
   const { rows: created } = await client.query(
-    `insert into rooms (type) values ('friend') returning room_id`,
+    `insert into rooms (type, member_key) values ('friend', $1)
+     on conflict (member_key) where type = 'friend' and member_key is not null
+     do nothing returning room_id`,
+    [memberKey],
   );
-  const roomId = String(created[0]?.room_id);
-  await client.query(
-    'insert into room_members (room_id, user_id) values ($1, $2), ($1, $3) on conflict do nothing',
-    [roomId, userA, userB],
+  if (created[0]) {
+    const roomId = String(created[0].room_id);
+    await client.query(
+      'insert into room_members (room_id, user_id) values ($1, $2), ($1, $3) on conflict do nothing',
+      [roomId, userA, userB],
+    );
+    return roomId;
+  }
+  // 并发下对方已创建：再查一次返回既有房间
+  const { rows: retry } = await client.query(
+    `select room_id from rooms where type = 'friend' and member_key = $1 limit 1`,
+    [memberKey],
   );
-  return roomId;
+  return String(retry[0]?.room_id);
 }

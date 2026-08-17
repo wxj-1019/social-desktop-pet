@@ -23,6 +23,7 @@ import { createPool } from './db/pool.js';
 import { PgDevicesStore, PgSessionStore, PgUsersStore } from './db/stores.js';
 import { createNoopMailProvider, createSmtpMailProvider, smtpConfigFromEnv } from './lib/mail.js';
 import { PgMemoryExtractStore } from './lib/memory-store.js';
+import { runRetentionSweep } from './lib/retention.js';
 import { RealtimeServer } from './realtime/ws.js';
 import { createAuthRouter, type AuthDeps } from './routes/auth.js';
 import { createBusinessRouter, type BusinessDeps } from './routes/business.js';
@@ -202,6 +203,15 @@ export async function main(): Promise<void> {
   const server = serve({ fetch: app.fetch, port });
 
   realtime.attach(server);
+
+  // 11.4 保留期清理（隐私承诺落地）：启动即跑一次 + 每 24h 一次；幂等，失败仅日志
+  const runSweep = (): void => {
+    runRetentionSweep(pool)
+      .then((r) => console.info('[retention] sweep:', JSON.stringify(r)))
+      .catch((e) => console.warn('[retention] sweep 失败：', (e as Error).message));
+  };
+  runSweep();
+  setInterval(runSweep, 24 * 60 * 60 * 1000).unref();
 
   console.info(`[server] listening on :${port} (ws: /realtime)`);
 }

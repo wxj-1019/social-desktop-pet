@@ -32,6 +32,20 @@ export interface DeliverEventResult {
   eventId: string;
   roomSeq: number | null;
   inboxSeqs: Record<string, number>;
+  /**
+   * 待推送通知（仅外部事务场景非空）：deliverEvent 在外部事务提交前**不**推
+   * WS —— 提交才代表成功（9.4），否则 commit 失败时收件人已收到未落库事件。
+   * 调用方在 commit 后调 flushPendingDeliveries。
+   */
+  pendingDeliveries: Array<{ userId: string; event: unknown }>;
+}
+
+/** 提交后推送 WS 通知（9.4 第 5 步；离线用户靠 /sync 补齐 9.5） */
+export function flushPendingDeliveries(
+  realtime: RealtimeServer,
+  pending: DeliverEventResult['pendingDeliveries'],
+): void {
+  for (const { userId, event } of pending) realtime.deliver(userId, event);
 }
 
 export async function deliverEvent(input: DeliverEventInput): Promise<DeliverEventResult> {
@@ -78,12 +92,11 @@ export async function deliverEvent(input: DeliverEventInput): Promise<DeliverEve
       inboxSeqs[userId] = Number(rows[0]?.inbox_seq);
     }
 
-    if (ownsTxn) await client.query('commit');
-
-    // 提交后通知（9.4 第 5 步）；离线用户靠 /sync 补齐（9.5 慢路径）
+    // 构建通知事件（统一时间戳；仅提交后发送）
     const serverTimestamp = new Date().toISOString();
-    for (const userId of input.recipients) {
-      input.realtime.deliver(userId, {
+    const notifications = input.recipients.map((userId) => ({
+      userId,
+      event: {
         v: 1,
         type: 'inbox.delivered',
         eventId,
@@ -91,10 +104,20 @@ export async function deliverEvent(input: DeliverEventInput): Promise<DeliverEve
         roomSeq,
         serverTimestamp,
         payload: input.payload,
-      });
+      },
+    }));
+
+    if (ownsTxn) {
+      await client.query('commit');
+      // 提交后通知（9.4 第 5 步）；离线用户靠 /sync 补齐（9.5 慢路径）
+      for (const { userId, event } of notifications) {
+        input.realtime.deliver(userId, event);
+      }
+      return { eventId, roomSeq, inboxSeqs, pendingDeliveries: [] };
     }
 
-    return { eventId, roomSeq, inboxSeqs };
+    // 外部事务：不推送，交调用方 commit 后 flushPendingDeliveries
+    return { eventId, roomSeq, inboxSeqs, pendingDeliveries: notifications };
   } catch (e) {
     if (ownsTxn) await client.query('rollback');
     throw e;

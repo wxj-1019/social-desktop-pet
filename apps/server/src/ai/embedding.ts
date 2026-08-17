@@ -26,8 +26,12 @@ export function embeddingConfigFromEnv(
   return { apiKey, baseUrl: baseUrl.replace(/\/$/, ''), model };
 }
 
-/** OpenAI 兼容嵌入客户端 */
-export function createOpenAiCompatibleEmbeddingClient(config: EmbeddingConfig): EmbeddingProvider {
+/** OpenAI 兼容嵌入客户端（默认 8s 超时：嵌入正常远快于此；事务内调用（确认/编辑
+ *  落库补向量）长占连接会拖垮连接池，供应商故障时 8s 封顶、降级 FTS-only 由回填脚本兜底） */
+export function createOpenAiCompatibleEmbeddingClient(
+  config: EmbeddingConfig,
+  timeoutMs = 8_000,
+): EmbeddingProvider {
   return {
     async embed(texts: string[]): Promise<number[][]> {
       if (texts.length === 0) return [];
@@ -37,7 +41,7 @@ export function createOpenAiCompatibleEmbeddingClient(config: EmbeddingConfig): 
           'content-type': 'application/json',
           authorization: `Bearer ${config.apiKey}`,
         },
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(timeoutMs),
         body: JSON.stringify({ model: config.model, input: texts }),
       });
       if (!res.ok) {

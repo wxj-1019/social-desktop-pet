@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { RealtimeServer } from '../realtime/ws.js';
 
-import { deliverEvent } from './inbox.js';
+import { deliverEvent, flushPendingDeliveries } from './inbox.js';
 
 /** 内存 fake：记录 SQL 序列并模拟 nextval/returning */
 function makeFakePool() {
@@ -101,5 +101,35 @@ describe('deliverEvent（9.4 可靠写入核心）', () => {
     // 回滚 + 无任何 WS 通知
     expect(client.query).toHaveBeenCalledWith('rollback');
     expect(realtime.deliver).not.toHaveBeenCalled();
+  });
+
+  it('外部事务：提交前不推 WS，通知挂 pendingDeliveries，flush 后才推送', async () => {
+    const { pool, client } = makeFakePool();
+    const realtime = makeRealtime();
+
+    const result = await deliverEvent({
+      pool: pool as never,
+      realtime: realtime as unknown as RealtimeServer,
+      client: client as never, // 外部事务（路由层持有）
+      roomId: 'room-1',
+      type: 'gift.snack_sent',
+      payload: { snackId: 'snack_cookie' },
+      reliability: 'A',
+      recipients: ['u1', 'u2'],
+    });
+
+    // 未 commit（外部事务不归 deliverEvent 管）→ 绝不推送
+    expect(realtime.deliver).not.toHaveBeenCalled();
+    expect(client.query).not.toHaveBeenCalledWith('commit');
+    // 通知已打包在返回值
+    expect(result.pendingDeliveries).toHaveLength(2);
+    const first = result.pendingDeliveries[0] as { userId: string; event: { type: string } };
+    expect(first.userId).toBe('u1');
+    expect(first.event.type).toBe('inbox.delivered');
+
+    // 调用方 commit 后 flush → 推送
+    await client.query('commit');
+    flushPendingDeliveries(realtime as unknown as RealtimeServer, result.pendingDeliveries);
+    expect(realtime.deliver).toHaveBeenCalledTimes(2);
   });
 });
