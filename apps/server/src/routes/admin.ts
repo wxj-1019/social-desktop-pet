@@ -17,6 +17,8 @@ import type { PgAdminUserStore } from '../db/admin-stores.js';
 import { queryAdminAudit, writeAdminAudit } from '../lib/admin-audit.js';
 import { AuthRateLimiter, clientIpOf } from '../lib/auth-rate-limit.js';
 
+import { createAdminUsersRouter } from './admin-users.js';
+
 export interface AdminVariables {
   adminId: string;
 }
@@ -227,6 +229,16 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
     });
     return c.json(result);
   });
+
+  // 用户/设备管理（列表、详情、暂停/恢复、设备撤销）
+  const usersRouter = createAdminUsersRouter({
+    pool: deps.pool,
+    jwt,
+    adminUsers: deps.adminUsers,
+    realtime: deps.realtime,
+    writeAudit: (entry) => writeAdminAudit(deps.pool, entry),
+  });
+  app.route('/', usersRouter);
 
   return app;
 }
