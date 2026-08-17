@@ -101,6 +101,22 @@ export interface AdminDevice {
   revokedAt: string | null;
 }
 
+export interface UsageRow {
+  usageDate: string;
+  requests: number;
+  tokens: number;
+}
+
+export interface WaitlistRow {
+  id: string;
+  email: string;
+  status: string;
+  createdAt: string;
+  invitedAt: string | null;
+  inviteExpiresAt: string | null;
+  claimedAt: string | null;
+}
+
 export const adminApi = {
   login(email: string, password: string) {
     return raw<{ accessToken: string; admin: { id: string; email: string } }>('/auth/login', {
@@ -144,5 +160,28 @@ export const adminApi = {
   },
   revokeDevice(deviceId: string) {
     return raw<{ ok: true }>(`/devices/${deviceId}/revoke`, { method: 'POST', body: {} });
+  },
+  usage(from: string, to: string) {
+    return raw<{ summary: { requests: number; tokens: number }; items: UsageRow[] }>(
+      `/usage?from=${from}&to=${to}`,
+    );
+  },
+  usageForUser(userId: string, from: string, to: string) {
+    return raw<{ items: UsageRow[] }>(`/usage/users/${userId}?from=${from}&to=${to}`);
+  },
+  waitlist(params: Record<string, string>) {
+    const qs = new URLSearchParams(params).toString();
+    return raw<{ total: number; page: number; pageSize: number; items: WaitlistRow[] }>(
+      `/waitlist?${qs}`,
+    );
+  },
+  inviteWaitlist(id: string) {
+    return raw<{ ok: true; code?: string }>(`/waitlist/${id}/invite`, {
+      method: 'POST',
+      body: {},
+    });
+  },
+  expireWaitlist(id: string) {
+    return raw<{ ok: true }>(`/waitlist/${id}/expire`, { method: 'POST', body: {} });
   },
 };
