@@ -60,19 +60,20 @@ export function classifyInputNodeFactory(llm?: LlmClient): NodeFn<ChatFlowState>
     const classification = llm ? await classifyWithLlm(llm, turns) : null;
     const rule = ruleClassification(turns);
     // 保守 OR（安全网）：规则版检测到的危机级别不被 LLM 降级——LLM 可能返回
-    // 结构合法但语义错误的分类（如对"我不想活了"判 none），high 级关键词网必须兜底
+    // 结构合法但语义错误的分类（如对"我不想活了"判 none），high 级关键词网必须兜底。
+    // 不原地改 merged：LLM 存在时 merged===classification，原地改会篡改下游
+    // state.classification 的危机级别（审计消费方读到被改的值），改写到新对象。
     const merged = classification ?? rule;
-    if (
+    const effectiveLevel =
       classification &&
       rule &&
       CRISIS_RANK[rule.crisisLevel] > CRISIS_RANK[classification.crisisLevel]
-    ) {
-      merged.crisisLevel = rule.crisisLevel;
-    }
+        ? rule.crisisLevel
+        : merged.crisisLevel;
     return {
       inputClassification: {
         categories: merged.categories,
-        crisisLevel: merged.crisisLevel,
+        crisisLevel: effectiveLevel,
         confidence: merged.confidence,
       },
       // V-13 分类结果驱动路由（10.3 同源）；routeNode 优先消费，缺失回退规则版
@@ -344,8 +345,16 @@ export const crisisResponseNode: NodeFn<ChatFlowState> = async (
   state,
   _ctx,
 ): Promise<Partial<ChatFlowState>> => {
-  const raw = state.inputClassification?.crisisLevel ?? state.moderation?.crisisLevel ?? 'low';
-  const level: 'low' | 'medium' | 'high' = raw === 'none' ? 'low' : raw;
+  // 危机级别取 input 分类与输出审核中非 none 的最高档（11.8）：
+  // 此前 inputClassification.crisisLevel 恒优先——输出侧危机（moderate_output →
+  // crisis_response 路径的 input 恒为 none）永远落成 low，输出侧级别被吞。
+  const candidates = [state.inputClassification?.crisisLevel, state.moderation?.crisisLevel].filter(
+    (l): l is 'low' | 'medium' | 'high' => l !== undefined && l !== 'none',
+  );
+  const level =
+    candidates.length > 0
+      ? candidates.reduce((a, b) => (CRISIS_RANK[a] >= CRISIS_RANK[b] ? a : b))
+      : 'low';
   const resource = crisisResourceFor();
   const hotlines = resource.hotlines.map((h) => `${h.name}（${h.number}）`).join('、');
   const responseText =

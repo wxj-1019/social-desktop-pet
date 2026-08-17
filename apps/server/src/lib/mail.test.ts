@@ -57,8 +57,10 @@ describe('waitlist 注入 mail（13.2 确认邮件不阻塞注册）', () => {
     const { registerWaitlistRoutes } = await import('../routes/waitlist.js');
     const { Hono } = await import('hono');
     const app = new Hono();
+    let mailSettled = false;
     const failingMail = {
       send: vi.fn(async () => {
+        mailSettled = true;
         throw new Error('smtp down');
       }),
     };
@@ -80,7 +82,8 @@ describe('waitlist 注入 mail（13.2 确认邮件不阻塞注册）', () => {
       expect.stringContaining('等待名单'),
       expect.any(String),
     );
-    // 邮件失败是 fire-and-forget：等微任务落地后无未处理异常
-    await new Promise((r) => setTimeout(r, 10));
+    // 邮件失败是 fire-and-forget：等 send 真正 settle（含抛错）后无未处理异常
+    // （固定 sleep 慢机/快机不稳——用正向探针）
+    await vi.waitFor(() => expect(mailSettled).toBe(true));
   });
 });

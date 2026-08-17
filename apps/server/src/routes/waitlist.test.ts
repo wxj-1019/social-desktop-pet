@@ -2,7 +2,7 @@
  * /waitlist 报名路由测试 —— 201/409/400/429 + 邮箱校验。
  */
 import { Hono } from 'hono';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   checkWaitlistRateLimit,
@@ -12,6 +12,11 @@ import {
   resetWaitlistRateLimitForTest,
   WaitlistService,
 } from './waitlist.js';
+
+// 6.4 flaky 治理：假定时器必须兜底恢复（中途断言失败不再泄漏到后续用例）
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function makePool(rowCount: number | null = 1) {
   return {
@@ -125,7 +130,11 @@ describe('邀请状态机（4.3：pending → invited → joined/expired）', ()
     };
   }
 
+  // 模块级共享 MAIL mock：每用例前清计数（顺序相关断言不跨用例泄漏）
   const MAIL = { send: vi.fn(async () => undefined) };
+  beforeEach(() => {
+    MAIL.send.mockClear();
+  });
 
   describe('WaitlistService.invite（pending → invited）', () => {
     it('生成 8 位兑换码 + sha256 落库 + 邀请邮件；非 pending 跳过', async () => {

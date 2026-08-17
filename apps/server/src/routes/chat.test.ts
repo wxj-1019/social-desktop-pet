@@ -1,11 +1,16 @@
 import { LIMITS } from '@pet/config';
 import { Hono } from 'hono';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { JwtService } from '../auth/jwt.js';
 
 import type { BusinessVariables } from './business.js';
 import { checkRateLimit, enterConcurrency, leaveConcurrency, registerChatRoutes } from './chat.js';
+
+// 6.4 flaky 治理：假定时器必须兜底恢复（中途断言失败不再泄漏到后续用例）
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('chat 速率限制（12.7 每设备 60s 窗口）', () => {
   it('允许窗口内前 N 次，之后 429（retryAfterSec 合理）', () => {

@@ -148,7 +148,16 @@ describe('POST /chat 触发异步记忆抽取（10.6）', () => {
     const res = await postChat(honoApp, '我喜欢抹茶。');
     expect(res.status).toBe(200);
 
-    await new Promise((r) => setTimeout(r, 10));
+    // 等 fire-and-forget 抽取进入幂等检查（窗口查询已执行即抽取结束；
+    // 固定 sleep 在慢机假阳/快机假阴——改用正向探针）
+    await vi.waitFor(() =>
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'select message_id, content, memory_extracted_at from chat_messages',
+        ),
+        expect.anything(),
+      ),
+    );
     expect(memoryStore.persistMemory).not.toHaveBeenCalled();
     expect(memoryStore.findSimilar).not.toHaveBeenCalled();
     // 抢占 update 带幂等条件（memory_extracted_at is null），已标记行不会被重复标记

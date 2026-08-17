@@ -50,11 +50,10 @@ const RULES: readonly CrisisRule[] = [
     category: 'violence',
     keywords: ['杀了你', '弄死你', '打死你'],
   },
-  {
-    level: 'medium',
-    category: 'minor_risk',
-    keywords: ['未成年人', '小学生', '初中生', '儿童'],
-  },
+  // minor_risk（未成年人风险）不在规则版触发（6.3 收紧）：
+  // 任意语境提及"小学生/儿童"（如"我弟弟是小学生"）会误伤正常对话，
+  // 与"宁可漏报不可误伤"自述矛盾；由 V-13 分类器（多轮上下文判定）处理，
+  // 规则版只保留危机确定性最强的 self_harm / violence。
 ];
 
 /** 预筛：返回最高命中级别与类别（无命中 → none） */

@@ -1,24 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { LlmClient } from '../llm/types.js';
-import { StateGraph, type NodeFn } from '../runtime/index.js';
-import { END, START } from '../runtime/types.js';
+import type { NodeFn } from '../runtime/index.js';
 
-import {
-  crisisResponseNode,
-  authNode,
-  classifyInputNode,
-  localReplyNode,
-  type OutputModerator,
-} from './chat-flow-nodes.js';
+import { classifyInputNodeFactory, type OutputModerator } from './chat-flow-nodes.js';
 import { initialChatFlowState } from './chat-flow-state.js';
 import type { ChatFlowState } from './chat-flow-state.js';
 import { buildChatFlow } from './chat-flow.js';
-import {
-  retrieveMemoryNodeFactory,
-  type MemoryRetrievalStore,
-  type RetrievedMemory,
-} from './memory-retrieval.js';
+import type { MemoryRetrievalStore, RetrievedMemory } from './memory-retrieval.js';
 
 describe('chat-flow graph', () => {
   it('compiles and executes the scaffold path to END', async () => {
@@ -38,26 +27,13 @@ describe('chat-flow graph', () => {
   });
 
   it('routes to crisis when classify returns non-none crisisLevel (11.8 conditional edge)', async () => {
-    // 用一个返回危机分类的自定义 classify 节点，验证条件边把执行导向 crisis_response
+    // 替身 classify 节点 + **生产图条件边**（classifyCrisisEdge）——手写复制条件边
+    // 会让接线回归测试全绿，替身注入走 buildChatFlow 的真实边
     const crisisClassify: NodeFn<ChatFlowState> = async () => ({
       inputClassification: { categories: ['self_harm'], crisisLevel: 'high', confidence: 0.9 },
     });
 
-    const graph = new StateGraph<ChatFlowState>()
-      .addNode('auth', authNode)
-      .addNode('classify_input', crisisClassify)
-      .addNode('retrieve_memory', retrieveMemoryNodeFactory())
-      .addNode('crisis_response', crisisResponseNode)
-      .addEdge(START, 'auth')
-      .addEdge('auth', 'classify_input')
-      .addConditionalEdge('classify_input', (s) =>
-        s.inputClassification?.crisisLevel && s.inputClassification.crisisLevel !== 'none'
-          ? 'crisis_response'
-          : 'retrieve_memory',
-      )
-      .addEdge('retrieve_memory', END)
-      .addEdge('crisis_response', END)
-      .compile();
+    const graph = buildChatFlow({ testOverrides: { classify: crisisClassify } });
 
     const state = initialChatFlowState({
       threadId: 't2',
@@ -76,21 +52,8 @@ describe('chat-flow graph', () => {
       const crisisClassify: NodeFn<ChatFlowState> = async () => ({
         inputClassification: { categories: ['self_harm'], crisisLevel: level, confidence: 0.9 },
       });
-      const graph = new StateGraph<ChatFlowState>()
-        .addNode('auth', authNode)
-        .addNode('classify_input', crisisClassify)
-        .addNode('retrieve_memory', retrieveMemoryNodeFactory())
-        .addNode('crisis_response', crisisResponseNode)
-        .addEdge(START, 'auth')
-        .addEdge('auth', 'classify_input')
-        .addConditionalEdge('classify_input', (s) =>
-          s.inputClassification?.crisisLevel && s.inputClassification.crisisLevel !== 'none'
-            ? 'crisis_response'
-            : 'retrieve_memory',
-        )
-        .addEdge('retrieve_memory', END)
-        .addEdge('crisis_response', END)
-        .compile();
+      // 生产图（testOverrides.classify 替身 + 生产条件边 classifyCrisisEdge）
+      const graph = buildChatFlow({ testOverrides: { classify: crisisClassify } });
       const state = initialChatFlowState({
         threadId: `crisis-${level}`,
         userId: 'u1',
@@ -390,29 +353,11 @@ describe('chat-flow graph', () => {
   });
 
   it('L0 路由：本地模板回复，不调模型、不检索记忆、不触发抽取（10.3）', async () => {
-    // 路由判定返回 L0（动画/状态/固定事件档）→ 条件边走 local_reply
+    // 路由判定返回 L0（动画/状态/固定事件档）→ 生产条件边 routeEdge 导向 local_reply
     const l0Route: NodeFn<ChatFlowState> = async () => ({
       routing: { level: 'L0', reason: 'test' },
     });
-    const graph = new StateGraph<ChatFlowState>()
-      .addNode('auth', authNode)
-      .addNode('classify_input', classifyInputNode)
-      .addNode('route', l0Route)
-      .addNode('retrieve_memory', retrieveMemoryNodeFactory())
-      .addNode('local_reply', localReplyNode)
-      .addEdge(START, 'auth')
-      .addEdge('auth', 'classify_input')
-      .addConditionalEdge('classify_input', (s) =>
-        s.inputClassification?.crisisLevel && s.inputClassification.crisisLevel !== 'none'
-          ? 'crisis_response'
-          : 'route',
-      )
-      .addConditionalEdge('route', (s) =>
-        s.routing?.level === 'L0' ? 'local_reply' : 'retrieve_memory',
-      )
-      .addEdge('retrieve_memory', END)
-      .addEdge('local_reply', END)
-      .compile();
+    const graph = buildChatFlow({ testOverrides: { route: l0Route } });
 
     const state = initialChatFlowState({
       threadId: 'l0-1',
@@ -531,5 +476,84 @@ describe('chat-flow graph', () => {
     expect(result.responseText).toContain('120');
     expect(result.responseText).toContain('110');
     expect(result.responseText).toContain('不承诺替你保密');
+  });
+});
+
+describe('chat-flow 错误路径与安全网（6.x 测试基建）', () => {
+  it('保守 OR：LLM 判 none + 规则版判 high → 输入分类取 high，且 LLM 分类未被篡改', async () => {
+    const mockLlm: LlmClient = {
+      streamChat: async (_messages, onToken) => {
+        onToken('{"crisisLevel":"none","categories":[],"routeLevel":"L1","confidence":0.9}');
+        return 'ok';
+      },
+    };
+    const node = classifyInputNodeFactory(mockLlm);
+    const out = await node(
+      initialChatFlowState({
+        threadId: 'or-1',
+        userId: 'u1',
+        deviceId: 'd1',
+        userMessage: '我不想活了', // 规则版关键词判 high
+        scenario: 'private_chat',
+      }),
+      { threadId: 'or-1', emit: () => undefined },
+    );
+    // 规则版 high 压过 LLM none（安全网不被 LLM 语义错误击穿）
+    expect(out.inputClassification?.crisisLevel).toBe('high');
+    // 下游 state.classification 保持 LLM 原始输出（保守 OR 不原地篡改 merged）
+    expect(out.classification?.crisisLevel).toBe('none');
+  });
+
+  it('输出审核 provider 抛错 → 回退规则版（审核是增强能力，不让聊天中断）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const moderator: OutputModerator = {
+      moderate: async () => {
+        throw new Error('moderation down');
+      },
+    };
+    const mockLlm: LlmClient = {
+      streamChat: async (_messages, onToken) => {
+        onToken('{"dialogue":"你好呀","emotion":"warm","actionIntent":"idle","intensity":1}');
+        return 'ok';
+      },
+    };
+    const graph = buildChatFlow({ llm: mockLlm, outputModerator: moderator });
+    const state = initialChatFlowState({
+      threadId: 't-mod-3',
+      userId: 'u1',
+      deviceId: 'd1',
+      userMessage: '在吗',
+      scenario: 'private_chat',
+    });
+    const result = await graph.invoke(state, { threadId: 't-mod-3' });
+    // 回退规则版：无 PII → 通过，正常流式
+    expect(result.moderation?.passed).toBe(true);
+    expect(result.responseText).toBe('你好呀');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('回退规则版'), expect.anything());
+    warn.mockRestore();
+  });
+
+  it('输出侧危机：moderator 判 high → crisis_response 固定协议（moderate_edge 生产边）', async () => {
+    const moderator: OutputModerator = {
+      moderate: async () => ({ passed: false, blockedCategories: [], crisisLevel: 'high' }),
+    };
+    const mockLlm: LlmClient = {
+      streamChat: async (_messages, onToken) => {
+        onToken('{"dialogue":"我不想活了","emotion":"sad","actionIntent":"idle","intensity":1}');
+        return 'ok';
+      },
+    };
+    const graph = buildChatFlow({ llm: mockLlm, outputModerator: moderator });
+    const state = initialChatFlowState({
+      threadId: 't-mod-4',
+      userId: 'u1',
+      deviceId: 'd1',
+      userMessage: '在吗',
+      scenario: 'private_chat',
+    });
+    const result = await graph.invoke(state, { threadId: 't-mod-4' });
+    expect(result.crisisLevel).toBe('high');
+    expect(result.responseText).toContain('12356'); // 本地化热线资源
+    expect(result.memoryExtractTriggered).toBe(false);
   });
 });

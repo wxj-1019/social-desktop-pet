@@ -19,6 +19,13 @@ describe('detectCrisis（11.8 规则版预筛）', () => {
     expect(detectCrisis('你好呀').crisisLevel).toBe('none');
   });
 
+  it('6.3 收紧：任意语境提及未成年身份不再触发危机（"我弟弟是小学生"）', () => {
+    expect(detectCrisis('我弟弟是小学生').crisisLevel).toBe('none');
+    expect(detectCrisis('儿童节快乐').crisisLevel).toBe('none');
+    expect(detectCrisis('我是初中生，想问问学习方法').crisisLevel).toBe('none');
+    expect(detectCrisis('未成年人保护法了解一下').crisisLevel).toBe('none');
+  });
+
   it('多类别命中聚合（无 high 词时取 medium）', () => {
     const r = detectCrisis('我撑不下去了，真想杀了你');
     expect(r.crisisLevel).toBe('medium');
