@@ -33,7 +33,7 @@ describe('admin usage routes', () => {
       },
       {
         fragment: 'sum(request_count)',
-        rows: [{ total: 2, requests: 30, tokens: 4000 }],
+        rows: [{ requests: 30, tokens: 4000 }],
       },
     ]);
     const token = await JWT.signAdmin('a1');
@@ -72,6 +72,39 @@ describe('admin usage routes', () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(422);
+  });
+
+  it('rejects an invalid calendar date (month 13) with 422', async () => {
+    const { app } = buildRouter([]);
+    const token = await JWT.signAdmin('a1');
+    // 非法日期在 to 侧：from <= to 与天数检查都拦不住（NaN 比较恒 false），
+    // 必须靠日历校验兜底，否则 $2::date 会在真实 Postgres 上抛 500。
+    const res = await app.request('/usage?from=2026-08-01&to=2026-13-18', {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'invalid_input' });
+  });
+
+  it('rejects a date that does not exist on the calendar (2026-02-30)', async () => {
+    const { app } = buildRouter([]);
+    const token = await JWT.signAdmin('a1');
+    // V8 的 Date.parse 会把 02-30 滚动成 03-02（合法时间戳），且 29 天跨度未超限，
+    // 只有真实日历校验能拦住。
+    const res = await app.request('/usage?from=2026-02-01&to=2026-02-30', {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'invalid_input' });
+  });
+
+  it('allows a range of exactly 31 days', async () => {
+    const { app } = buildRouter([]);
+    const token = await JWT.signAdmin('a1');
+    const res = await app.request('/usage?from=2026-01-01&to=2026-02-01', {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
   });
 
   it('requires admin token', async () => {
