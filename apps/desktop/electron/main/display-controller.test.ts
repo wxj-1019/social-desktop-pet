@@ -259,11 +259,30 @@ describe('anchorPanelToPet (面板锚定)', () => {
     expect(anchorPanelToPet(rightEdgePet, panel, workArea)).toEqual({ x: 340, y: 100 });
   });
 
-  it('clamps into the work area when neither side fits (partial visibility)', () => {
+  it('clamps fully visible when neither side fits but the work area can contain the panel', () => {
     const narrow = { x: 0, y: 0, width: 400, height: 800 };
     const petAtLeft = { x: 50, y: 100, width: 240, height: 260 };
-    // rightX=290，290+360>400 且左侧 50-360<0 → 夹进工作区（上限 400-90=310）
-    expect(anchorPanelToPet(petAtLeft, panel, narrow)).toEqual({ x: 290, y: 100 });
+    // rightX=290，290+360>400 且左侧 50-360<0 → 夹进工作区且完整可见（上限 400-360=40）
+    expect(anchorPanelToPet(petAtLeft, panel, narrow)).toEqual({ x: 40, y: 100 });
+  });
+
+  it('clamps y when the pet sits near the bottom (panel would be cut off)', () => {
+    const bottomPet = { ...pet, y: 600 };
+    // pet.y+480=1080 > 800 → y 抬升到 800-480=320，面板完整可见
+    expect(anchorPanelToPet(bottomPet, panel, workArea)).toEqual({ x: 340, y: 320 });
+  });
+
+  it('clamps y on the left side too when the pet sits near the bottom', () => {
+    const bottomRightPet = { x: 700, y: 600, width: 240, height: 260 };
+    // 右侧 940+360>1000 → 左侧，y 同样抬升
+    expect(anchorPanelToPet(bottomRightPet, panel, workArea)).toEqual({ x: 340, y: 320 });
+  });
+
+  it('keeps at least 1/4 visible when the work area is smaller than the panel', () => {
+    const tiny = { x: 0, y: 0, width: 300, height: 800 };
+    const petAtLeft = { x: 50, y: 100, width: 240, height: 260 };
+    // 面板 360 > 工作区宽 300 → 1/4 规则：clamp(290, -269.75, 209.75) → 210
+    expect(anchorPanelToPet(petAtLeft, panel, tiny)).toEqual({ x: 210, y: 100 });
   });
 
   it('works on a negative-coordinate display', () => {
@@ -280,7 +299,7 @@ describe('anchorPanelToPet (面板锚定)', () => {
     const result = anchorPanelToPet(petAtLeft, fractionalPanel, narrow);
     expect(Number.isInteger(result.x)).toBe(true);
     expect(Number.isInteger(result.y)).toBe(true);
-    expect(result.x).toBe(311); // clamp(90+240=330, …, 401-90.25=310.75) → Math.round(310.75)
+    expect(result.x).toBe(40); // 完整可见：clamp(330, 0, 401-361=40) → 40
     expect(result.y).toBe(100);
   });
 });

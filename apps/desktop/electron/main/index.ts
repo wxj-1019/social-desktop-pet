@@ -123,14 +123,20 @@ const startupArgs = parseStartupArgs(process.argv);
 
 void app.whenReady().then(async () => {
   // 8.3 网络层 CSP（meta + 响应头双保险，交集生效）：connect-src 按
-  // PET_API_BASE 动态收紧为精确源（不再放开任意 https/wss 主机）
-  electronSession.defaultSession.webRequest.onHeadersReceived((_details, callback) => {
-    callback({
-      responseHeaders: {
-        'Content-Security-Policy': [buildCsp(apiBaseUrl())],
-      },
+  // PET_API_BASE 动态收紧为精确源（不再放开任意 https/wss 主机）。
+  // 仅打包版注入响应头：dev 的 vite 会内联 react-refresh preamble，响应头
+  // CSP 作用于整份文档会拦掉它（meta 在文档内联脚本之后，不受影响）；
+  // 且必须合并原响应头，否则 Content-Type 被剥掉会导致模块加载失败。
+  if (app.isPackaged) {
+    electronSession.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [buildCsp(apiBaseUrl())],
+        },
+      });
     });
-  });
+  }
 
   // dev：清 HTTP 磁盘缓存。Electron 会话缓存跨重启复用，vite 模块的 304 复验
   // 偶发命中旧 ETag，导致面板窗加载到旧模块（prod 不受影响，构建产物带内容哈希）

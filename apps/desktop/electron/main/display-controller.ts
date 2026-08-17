@@ -186,8 +186,11 @@ export function clampPetWindowToDisplays(
 }
 
 /**
- * 把面板锚定到宠物窗口旁边：优先宠物右侧；放不下则左侧；两侧都放不下则夹进工作区
- * （至少部分可见）。y 与宠物顶部对齐。返回整数坐标。
+ * 把面板锚定到宠物窗口旁边：优先宠物右侧；放不下则左侧；两侧都放不下但工作区
+ * 能容纳则夹进工作区（完整可见，尽量贴近宠物）；仅当工作区比面板还小（极端
+ * 场景）才退化为保留至少 1/4 可见。y 始终夹进工作区——宠物常停靠屏幕底部，
+ * 若面板顶部与宠物对齐会探出屏幕下缘被裁掉（用户反馈：聊天框显示不全）。
+ * 返回整数坐标。
  */
 export function anchorPanelToPet(
   pet: { x: number; y: number; width: number; height: number },
@@ -195,19 +198,27 @@ export function anchorPanelToPet(
   workArea: { x: number; y: number; width: number; height: number },
 ): { x: number; y: number } {
   const rightX = pet.x + pet.width;
+  // y 始终夹进工作区（面板完整可见；工作区比面板矮时对齐顶部，能看多少是多少）
+  const y = clamp(pet.y, workArea.y, workArea.y + Math.max(0, workArea.height - panel.height));
 
   // 1. 优先右侧
   if (rightX + panel.width <= workArea.x + workArea.width) {
-    return { x: Math.round(rightX), y: Math.round(pet.y) };
+    return { x: Math.round(rightX), y: Math.round(y) };
   }
 
   // 2. 放不下则左侧
   const leftX = pet.x - panel.width;
   if (leftX >= workArea.x) {
-    return { x: Math.round(leftX), y: Math.round(pet.y) };
+    return { x: Math.round(leftX), y: Math.round(y) };
   }
 
-  // 3. 两侧都放不下 → 夹进工作区（保留至少 1/4 可见）
+  // 3. 两侧都放不下但工作区能完整容纳 → 夹进工作区（完整可见，尽量贴近宠物）
+  if (workArea.width >= panel.width && workArea.height >= panel.height) {
+    const x = clamp(rightX, workArea.x, workArea.x + workArea.width - panel.width);
+    return { x: Math.round(x), y: Math.round(y) };
+  }
+
+  // 4. 工作区比面板还小（极端场景）→ 保留至少 1/4 可见
   const visibleW = panel.width * 0.25;
   const visibleH = panel.height * 0.25;
   const x = clamp(
@@ -215,10 +226,10 @@ export function anchorPanelToPet(
     workArea.x - panel.width + visibleW,
     workArea.x + workArea.width - visibleW,
   );
-  const y = clamp(
+  const yPartial = clamp(
     pet.y,
     workArea.y - panel.height + visibleH,
     workArea.y + workArea.height - visibleH,
   );
-  return { x: Math.round(x), y: Math.round(y) };
+  return { x: Math.round(x), y: Math.round(yPartial) };
 }
