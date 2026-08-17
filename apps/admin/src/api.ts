@@ -117,6 +117,17 @@ export interface WaitlistRow {
   claimedAt: string | null;
 }
 
+export interface AuditRow {
+  id: string;
+  adminId: string | null;
+  action: string;
+  resourceType: string;
+  resourceId: string | null;
+  reason: string | null;
+  ip: string | null;
+  createdAt: string;
+}
+
 export const adminApi = {
   login(email: string, password: string) {
     return raw<{ accessToken: string; admin: { id: string; email: string } }>('/auth/login', {
@@ -183,5 +194,11 @@ export const adminApi = {
   },
   expireWaitlist(id: string) {
     return raw<{ ok: true }>(`/waitlist/${id}/expire`, { method: 'POST', body: {} });
+  },
+  auditLog(params: Record<string, string>) {
+    const qs = new URLSearchParams(params).toString();
+    return raw<{ total: number; page: number; pageSize: number; items: AuditRow[] }>(
+      `/audit-log?${qs}`,
+    );
   },
 };
