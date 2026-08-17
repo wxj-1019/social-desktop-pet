@@ -22,6 +22,7 @@ import {
   localReplyNode,
   moderateOutputNodeFactory,
   routeNodeFactory,
+  streamReplyNode,
   type OutputModerator,
 } from './chat-flow-nodes.js';
 import type { ChatFlowState } from './chat-flow-state.js';
@@ -51,6 +52,7 @@ export function buildChatFlow(options: ChatFlowOptions = {}): CompiledGraph<Chat
     .addNode('generate', generateNodeFactory(options.llm))
     .addNode('moderate_output', moderateOutputNodeFactory(options.outputModerator))
     .addNode('approve_action', approveActionNode)
+    .addNode('stream_reply', streamReplyNode)
     .addNode('crisis_response', crisisResponseNode)
     .addNode('local_reply', localReplyNode)
     .addNode('blocked_reply', blockedReplyNode);
@@ -79,7 +81,7 @@ export function buildChatFlow(options: ChatFlowOptions = {}): CompiledGraph<Chat
   // 11.2 输出审核（12.5 免费 Moderation）：
   //   输出侧危机 → crisis_response（11.8 固定协议）
   //   泄漏/违规 → blocked_reply（阻断原始回复，改发通用文案；不发危机话术）
-  //   通过 → approve_action
+  //   通过 → approve_action → stream_reply（先审后发：token 在审核通过后才流式）
   graph
     .addEdge('generate', 'moderate_output')
     .addConditionalEdge('moderate_output', (s) => {
@@ -89,7 +91,8 @@ export function buildChatFlow(options: ChatFlowOptions = {}): CompiledGraph<Chat
       if (!moderation.passed) return 'blocked_reply';
       return 'approve_action';
     })
-    .addEdge('approve_action', END)
+    .addEdge('approve_action', 'stream_reply')
+    .addEdge('stream_reply', END)
     .addEdge('crisis_response', END)
     .addEdge('local_reply', END)
     .addEdge('blocked_reply', END);

@@ -23,6 +23,8 @@ jobs:
       # 根 references 含全部 packages + apps/server（D-13）；apps/desktop 需单独检查（审查发现 #1）
       - run: pnpm typecheck
       - run: pnpm --filter @pet/desktop typecheck
+      # D-13 部署产物门禁：server build 必须真实产出 dist/（tsconfig.build.json，noEmit:false）
+      - run: pnpm --filter @pet/server build
       - run: pnpm test
 
   # 补 2：Electron e2e 冒烟（Linux 需 xvfb + Electron 系统依赖）

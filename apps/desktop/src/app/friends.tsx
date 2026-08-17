@@ -73,11 +73,15 @@ export function FriendsPage({ userId }: FriendsPageProps) {
   const [events, setEvents] = useState<SyncEvent[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<'success' | 'error'>('success');
-  const [lastSeq, setLastSeq] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [copied, setCopied] = useState(false);
   const friendsRef = useRef<Friend[]>([]);
+  // 收件箱游标放 ref（而非 state）：pullSync 保持稳定引用，WS 效应不会
+  // 随每次游标推进重建连接（每事件一次 close/重连的抖动，审查发现 #2）
+  const lastSeqRef = useRef(0);
+  // 单飞守卫：轮询与 inbox.delivered 并发时同一批事件只拉一次（审查发现 #4）
+  const syncingRef = useRef(false);
 
   useEffect(() => {
     friendsRef.current = friends;
@@ -95,17 +99,21 @@ export function FriendsPage({ userId }: FriendsPageProps) {
   }, []);
 
   const pullSync = useCallback(async () => {
+    if (syncingRef.current) return; // 进行中直接 return（轮询与实时推送并发去重）
+    syncingRef.current = true;
     try {
       // 9.5 慢路径补齐：循环分页直到追上最新（断线 72h+/序列缺口时一次性补游标）
-      const { items, nextInboxSeq } = await syncAfter(lastSeq);
+      const { items, nextInboxSeq } = await syncAfter(lastSeqRef.current);
       if (items.length > 0) {
         setEvents((previous) => [...previous, ...items].slice(-20));
-        setLastSeq(nextInboxSeq);
+        lastSeqRef.current = nextInboxSeq;
       }
     } catch {
       // 实时连接或下一次轮询会继续补齐。
+    } finally {
+      syncingRef.current = false;
     }
-  }, [lastSeq]);
+  }, []);
 
   useEffect(() => {
     void refreshFriends();

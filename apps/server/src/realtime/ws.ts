@@ -22,10 +22,14 @@ export class RealtimeServer {
   private wss: WebSocketServer | null = null;
   /** user_id → 活跃连接集合 */
   private readonly conns = new Map<string, Set<WebSocket>>();
+  /** 服务端心跳定时器（attach 启动，close 清理） */
+  private heartbeatTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly jwt: JwtService,
     private readonly events: RealtimeEvents = {},
+    /** 心跳间隔；测试可注入更小值或直接调 heartbeatTick() */
+    private readonly heartbeatIntervalMs = 30_000,
   ) {}
 
   /** 附加到 HTTP 服务器（@hono/node-server 的 server 实例） */
@@ -47,10 +51,41 @@ export class RealtimeServer {
     });
 
     this.wss.on('connection', (ws) => {
+      // 8.x 稳定性：未监听 'error' 时 EventEmitter 会把 socket 错误（ECONNRESET 等）
+      // 直接抛出 → 单个客户端异常即可让整个服务进程崩溃。error 后交给 close 清理。
+      ws.on('error', () => ws.close());
+      // 服务端心跳标记：本轮 tick 前未收到 pong 视为僵尸连接，terminate 清理
+      const sock = ws as WebSocket & { isAlive?: boolean };
+      sock.isAlive = true;
+      ws.on('pong', () => {
+        sock.isAlive = true;
+      });
       // 鉴权握手：首条消息 { type: 'auth', token }
       ws.once('message', (data) => void this.handleAuth(ws, data));
       ws.on('close', () => this.remove(ws));
     });
+
+    // 服务端心跳：周期性 ping，未响应（断网未发 FIN 的僵尸连接）terminate
+    this.heartbeatTimer = setInterval(() => this.heartbeatTick(), this.heartbeatIntervalMs);
+  }
+
+  /**
+   * 心跳 tick（可单独调用便于测试）：对每个连接 ping；
+   * 上一轮 tick 置 false 后本轮仍为 false（即未收到 pong）→ terminate 清理。
+   */
+  heartbeatTick(): void {
+    for (const set of this.conns.values()) {
+      for (const ws of set) {
+        const sock = ws as WebSocket & { isAlive?: boolean };
+        if (sock.isAlive === false) {
+          ws.terminate();
+          this.remove(ws);
+          continue;
+        }
+        sock.isAlive = false;
+        if (ws.readyState === WebSocket.OPEN) ws.ping();
+      }
+    }
   }
 
   private async handleAuth(ws: WebSocket, data: unknown): Promise<void> {
@@ -119,6 +154,10 @@ export class RealtimeServer {
   }
 
   close(): void {
+    if (this.heartbeatTimer !== null) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
     this.wss?.close();
     this.conns.clear();
   }

@@ -193,9 +193,15 @@ export function extractCandidatesNodeFactory(llm?: LlmClient): NodeFn<MemoryExtr
       { role: 'user', content: `用户话语：\n${state.ownerTurns.join('\n')}` },
     ];
     let buffer = '';
-    await llm.streamChat(messages, (t) => {
-      buffer += t;
-    });
+    try {
+      await llm.streamChat(messages, (t) => {
+        buffer += t;
+      });
+    } catch (e) {
+      // 模型瞬时故障：回退空候选（本轮不抽，下轮对话再抽；绝不让子图 reject 崩掉管线）
+      console.warn('[memory-extract] LLM 抽取失败，降级空候选：', (e as Error).message);
+      return { candidates: [] };
+    }
     return { candidates: parseCandidatesJson(buffer) };
   };
 }
@@ -272,18 +278,25 @@ export function dedupeArbitrateNodeFactory(llm?: LlmClient, store?: MemoryExtrac
           .map((m) => `- ${m.memoryId}: ${m.value}（${m.category}/${m.sourceType}）`)
           .join('\n');
         let buffer = '';
-        await llm.streamChat(
-          [
-            { role: 'system', content: DEDUPE_SYSTEM_PROMPT },
-            {
-              role: 'user',
-              content: `已有记忆：\n${list}\n\n新候选：${candidate.value}\n（category=${candidate.category}, sourceType=${candidate.sourceType}）`,
+        try {
+          await llm.streamChat(
+            [
+              { role: 'system', content: DEDUPE_SYSTEM_PROMPT },
+              {
+                role: 'user',
+                content: `已有记忆：\n${list}\n\n新候选：${candidate.value}\n（category=${candidate.category}, sourceType=${candidate.sourceType}）`,
+              },
+            ],
+            (t) => {
+              buffer += t;
             },
-          ],
-          (t) => {
-            buffer += t;
-          },
-        );
+          );
+        } catch (e) {
+          // 模型瞬时故障：回退 ADD（宁可重复不漏存；不崩管线）
+          console.warn('[memory-extract] LLM 去重裁决失败，降级 ADD：', (e as Error).message);
+          dedupeActions.push({ candidate, action: 'ADD' });
+          continue;
+        }
         decision = parseDedupeDecision(buffer);
       } else if (similar.some((m) => m.value === candidate.value)) {
         // 无 LLM 兜底：精确重复 → NOOP

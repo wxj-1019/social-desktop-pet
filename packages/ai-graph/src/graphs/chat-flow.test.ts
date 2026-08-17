@@ -134,7 +134,7 @@ describe('chat-flow graph', () => {
     expect(events).toContain('node_end');
   });
 
-  it('generateNode streams token events and final dialogue matches (SSE 链路基础)', async () => {
+  it('审核通过后 stream_reply 流式 token，拼接结果 = 最终回复（11.2 先审后发）', async () => {
     const graph = buildChatFlow();
     const tokens: string[] = [];
     const state = initialChatFlowState({
@@ -328,6 +328,7 @@ describe('chat-flow graph', () => {
       },
     };
     const graph = buildChatFlow({ llm: leakyLlm });
+    const tokens: string[] = [];
     const state = initialChatFlowState({
       threadId: 't-mod-1',
       userId: 'u1',
@@ -335,9 +336,16 @@ describe('chat-flow graph', () => {
       userMessage: '在吗',
       scenario: 'private_chat',
     });
-    const result = await graph.invoke(state, { threadId: 't-mod-1' });
+    const result = await graph.invoke(state, {
+      threadId: 't-mod-1',
+      emit: (e) => {
+        if (e.type === 'token') tokens.push(e.text);
+      },
+    });
 
     expect(result.moderation?.passed).toBe(false);
+    // 11.2 先审后发：阻断路径未发出任何 token —— 被拦截的泄漏内容用户从未看到
+    expect(tokens.length).toBe(0);
     // 阻断：通用文案而非原始回复，且无危机话术
     expect(result.responseText).toBe('抱歉，我刚才走神了，我们换个话题聊聊吧。');
     expect(result.responseText).not.toContain('13812345678');

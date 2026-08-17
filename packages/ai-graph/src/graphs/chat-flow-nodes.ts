@@ -198,15 +198,10 @@ export const PET_SYSTEM_PROMPT =
 
 /** generateNode 工厂：注入 llm 走真实模型；无 llm 降级骨架（框架阶段行为不变） */
 export function generateNodeFactory(llm?: LlmClient): NodeFn<ChatFlowState> {
-  return async (state, ctx): Promise<Partial<ChatFlowState>> => {
+  return async (state, _ctx): Promise<Partial<ChatFlowState>> => {
     if (!llm) {
       // 骨架降级（无模型密钥环境；真实模型接入后仍作为错误降级保留）
       const dialogue = `（骨架回复）你刚才说：${state.userMessage.slice(0, 40)}`;
-      for (const ch of dialogue) {
-        ctx.emit({ type: 'token', text: ch });
-        // 模拟流式节奏（测试依赖此节奏可注入）
-        await new Promise((r) => setTimeout(r, 12));
-      }
       return {
         modelOutput: {
           dialogue,
@@ -218,9 +213,9 @@ export function generateNodeFactory(llm?: LlmClient): NodeFn<ChatFlowState> {
     }
 
     // 真实模型：10.2 输出契约 —— prompt 约束单行 JSON（无 response_format 依赖）。
-    // 原始 token 先收集到局部 buffer（不外发），完成后容错解析出结构化字段，
-    // 再把解析后的 dialogue 按 chunk 模拟流式（不泄露 JSON 骨架到客户端）。
-    // 用户上下文取 build_context 的 contextPrompt（含 10.7 检索记忆）。
+    // 原始 token 先收集到局部 buffer（不外发），完成后容错解析出结构化字段。
+    // 流式展示由审核通过后的 streamReplyNode 负责（11.2 先审后发：阻断前
+    // 用户看不到任何内容，blocked_reply 只替换 done 帧文案的问题一并解决）。
     let buffer = '';
     await llm.streamChat(
       [
@@ -232,11 +227,6 @@ export function generateNodeFactory(llm?: LlmClient): NodeFn<ChatFlowState> {
       },
     );
     const parsed = parseModelOutput(buffer);
-    for (const chunk of chunkDialogue(parsed.dialogue)) {
-      ctx.emit({ type: 'token', text: chunk });
-      // 模拟流式节奏（12-15ms；chunk size 4 → ≤600 字符 ≈ ≤150 chunk ≈ 2.2s 内）
-      await new Promise((r) => setTimeout(r, 15));
-    }
     return {
       modelOutput: {
         dialogue: parsed.dialogue,
@@ -324,6 +314,26 @@ export const approveActionNode: NodeFn<ChatFlowState> = async (
     responseText: out?.dialogue ?? '',
     memoryExtractTriggered: true, // 触发异步 memory-extract 子图
   };
+};
+
+/**
+ * 审核后流式回复（11.2 先审后发）：generate 只产 modelOutput 不外发；
+ * moderate_output 审核通过、approveActionNode 确定 responseText 后，
+ * 此节点把最终文案按 chunk 流式 emit（客户端按序拼 token 得完整回复）。
+ * 阻断/危机/L0 路径不经过此节点 —— 被拦截的内容用户始终看不到。
+ */
+export const streamReplyNode: NodeFn<ChatFlowState> = async (
+  state,
+  ctx,
+): Promise<Partial<ChatFlowState>> => {
+  const text = state.responseText ?? state.modelOutput?.dialogue ?? '';
+  if (text.length === 0) return {};
+  for (const chunk of chunkDialogue(text)) {
+    ctx.emit({ type: 'token', text: chunk });
+    // 模拟流式节奏（chunk size 4 → ≤600 字符 ≈ ≤150 chunk ≈ 2.2s 内）
+    await new Promise((r) => setTimeout(r, 15));
+  }
+  return {};
 };
 
 /**

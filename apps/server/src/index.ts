@@ -105,6 +105,8 @@ export function buildApp(deps: AppDeps) {
     llm: deps.llm,
     memoryStore: deps.memoryStore,
     retrievalStore: deps.retrievalStore,
+    // 12.5 输出审核 provider：漏传会导致配了 MODERATION_API_KEY 也静默走规则版
+    outputModerator: deps.outputModerator,
   });
   app.route('/', business);
 

@@ -48,4 +48,44 @@ describe('createUpdateApi（13.1 manifest 检查）', () => {
     const api = createUpdateApi('https://up.example.com/manifest.json');
     expect(await api.checkForUpdate('beta')).toBeNull();
   });
+
+  it('fetch 拒绝（离线/DNS）→ 静默无更新', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('network down');
+      }),
+    );
+    const api = createUpdateApi('https://up.example.com/manifest.json');
+    expect(await api.checkForUpdate('stable')).toBeNull();
+  });
+
+  it('畸形 JSON → 静默无更新', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => {
+          throw new Error('bad json');
+        },
+      })),
+    );
+    const api = createUpdateApi('https://up.example.com/manifest.json');
+    expect(await api.checkForUpdate('stable')).toBeNull();
+  });
+
+  it('manifest 字段非法（version 非字符串）→ zod 拦截，静默无更新', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ stable: { version: 123, url: 'x', sha256: 'y' } }),
+      })),
+    );
+    const api = createUpdateApi('https://up.example.com/manifest.json');
+    expect(await api.checkForUpdate('stable')).toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('manifest 校验失败'));
+    warn.mockRestore();
+  });
 });

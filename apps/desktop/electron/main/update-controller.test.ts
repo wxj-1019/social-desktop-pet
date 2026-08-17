@@ -38,6 +38,20 @@ describe('compareSemver (13.1 版本门禁)', () => {
     expect(compareSemver('1.0.0-beta.2', '1.0.0-beta.2')).toBe(0);
   });
 
+  it('prerelease numeric identifiers compare numerically (beta.10 > beta.9)', () => {
+    expect(compareSemver('1.0.0-beta.10', '1.0.0-beta.9')).toBe(1);
+    expect(compareSemver('1.0.0-beta.9', '1.0.0-beta.10')).toBe(-1);
+    expect(compareSemver('1.0.0-rc.12', '1.0.0-rc.2')).toBe(1);
+  });
+
+  it('prerelease numeric identifiers sort below alphanumeric; prefix is smaller', () => {
+    // semver §11：数字标识符 < 字母数字标识符
+    expect(compareSemver('1.0.0-alpha.1', '1.0.0-alpha.beta')).toBe(-1);
+    // 所有对应段相等 → 段数更多者更大（alpha < alpha.1）
+    expect(compareSemver('1.0.0-alpha', '1.0.0-alpha.1')).toBe(-1);
+    expect(compareSemver('1.0.0-alpha.1', '1.0.0-alpha')).toBe(1);
+  });
+
   it('tolerates missing segments', () => {
     expect(compareSemver('1.0', '1.0.0')).toBe(0);
     expect(compareSemver('2', '1.9.9')).toBe(1);

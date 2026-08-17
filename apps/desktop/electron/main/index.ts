@@ -149,7 +149,13 @@ void app.whenReady().then(async () => {
     clearScheduledPositionSave();
     positionSaveTimer = setTimeout(() => {
       positionSaveTimer = null;
-      positionStore?.save(position);
+      // 'moved' 事件路径（window-controller 的 toPersistedPosition）只带位置、
+      // scale 恒为 1 —— 必须保留当前持久化的缩放比例，否则任何 moved 事件
+      // （setBounds / OS 移动窗口等）会把用户调好的桌宠大小重置为 100%
+      // （与 savePetPosition 的"保留 scale"语义保持一致）。
+      const persisted = positionStore?.load();
+      if (!persisted) return;
+      positionStore?.save({ ...position, scale: persisted.scale });
     }, 250);
   };
   // 显示器列表缓存：wander tick（30fps）与拖动 move 每帧查询显示器，

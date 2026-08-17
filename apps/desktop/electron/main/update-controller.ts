@@ -68,7 +68,36 @@ export function compareSemver(a: string, b: string): number {
   if (preA === undefined && preB === undefined) return 0;
   if (preA === undefined) return 1;
   if (preB === undefined) return -1;
-  return preA < preB ? -1 : preA > preB ? 1 : 0;
+  return comparePrerelease(preA, preB);
+}
+
+/**
+ * prerelease 标识符按 semver 规则比较：按 `.` 分段；数字段按数值（beta.10 > beta.9），
+ * 数字段 < 字母数字段；字母数字段按 ASCII 字典序；所有对应段相等时段数多者更大
+ * （alpha < alpha.1）。字符串比较（beta.10 < beta.9）是错误行为。
+ */
+export function comparePrerelease(preA: string, preB: string): number {
+  const idsA = preA.split('.');
+  const idsB = preB.split('.');
+  const max = Math.max(idsA.length, idsB.length);
+  for (let i = 0; i < max; i++) {
+    const ia = idsA[i];
+    const ib = idsB[i];
+    if (ia === undefined) return -1; // a 是 b 的前缀 → a 更小
+    if (ib === undefined) return 1;
+    const numA = /^\d+$/.test(ia);
+    const numB = /^\d+$/.test(ib);
+    if (numA && numB) {
+      const da = Number.parseInt(ia, 10);
+      const db = Number.parseInt(ib, 10);
+      if (da !== db) return da > db ? 1 : -1;
+    } else if (numA !== numB) {
+      return numA ? -1 : 1; // 数字段 < 字母数字段（semver §11）
+    } else if (ia !== ib) {
+      return ia > ib ? 1 : -1; // 字母数字：ASCII 字典序
+    }
+  }
+  return 0;
 }
 
 export class UpdateController {

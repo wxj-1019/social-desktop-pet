@@ -223,8 +223,8 @@ export function registerChatRoutes(
           emit,
         });
         // 终稿文案：approve 路径 responseText=通过审核的回复；阻断路径=通用降级
-        // 文案（11.2 泄漏拦截）；危机路径=11.8 固定协议。流式已发出的 token 无法
-        // 撤回，done 帧与落库以审核后的 responseText 为准（modelOutput 仅兜底）。
+        // 文案（11.2 泄漏拦截）；危机路径=11.8 固定协议。流式 token 由审核后的
+        // stream_reply 节点发出（11.2 先审后发），done 帧与落库同样以 responseText 为准。
         const dialogue = finalState.responseText ?? finalState.modelOutput?.dialogue ?? '';
         await stream.writeSSE({
           event: 'done',
