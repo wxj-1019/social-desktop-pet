@@ -4,8 +4,29 @@
  */
 let accessToken: string | null = null;
 
+/** 单飞 refresh：并发 401 共享同一次 /auth/refresh 调用。
+ *  服务端 refresh token 一次性轮换，并发调用只有一个能赢；
+ *  共享 promise 让输家直接复用赢家的新 access token，避免误登出。 */
+let refreshPromise: Promise<{ accessToken: string } | null> | null = null;
+
 export function setAccessToken(token: string | null): void {
   accessToken = token;
+}
+
+function refreshOnce(): Promise<{ accessToken: string } | null> {
+  if (!refreshPromise) {
+    refreshPromise = raw<{ accessToken: string }>('/auth/refresh', {
+      method: 'POST',
+      body: {},
+      skipRefresh: true,
+    })
+      .then((r) => r)
+      .catch(() => null)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
 }
 
 export class AdminApiError extends Error {
@@ -38,11 +59,7 @@ async function raw<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   });
   if (res.status === 401 && !opts.skipRefresh) {
-    const refreshed = await raw<{ accessToken: string }>('/auth/refresh', {
-      method: 'POST',
-      body: {},
-      skipRefresh: true,
-    }).catch(() => null);
+    const refreshed = await refreshOnce();
     if (refreshed) {
       setAccessToken(refreshed.accessToken);
       return raw<T>(path, { ...opts, skipRefresh: true });
@@ -61,6 +78,8 @@ export const adminApi = {
     return raw<{ accessToken: string; admin: { id: string; email: string } }>('/auth/login', {
       method: 'POST',
       body: { email, password },
+      // 凭证端点不触发 refresh：密码错误不应轮换（或失效）旧 refresh cookie
+      skipRefresh: true,
     });
   },
   me() {
