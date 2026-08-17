@@ -40,7 +40,7 @@ export function registerGiftRoutes(
   app: Hono<{ Variables: BusinessVariables }>,
   deps: GiftDeps,
 ): void {
-  const auth = requireAuth(deps.jwt);
+  const auth = requireAuth(deps.jwt, deps.pool);
 
   app.post('/gift', auth, async (c) => {
     const userId = c.get('userId');

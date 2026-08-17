@@ -122,7 +122,15 @@ export async function main(): Promise<void> {
   if (applied.length > 0) console.info(`[server] migrations applied: ${applied.join(', ')}`);
 
   // ---- 自建 Auth（9.8）----
-  const jwt = new JwtService({ secret: env('JWT_SECRET') });
+  const jwtSecret = env('JWT_SECRET');
+  // 8.3 密钥强度：HS256 弱密钥可被离线爆破。生产拒绝 <32 字节；开发警告放行
+  // （.env.local 默认 dev-only-change-me 仅本地，e2e 依赖）
+  if (jwtSecret.length < 32) {
+    const msg = `JWT_SECRET 过短（${jwtSecret.length} 字节，建议 ≥32：openssl rand -base64 48）`;
+    if (process.env['NODE_ENV'] === 'production') throw new Error(msg);
+    console.warn(`[server] 警告：${msg}（开发环境放行，生产拒绝）`);
+  }
+  const jwt = new JwtService({ secret: jwtSecret });
   const store = new PgSessionStore(pool);
   const sessions = new SessionManager(store);
   const users = new PgUsersStore(pool);

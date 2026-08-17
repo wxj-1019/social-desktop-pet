@@ -41,7 +41,7 @@ export function registerMemoriesRoutes(
   app: Hono<{ Variables: BusinessVariables }>,
   deps: MemoryRoutesDeps,
 ): void {
-  const auth = requireAuth(deps.jwt);
+  const auth = requireAuth(deps.jwt, deps.pool);
 
   // 待确认 + 最近自动保存（10.6/D-3；"已记住"提示数据源）
   app.get('/memories/summary', auth, async (c) => {
@@ -299,7 +299,9 @@ export function registerMemoriesRoutes(
   // 记忆中心列表（11.3）：owner 的 active 记忆 + 来源原文（source_turn_ids → chat_messages）
   app.get('/memories', auth, async (c) => {
     const userId = c.get('userId');
-    const limit = Math.min(Number(c.req.query('limit') ?? 100), 200);
+    // 畸形/负数 limit 钳制为合法范围，避免 NaN 直传 SQL 报 500
+    const raw = Number(c.req.query('limit') ?? 100);
+    const limit = Number.isFinite(raw) ? Math.max(1, Math.min(Math.trunc(raw), 200)) : 100;
     const client = await deps.pool.connect();
     try {
       await client.query('begin');

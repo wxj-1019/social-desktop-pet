@@ -40,7 +40,11 @@ interface FakeWindow {
   setIgnoreMouseEvents: ReturnType<typeof vi.fn>;
   loadURL: ReturnType<typeof vi.fn>;
   loadFile: ReturnType<typeof vi.fn>;
-  webContents: { send: ReturnType<typeof vi.fn> };
+  webContents: {
+    send: ReturnType<typeof vi.fn>;
+    setWindowOpenHandler: ReturnType<typeof vi.fn>;
+    on: ReturnType<typeof vi.fn>;
+  };
   listeners: Map<string, (...args: unknown[]) => void>;
   position: number[];
   shown: boolean;
@@ -70,7 +74,11 @@ function makeFake(): FakeWindow {
     setIgnoreMouseEvents: vi.fn(() => undefined),
     loadURL: vi.fn(() => undefined),
     loadFile: vi.fn(() => undefined),
-    webContents: { send: vi.fn() },
+    webContents: {
+      send: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
+      on: vi.fn(),
+    },
     listeners,
     position: state.position,
     get shown() {

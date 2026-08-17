@@ -25,7 +25,7 @@ export function registerInviteRoutes(
   app: Hono<{ Variables: BusinessVariables }>,
   deps: InviteDeps,
 ): void {
-  const auth = requireAuth(deps.jwt);
+  const auth = requireAuth(deps.jwt, deps.pool);
 
   // 创建邀请（6.3）
   app.post('/invite', auth, async (c) => {

@@ -36,8 +36,9 @@ import { PetRuntimeController } from './pet-runtime-controller.js';
 import { PetWanderController } from './pet-wander-controller.js';
 import { PositionStore } from './position-store.js';
 import { SecureStorageController } from './secure-storage-controller.js';
+import { buildCsp } from './security.js';
 import { SessionController } from './session-controller.js';
-import { createAuthApi, createSessionHandlers } from './session-service.js';
+import { createAuthApi, createSessionHandlers, apiBaseUrl } from './session-service.js';
 import { StartupController, parseStartupArgs } from './startup-controller.js';
 import { TrayController, trayIconPath, type TrayAction } from './tray-controller.js';
 import { UpdateController } from './update-controller.js';
@@ -121,6 +122,16 @@ const startup = new StartupController({
 const startupArgs = parseStartupArgs(process.argv);
 
 void app.whenReady().then(async () => {
+  // 8.3 网络层 CSP（meta + 响应头双保险，交集生效）：connect-src 按
+  // PET_API_BASE 动态收紧为精确源（不再放开任意 https/wss 主机）
+  electronSession.defaultSession.webRequest.onHeadersReceived((_details, callback) => {
+    callback({
+      responseHeaders: {
+        'Content-Security-Policy': [buildCsp(apiBaseUrl())],
+      },
+    });
+  });
+
   // dev：清 HTTP 磁盘缓存。Electron 会话缓存跨重启复用，vite 模块的 304 复验
   // 偶发命中旧 ETag，导致面板窗加载到旧模块（prod 不受影响，构建产物带内容哈希）
   if (!app.isPackaged) {

@@ -19,7 +19,7 @@ export function registerQueryRoutes(
   app: Hono<{ Variables: { userId: string; deviceId: string } }>,
   deps: QueryDeps,
 ): void {
-  const auth = requireAuth(deps.jwt);
+  const auth = requireAuth(deps.jwt, deps.pool);
 
   app.get('/me', auth, async (c) => {
     const userId = c.get('userId');

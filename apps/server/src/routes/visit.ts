@@ -27,7 +27,7 @@ export function registerVisitRoutes(
   app: Hono<{ Variables: BusinessVariables }>,
   deps: VisitDeps,
 ): void {
-  const auth = requireAuth(deps.jwt);
+  const auth = requireAuth(deps.jwt, deps.pool);
 
   app.post('/visit', auth, async (c) => {
     const userId = c.get('userId');

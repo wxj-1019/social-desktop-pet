@@ -43,14 +43,34 @@ export interface BusinessVariables {
   deviceId: string;
 }
 
-/** 鉴权中间件：Bearer access token → 注入 userId/deviceId */
-export function requireAuth(jwt: JwtService): MiddlewareHandler<{ Variables: BusinessVariables }> {
+/** 鉴权中间件：Bearer access token → 注入 userId/deviceId；
+ *  传入 pool 时同时做 9.8 撤销双保险（active_display_device_id 应用层校验，
+ *  旧设备被停用后拒绝全部云端功能；null/undefined 放行，有值不匹配 → 403）。 */
+export function requireAuth(
+  jwt: JwtService,
+  pool?: pg.Pool,
+): MiddlewareHandler<{ Variables: BusinessVariables }> {
   return async (c, next) => {
     const auth = c.req.header('authorization');
     const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
     if (!token) return c.json({ error: 'unauthorized' }, 401);
     try {
       const payload = await jwt.verify(token);
+      // 9.8 撤销双保险（应用层校验；与 RLS 策略 auth.uid 兜底互补）
+      if (pool) {
+        const { rows } = await pool.query(
+          'select active_display_device_id from profiles where user_id = $1',
+          [payload.sub],
+        );
+        const activeDevice = rows[0]?.active_display_device_id;
+        if (
+          activeDevice !== undefined &&
+          activeDevice !== null &&
+          String(activeDevice) !== payload.deviceId
+        ) {
+          return c.json({ error: 'device_revoked' }, 403);
+        }
+      }
       c.set('userId', payload.sub);
       c.set('deviceId', payload.deviceId);
       return next();

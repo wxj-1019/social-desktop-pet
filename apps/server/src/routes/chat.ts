@@ -157,7 +157,10 @@ export function registerChatRoutes(
   app: Hono<{ Variables: BusinessVariables }>,
   deps: ChatDeps,
 ): void {
-  const auth: MiddlewareHandler<{ Variables: BusinessVariables }> = requireAuth(deps.jwt);
+  const auth: MiddlewareHandler<{ Variables: BusinessVariables }> = requireAuth(
+    deps.jwt,
+    deps.pool,
+  );
 
   app.post('/chat', auth, async (c) => {
     const userId = c.get('userId');
@@ -265,7 +268,9 @@ export function registerChatRoutes(
   // 对话历史（10.x）：最近 N 条，按时间正序返回
   app.get('/chat/history', auth, async (c) => {
     const userId = c.get('userId');
-    const limit = Math.min(Number(c.req.query('limit') ?? 50), 200);
+    // 畸形/负数 limit（?limit=abc/-5）钳制为合法范围，避免 NaN 直传 SQL 报 500
+    const raw = Number(c.req.query('limit') ?? 50);
+    const limit = Number.isFinite(raw) ? Math.max(1, Math.min(Math.trunc(raw), 200)) : 50;
     const { rows } = await deps.pool.query(
       `select role, content, created_at
        from (

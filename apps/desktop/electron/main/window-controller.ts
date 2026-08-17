@@ -150,6 +150,22 @@ export function loadRendererSurface(
 }
 
 /**
+ * 8.3 纵深防御：renderer 即使被注入 window.open / 外链，也不得开新窗口或外跳。
+ * will-navigate 仅放行本应用表面（打包 file:// 资源、pet:// 协议、dev server）。
+ */
+export function hardenWindow(win: BrowserWindow): void {
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event, url) => {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'];
+    const allowed =
+      url.startsWith('file://') ||
+      url.startsWith('pet://') ||
+      (rendererUrl !== undefined && url.startsWith(rendererUrl));
+    if (!allowed) event.preventDefault();
+  });
+}
+
+/**
  * 创建桌宠窗：透明无边框、不可缩放（尺寸由持久化 scale 决定）、置顶、跳过任务栏。
  * moved → toAnchor 回调（8.5 位置持久化）；加载 surface=pet。
  */
@@ -199,6 +215,7 @@ export function createPetWindow(options: WindowOptions = {}): BrowserWindow {
   const extra = new URLSearchParams();
   if (options.urlSuffix) extra.set('poc', '1');
   if (options.character) extra.set('character', options.character);
+  hardenWindow(win);
   loadRendererSurface(win, 'pet', extra);
 
   return win;
@@ -239,6 +256,7 @@ export function createPanelWindow(options: PanelWindowOptions = {}): PanelWindow
     }
   });
 
+  hardenWindow(win);
   loadRendererSurface(win, 'panel');
 
   const showPanel = (anchorTo: { x: number; y: number; width: number; height: number }): void => {

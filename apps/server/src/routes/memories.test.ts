@@ -43,7 +43,11 @@ function scriptedClient(script: Array<{ rows: unknown[] }>) {
 }
 
 function makePool(client: ReturnType<typeof scriptedClient>) {
-  return { connect: vi.fn(async () => client) };
+  return {
+    connect: vi.fn(async () => client),
+    // 9.8 requireAuth 设备校验查询（pool 直查 profiles）：返回空 → 未激活放行
+    query: vi.fn(async () => ({ rows: [] })),
+  };
 }
 
 /** 仅取业务数据查询（剔除 begin/commit/rollback/set_config 控制语句） */

@@ -17,11 +17,33 @@ export const CSP =
   "script-src 'self'; " +
   "style-src 'self' 'unsafe-inline'; " +
   "img-src 'self' data: blob:; " +
-  // 自建后端（D-13）：本机回环 API + WS（生产指向 HTTPS 域名时收紧为具体源）
-  "connect-src 'self' https: wss: http://127.0.0.1:8787 ws://127.0.0.1:8787; " +
+  // 自建后端（D-13）：本机回环 API + WS（生产 HTTPS 域名由 buildCsp 的
+  // 网络层策略按 PET_API_BASE 动态收紧；此处 https: 为 meta 兜底通配）
+  "connect-src 'self' https: http://127.0.0.1:8787 ws://127.0.0.1:8787; " +
   "font-src 'self'; " +
   "object-src 'none'; " +
   "base-uri 'self';";
+
+/**
+ * 网络层 CSP（8.3 双保险：meta + 响应头策略取交集生效）。
+ * connect-src 按 PET_API_BASE 动态生成精确源（不再放开任意 https/wss 主机）：
+ *   本机 → 'self' http://127.0.0.1:8787 ws://127.0.0.1:8787
+ *   生产 → 'self' https://api.example.com wss://api.example.com
+ */
+export function buildCsp(apiBase: string): string {
+  const wsBase = apiBase.replace(/^http/, 'ws');
+  const connectSrc = `'self' ${apiBase} ${wsBase}`;
+  return (
+    "default-src 'self'; " +
+    "script-src 'self'; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data: blob:; " +
+    `connect-src ${connectSrc}; ` +
+    "font-src 'self'; " +
+    "object-src 'none'; " +
+    "base-uri 'self';"
+  );
+}
 
 /**
  * 8.3 IPC allowlist：preload 只暴露最小、版本化 API。

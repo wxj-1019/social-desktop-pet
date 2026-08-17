@@ -2,10 +2,11 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <!-- 8.3 严格 CSP（connect-src 允许本机自建后端，D-13） -->
+    <!-- 8.3 严格 CSP（connect-src 允许本机自建后端，D-13；生产 HTTPS 域名由
+         网络层 CSP 按 PET_API_BASE 动态收紧，meta 为兜底） -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https: wss: http://127.0.0.1:8787 ws://127.0.0.1:8787; font-src 'self'; object-src 'none'; base-uri 'self';"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https: http://127.0.0.1:8787 ws://127.0.0.1:8787; font-src 'self'; object-src 'none'; base-uri 'self';"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI 桌宠</title>

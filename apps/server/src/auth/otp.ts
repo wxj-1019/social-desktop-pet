@@ -71,16 +71,29 @@ export function generateOtpCode(): string {
 }
 
 export class OtpService {
+  /** 各邮箱成功发送次数（指数退避冷却基数；verify 成功清除） */
+  private readonly requestCounts = new Map<string, number>();
+
   constructor(
     private readonly store: OtpCodeStore,
     private readonly mail?: MailProvider,
     private readonly options: OtpServiceOptions = {},
   ) {}
 
+  /**
+   * 重发冷却（指数退避）：第 n 次发送后冷却 = base × 2^(n-1)，封顶 15 分钟。
+   * 防"60s 轮换新码无限重试"（每 60s 换码再试 5 次 ≈ 300 次/分/邮箱）。
+   */
+  private cooldownFor(email: string): number {
+    const base = this.options.resendCooldownMs ?? DEFAULT_COOLDOWN_MS;
+    const count = this.requestCounts.get(email) ?? 0;
+    return Math.min(base * 2 ** Math.min(count, 5), 15 * 60_000);
+  }
+
   async request(email: string): Promise<OtpRequestResult> {
     const now = Date.now();
     const ttl = this.options.ttlMs ?? DEFAULT_TTL_MS;
-    const cooldown = this.options.resendCooldownMs ?? DEFAULT_COOLDOWN_MS;
+    const cooldown = this.cooldownFor(email);
     const maxPending = this.options.maxPendingPerEmail ?? DEFAULT_MAX_PENDING;
 
     await this.store.cleanup(email);
@@ -101,6 +114,9 @@ export class OtpService {
 
     const code = generateOtpCode();
     await this.store.create(email, sha256(code), new Date(now + ttl));
+
+    // 发送成功：递增冷却基数（指数退避）
+    this.requestCounts.set(email, (this.requestCounts.get(email) ?? 0) + 1);
 
     // 邮件发送失败不阻塞发放（记录日志；dev 环境靠 devCode 自愈）
     if (this.mail) {
@@ -135,6 +151,8 @@ export class OtpService {
     // 乐观消费：并发下只有一个请求能抢到
     const consumed = await this.store.consumeIfUnused(latest.otpId);
     if (!consumed) return { ok: false, reason: 'no_code' };
+    // 登录成功：冷却基数归零（下次 request 回退 base 冷却）
+    this.requestCounts.delete(email);
     return { ok: true };
   }
 }

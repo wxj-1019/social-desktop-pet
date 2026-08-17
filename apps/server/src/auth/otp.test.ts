@@ -77,16 +77,28 @@ describe('OtpService.request', () => {
     if (result.status === 'sent') expect(result.devCode).toBeUndefined();
   });
 
-  it('60s 冷却：重复请求 → cooldown + retryAfterSec', async () => {
+  it('冷却指数退避：第 2 次发送后冷却 = base×2；verify 成功后归零', async () => {
     const { store } = makeStore();
-    const service = new OtpService(store);
-    await service.request('a@b.com');
+    const service = new OtpService(store, undefined, {
+      resendCooldownMs: 1000,
+      devCodeInResponse: true,
+    });
+    const first = await service.request('a@b.com');
+    expect(first.status).toBe('sent');
+    const code = first.status === 'sent' ? (first.devCode ?? '') : '';
+
+    // 第 2 次请求：冷却 = base×2^1 = 2000ms（防 60s 轮换刷码）
     const second = await service.request('a@b.com');
     expect(second.status).toBe('cooldown');
     if (second.status === 'cooldown') {
       expect(second.retryAfterSec).toBeGreaterThanOrEqual(1);
-      expect(second.retryAfterSec).toBeLessThanOrEqual(60);
+      expect(second.retryAfterSec).toBeLessThanOrEqual(3);
     }
+
+    // verify 成功 → 冷却计数归零（已消费行不再触发冷却，直接放行）
+    expect(await service.verify('a@b.com', code)).toEqual({ ok: true });
+    const afterVerify = await service.request('a@b.com');
+    expect(afterVerify.status).toBe('sent');
     // 冷却判定基于最新一条的 created_at（由 expiresAt - ttl 反推）
   });
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { JwtService } from '../auth/jwt.js';
 import { OtpService, type OtpCodeStore } from '../auth/otp.js';
@@ -10,7 +10,15 @@ import {
   type SessionStore,
 } from '../auth/session.js';
 
-import { createAuthRouter, type AuthDeps } from './auth.js';
+import { createAuthRouter, resetAuthRateLimiterForTest, type AuthDeps } from './auth.js';
+
+/** 与真实客户端一致：deviceId 必须是 uuid（IPC/服务端 Session*PayloadSchema 约束） */
+const DEVICE_ID = crypto.randomUUID();
+
+beforeEach(() => {
+  // 模块级限流单例跨测试共享：每个用例前重置，防顺序耦合
+  resetAuthRateLimiterForTest();
+});
 
 class MemoryStore implements SessionStore {
   async save(_session: RefreshSession): Promise<void> {}
@@ -122,7 +130,7 @@ describe('auth register/login（argon2 密码哈希）', () => {
       body: JSON.stringify({
         email: 'a@b.com',
         password: 'password123',
-        deviceId: 'dev-1',
+        deviceId: DEVICE_ID,
         platform: 'windows',
       }),
     });
@@ -144,7 +152,7 @@ describe('auth register/login（argon2 密码哈希）', () => {
     const ok = await app.request('/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'a@b.com', password: 'password123', deviceId: 'dev-1' }),
+      body: JSON.stringify({ email: 'a@b.com', password: 'password123', deviceId: DEVICE_ID }),
     });
     expect(ok.status).toBe(200);
     const body = (await ok.json()) as { accessToken: string; refreshToken: string };
@@ -154,7 +162,7 @@ describe('auth register/login（argon2 密码哈希）', () => {
     const bad = await app.request('/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'a@b.com', password: 'wrong-pass', deviceId: 'dev-1' }),
+      body: JSON.stringify({ email: 'a@b.com', password: 'wrong-pass', deviceId: DEVICE_ID }),
     });
     expect(bad.status).toBe(401);
   });
@@ -171,7 +179,7 @@ describe('auth register/login（argon2 密码哈希）', () => {
     const res = await app.request('/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'a@b.com', password: 'password123', deviceId: 'dev-1' }),
+      body: JSON.stringify({ email: 'a@b.com', password: 'password123', deviceId: DEVICE_ID }),
     });
     expect(res.status).toBe(200);
     const [userId, newHash] = vi.mocked(deps.users.updatePassword!).mock.calls[0] as [
@@ -243,7 +251,7 @@ describe('auth 邮箱 OTP（13.2）', () => {
     const login = await app.request('/otp/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'a@b.com', code: devCode, deviceId: 'dev-otp' }),
+      body: JSON.stringify({ email: 'a@b.com', code: devCode, deviceId: DEVICE_ID }),
     });
     expect(login.status).toBe(200);
     const body = (await login.json()) as {
@@ -265,7 +273,7 @@ describe('auth 邮箱 OTP（13.2）', () => {
     const bad = await app.request('/otp/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'a@b.com', code: '000000', deviceId: 'dev-1' }),
+      body: JSON.stringify({ email: 'a@b.com', code: '000000', deviceId: DEVICE_ID }),
     });
     expect(bad.status).toBe(401);
 
@@ -287,6 +295,116 @@ describe('auth 邮箱 OTP（13.2）', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ email: 'not-an-email' }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('auth 防爆破与输入校验（3.x 阶段）', () => {
+  it('login 连续失败达阈值 → 账号锁定 429；锁定期间正确密码也拒绝', async () => {
+    const deps = makeDeps();
+    deps.users.findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: 'x' }));
+    const app = createAuthRouter(deps);
+
+    // 5 次失败 → 触发锁定
+    for (let i = 0; i < 5; i++) {
+      const bad = await app.request('/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'a@b.com', password: 'wrong-pass', deviceId: DEVICE_ID }),
+      });
+      expect(bad.status).toBe(401);
+    }
+    // 锁定：即使密码正确（mock 恒返回 user + verify 通过）也 429
+    deps.users.findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: 'x' }));
+    const locked = await app.request('/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com', password: 'whatever', deviceId: DEVICE_ID }),
+    });
+    expect(locked.status).toBe(429);
+    const body = (await locked.json()) as { error: string; retryAfterSec: number };
+    expect(body.error).toBe('rate_limit');
+    expect(body.retryAfterSec).toBeGreaterThanOrEqual(1);
+  });
+
+  it('畸形 JSON body → 按语义返回且不 500（此前未捕获直接 500）', async () => {
+    const app = createAuthRouter(makeDeps());
+    const cases: Array<[string, number]> = [
+      ['/register', 400], // schema 校验失败
+      ['/login', 400], // schema 校验失败
+      ['/refresh', 401], // rotate('undefined') 失败 → refresh_invalid
+      ['/revoke', 200], // 幂等撤销
+    ];
+    for (const [path, expected] of cases) {
+      const res = await app.request(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{not-json',
+      });
+      expect(res.status, path).toBe(expected);
+    }
+  });
+
+  it('register：email/deviceId 非法（schema 校验）→ 400；大小写邮箱归一落库', async () => {
+    const deps = makeDeps();
+    const create = vi.mocked(deps.users.create);
+    const app = createAuthRouter(deps);
+
+    const badEmail = await app.request('/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'not-an-email', password: 'password123', deviceId: DEVICE_ID }),
+    });
+    expect(badEmail.status).toBe(400);
+
+    const badDevice = await app.request('/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com', password: 'password123', deviceId: 'dev-1' }),
+    });
+    expect(badDevice.status).toBe(400);
+
+    // 大小写邮箱 → 归一为小写落库（杜绝双账号）
+    const ok = await app.request('/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        email: 'User@Example.com',
+        password: 'password123',
+        deviceId: DEVICE_ID,
+      }),
+    });
+    expect(ok.status).toBe(201);
+    expect(create.mock.calls[0]?.[0]).toBe('user@example.com');
+  });
+
+  it('login：email 大小写不一致也能登录（归一查询）', async () => {
+    const deps = makeDeps();
+    const stored = await (await import('../auth/password.js')).hashPasswordArgon2('password123');
+    const findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: stored }));
+    deps.users.findByEmail = findByEmail;
+    const app = createAuthRouter(deps);
+
+    const res = await app.request('/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        email: 'A@B.COM',
+        password: 'password123',
+        deviceId: DEVICE_ID,
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(findByEmail).toHaveBeenCalledWith('a@b.com');
+  });
+
+  it('login：畸形 deviceId（非 uuid）→ 400（schema 校验，不再 500）', async () => {
+    const app = createAuthRouter(makeDeps());
+    const res = await app.request('/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com', password: 'password123', deviceId: 'dev-1' }),
     });
     expect(res.status).toBe(400);
   });

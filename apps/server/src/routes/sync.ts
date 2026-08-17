@@ -23,7 +23,7 @@ export function registerSyncRoutes(
   app: Hono<{ Variables: BusinessVariables }>,
   deps: SyncDeps,
 ): void {
-  const auth = requireAuth(deps.jwt);
+  const auth = requireAuth(deps.jwt, deps.pool);
 
   app.get('/sync', auth, async (c) => {
     const userId = c.get('userId');
