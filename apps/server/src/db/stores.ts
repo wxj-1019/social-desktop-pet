@@ -121,14 +121,22 @@ export class PgSessionStore implements SessionStore {
 export class PgUsersStore {
   constructor(private readonly pool: pg.Pool) {}
 
-  async findByEmail(email: string): Promise<{ id: string; passwordHash: string } | null> {
+  async findByEmail(email: string): Promise<{
+    id: string;
+    passwordHash: string;
+    accountStatus: 'active' | 'suspended';
+  } | null> {
     const { rows } = await this.pool.query(
-      'select id, password_hash from auth.users where email = $1',
+      'select id, password_hash, account_status from auth.users where email = $1',
       [email],
     );
     const row = rows[0];
     if (!row) return null;
-    return { id: String(row.id), passwordHash: String(row.password_hash) };
+    return {
+      id: String(row.id),
+      passwordHash: String(row.password_hash),
+      accountStatus: row.account_status === 'suspended' ? 'suspended' : 'active',
+    };
   }
 
   async create(email: string, passwordHash: string): Promise<string> {

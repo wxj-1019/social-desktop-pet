@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "pnpm --filter @pet/desktop dev",
     "dev:server": "pnpm --filter @pet/server dev",
+    "dev:admin": "pnpm --filter @pet/admin dev",
     "migrate": "pnpm --filter @pet/server migrate",
     "build": "pnpm -r --filter=./packages/* build && pnpm --filter @pet/server build && pnpm --filter @pet/desktop build && pnpm --filter @pet/landing build",
     "typecheck": "tsc -b",

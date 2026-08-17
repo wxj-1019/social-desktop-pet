@@ -45,3 +45,23 @@ describe('JwtService（自建 Auth，9.8 短 TTL access token）', () => {
     await expect(jwt.verify(token)).rejects.toThrow('deviceId');
   });
 });
+
+describe('admin token', () => {
+  const jwt = new JwtService({ secret: 'admin-test-secret-admin-test-secret' });
+
+  it('signAdmin/verifyAdmin round-trips admin id', async () => {
+    const token = await jwt.signAdmin('admin-1');
+    const payload = await jwt.verifyAdmin(token);
+    expect(payload).toEqual({ sub: 'admin-1', role: 'admin' });
+  });
+
+  it('verifyAdmin rejects a regular user token (no admin role)', async () => {
+    const userToken = await jwt.sign({ sub: 'u1', deviceId: 'dev-1' });
+    await expect(jwt.verifyAdmin(userToken)).rejects.toThrow();
+  });
+
+  it('verifyAdmin rejects expired admin token', async () => {
+    const token = await jwt.signAdmin('admin-1', Date.now() - 16 * 60_000);
+    await expect(jwt.verifyAdmin(token)).rejects.toThrow();
+  });
+});

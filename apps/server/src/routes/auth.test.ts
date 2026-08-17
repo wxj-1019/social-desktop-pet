@@ -146,7 +146,11 @@ describe('auth register/login（argon2 密码哈希）', () => {
     const deps = makeDeps();
     const { hashPasswordArgon2 } = await import('../auth/password.js');
     const stored = await hashPasswordArgon2('password123');
-    deps.users.findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: stored }));
+    deps.users.findByEmail = vi.fn(async () => ({
+      id: 'u1',
+      passwordHash: stored,
+      accountStatus: 'active' as const,
+    }));
     const app = createAuthRouter(deps);
 
     const ok = await app.request('/login', {
@@ -172,7 +176,11 @@ describe('auth register/login（argon2 密码哈希）', () => {
     const { randomBytes, scryptSync } = await import('node:crypto');
     const salt = randomBytes(16).toString('hex');
     const legacy = salt + scryptSync('password123', salt, 64).toString('hex');
-    deps.users.findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: legacy }));
+    deps.users.findByEmail = vi.fn(async () => ({
+      id: 'u1',
+      passwordHash: legacy,
+      accountStatus: 'active' as const,
+    }));
     deps.users.updatePassword = vi.fn(async () => undefined);
     const app = createAuthRouter(deps);
 
@@ -188,6 +196,26 @@ describe('auth register/login（argon2 密码哈希）', () => {
     ];
     expect(userId).toBe('u1');
     expect(isArgon2Hash(newHash)).toBe(true);
+  });
+
+  it('login rejects suspended accounts', async () => {
+    const deps = makeDeps();
+    const { hashPasswordArgon2 } = await import('../auth/password.js');
+    const stored = await hashPasswordArgon2('password123');
+    deps.users.findByEmail = vi.fn(async () => ({
+      id: 'u1',
+      passwordHash: stored,
+      accountStatus: 'suspended' as const,
+    }));
+    const app = createAuthRouter(deps);
+
+    const res = await app.request('/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com', password: 'password123', deviceId: DEVICE_ID }),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'account_suspended' });
   });
 });
 
@@ -223,7 +251,11 @@ describe('auth 邮箱 OTP（13.2）', () => {
 
   it('request（未注册邮箱 → 404）；已注册 → 带 devCode；login 全链路出 token', async () => {
     const deps = makeDeps();
-    deps.users.findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: 'x' }));
+    deps.users.findByEmail = vi.fn(async () => ({
+      id: 'u1',
+      passwordHash: 'x',
+      accountStatus: 'active' as const,
+    }));
     deps.otp = makeOtpService();
     const app = createAuthRouter(deps);
 
@@ -237,7 +269,11 @@ describe('auth 邮箱 OTP（13.2）', () => {
     expect(missing.status).toBe(404);
 
     // 已注册 → 200 + devCode
-    deps.users.findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: 'x' }));
+    deps.users.findByEmail = vi.fn(async () => ({
+      id: 'u1',
+      passwordHash: 'x',
+      accountStatus: 'active' as const,
+    }));
     const request = await app.request('/otp/request', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -266,7 +302,11 @@ describe('auth 邮箱 OTP（13.2）', () => {
 
   it('错误验证码 → 401；未注入 OtpService → 501', async () => {
     const deps = makeDeps();
-    deps.users.findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: 'x' }));
+    deps.users.findByEmail = vi.fn(async () => ({
+      id: 'u1',
+      passwordHash: 'x',
+      accountStatus: 'active' as const,
+    }));
     deps.otp = makeOtpService();
     const app = createAuthRouter(deps);
 
@@ -287,6 +327,33 @@ describe('auth 邮箱 OTP（13.2）', () => {
     expect(disabled.status).toBe(501);
   });
 
+  it('otp login rejects suspended accounts', async () => {
+    const deps = makeDeps();
+    deps.users.findByEmail = vi.fn(async () => ({
+      id: 'u1',
+      passwordHash: 'x',
+      accountStatus: 'suspended' as const,
+    }));
+    deps.otp = makeOtpService();
+    const app = createAuthRouter(deps);
+
+    const request = await app.request('/otp/request', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com' }),
+    });
+    expect(request.status).toBe(200);
+    const { devCode } = (await request.json()) as { devCode: string };
+
+    const login = await app.request('/otp/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com', code: devCode, deviceId: DEVICE_ID }),
+    });
+    expect(login.status).toBe(403);
+    expect(await login.json()).toEqual({ error: 'account_suspended' });
+  });
+
   it('邮箱格式非法 → 400', async () => {
     const deps = makeDeps();
     deps.otp = makeOtpService();
@@ -303,7 +370,11 @@ describe('auth 邮箱 OTP（13.2）', () => {
 describe('auth 防爆破与输入校验（3.x 阶段）', () => {
   it('login 连续失败达阈值 → 账号锁定 429；锁定期间正确密码也拒绝', async () => {
     const deps = makeDeps();
-    deps.users.findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: 'x' }));
+    deps.users.findByEmail = vi.fn(async () => ({
+      id: 'u1',
+      passwordHash: 'x',
+      accountStatus: 'active' as const,
+    }));
     const app = createAuthRouter(deps);
 
     // 5 次失败 → 触发锁定
@@ -316,7 +387,11 @@ describe('auth 防爆破与输入校验（3.x 阶段）', () => {
       expect(bad.status).toBe(401);
     }
     // 锁定：即使密码正确（mock 恒返回 user + verify 通过）也 429
-    deps.users.findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: 'x' }));
+    deps.users.findByEmail = vi.fn(async () => ({
+      id: 'u1',
+      passwordHash: 'x',
+      accountStatus: 'active' as const,
+    }));
     const locked = await app.request('/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -382,7 +457,11 @@ describe('auth 防爆破与输入校验（3.x 阶段）', () => {
   it('login：email 大小写不一致也能登录（归一查询）', async () => {
     const deps = makeDeps();
     const stored = await (await import('../auth/password.js')).hashPasswordArgon2('password123');
-    const findByEmail = vi.fn(async () => ({ id: 'u1', passwordHash: stored }));
+    const findByEmail = vi.fn(async () => ({
+      id: 'u1',
+      passwordHash: stored,
+      accountStatus: 'active' as const,
+    }));
     deps.users.findByEmail = findByEmail;
     const app = createAuthRouter(deps);
 

@@ -29,7 +29,12 @@ export interface AuthDeps {
   store: SessionStore;
   /** 用户存储（auth.users 表操作；骨架注入，路由层不直接碰 pg） */
   users: {
-    findByEmail(email: string): Promise<{ id: string; passwordHash: string } | null>;
+    findByEmail(email: string): Promise<{
+      id: string;
+      passwordHash: string;
+      /** 0015 账号状态：suspended 账号拒绝登录（403 account_suspended） */
+      accountStatus: 'active' | 'suspended';
+    } | null>;
     create(email: string, passwordHash: string): Promise<string>;
     /** 登录时旧哈希升级写回（argon2 迁移；可选注入） */
     updatePassword?(userId: string, passwordHash: string): Promise<void>;
@@ -128,6 +133,10 @@ export function createAuthRouter(deps: AuthDeps): Hono {
       authLimiter.recordFailure(lockKey);
       return c.json({ error: 'invalid credentials' }, 401);
     }
+    // 0015 暂停账号：密码校验通过也拒绝发 token（管理后台封禁即时生效）
+    if (user.accountStatus === 'suspended') {
+      return c.json({ error: 'account_suspended' }, 403);
+    }
     // 登录成功：清除失败计数
     authLimiter.clear(lockKey);
     // 旧 scrypt 哈希校验通过 → 自动升级为 argon2id（平滑迁移）
@@ -220,6 +229,10 @@ export function createAuthRouter(deps: AuthDeps): Hono {
     if (!verify.ok) return c.json({ error: 'invalid_otp' }, 401);
     const user = await deps.users.findByEmail(normalized);
     if (!user) return c.json({ error: 'email_not_registered' }, 404);
+    // 0015 暂停账号：验证码正确也拒绝发 token（与密码登录同策略）
+    if (user.accountStatus === 'suspended') {
+      return c.json({ error: 'account_suspended' }, 403);
+    }
 
     const devId = String(deviceId);
     await deps.devices.register(user.id, devId, String(platform ?? 'windows'), '');

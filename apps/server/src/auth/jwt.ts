@@ -20,6 +20,12 @@ export interface JwtOptions {
   accessTtlMin?: number;
 }
 
+export interface AdminJwtPayload {
+  /** 管理员 id（对应 admin_users.id） */
+  sub: string;
+  role: 'admin';
+}
+
 export class JwtService {
   private readonly key: Uint8Array;
 
@@ -49,5 +55,23 @@ export class JwtService {
     const deviceId = payload.deviceId;
     if (typeof deviceId !== 'string') throw new Error('token 缺少 deviceId');
     return { sub, deviceId };
+  }
+
+  /** 签发管理员 access token（携带 role=admin；与用户 token 同密钥不同载荷） */
+  async signAdmin(adminId: string, now = Date.now()): Promise<string> {
+    const ttl = this.options.accessTtlMin ?? 15;
+    return new SignJWT({ role: 'admin' })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setSubject(adminId)
+      .setIssuedAt(Math.floor(now / 1000))
+      .setExpirationTime(Math.floor(now / 1000) + ttl * 60)
+      .sign(this.key);
+  }
+
+  /** 校验管理员 access token；普通用户 token（无 role=admin）抛错 */
+  async verifyAdmin(token: string): Promise<AdminJwtPayload> {
+    const { payload } = await jwtVerify(token, this.key);
+    if (payload.role !== 'admin' || !payload.sub) throw new Error('not an admin token');
+    return { sub: payload.sub, role: 'admin' };
   }
 }
