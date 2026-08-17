@@ -111,6 +111,7 @@ export class PetRuntimeController {
   private online = true;
   private dnd = false;
   private hidden = false;
+  private passThrough = false;
   private started = false;
   private stopped = false;
   /** 最近一次用户/系统活动时刻（活动窗口起点；溜达仅在窗口内挂起） */
@@ -149,7 +150,16 @@ export class PetRuntimeController {
       online: this.online,
       dnd: this.dnd,
       hidden: this.hidden,
+      passThrough: this.passThrough,
     };
+  }
+
+  /** 穿透状态同步（窗口/托盘操作在 Main 端收敛后调用；仅记状态+广播，不动模式机） */
+  syncPassThrough(enabled: boolean): void {
+    if (this.passThrough === enabled) return;
+    this.passThrough = enabled;
+    if (this.stopped) return;
+    this.emitSnapshot();
   }
 
   setOnline(online: boolean): void {

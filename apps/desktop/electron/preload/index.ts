@@ -5,6 +5,9 @@
  * 所有 subscribe 返回 void cleanup；session / deepLink 等既有 API 保持不变。
  */
 import type {
+  LocalLlmChatRequest,
+  LocalLlmConfig,
+  LocalLlmConfigView,
   PanelOpen,
   PetActionDecision,
   PetActionRequest,
@@ -87,6 +90,8 @@ const api = {
     dragEnd: () => ipcRenderer.send('pet:drag-end'),
     setDnd: (enabled: boolean) => ipcRenderer.send('pet:set-dnd', { enabled }),
     setPassThrough: (enabled: boolean) => ipcRenderer.send('pet:set-pass-through', { enabled }),
+    /** 隐藏/显示桌宠（与托盘同源入口；隐藏后经托盘"显示"或 SAO 恢复） */
+    setHidden: (hidden: boolean) => ipcRenderer.send('pet:set-hidden', { enabled: hidden }),
     showContextMenu: () => ipcRenderer.send('pet:show-context-menu'),
     /** 面板 → 桌宠一次性气泡（记忆"已记住"等提示；走 main 侧 showBubble） */
     showBubble: (text: string) =>
@@ -110,9 +115,27 @@ const api = {
     get: () => ipcRenderer.invoke('pet-profile:get') as Promise<PetProfile>,
     set: (profile: PetProfile) =>
       ipcRenderer.invoke('pet-profile:set', profile) as Promise<PetProfile>,
+    /** 档案变更推送（main→pet：设置页写入后气泡/减弱动态即时生效） */
+    onChanged: (cb: (profile: PetProfile) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, profile: PetProfile) => cb(profile);
+      ipcRenderer.on('pet:profile-changed', listener);
+      return () => {
+        ipcRenderer.removeListener('pet:profile-changed', listener);
+      };
+    },
     /** 切换角色皮肤（保存 petId + 重载桌宠窗；返回切换后的 petId） */
     setCharacter: (petId: 'star-isle' | 'codenono') =>
       ipcRenderer.invoke('pet:set-character', petId) as Promise<'star-isle' | 'codenono'>,
+  },
+  /** 本地 BYOK 模型（OpenAI 兼容）：密钥只存 Main，视图不含密钥 */
+  localLlm: {
+    getView: () => ipcRenderer.invoke('local-llm:get') as Promise<LocalLlmConfigView>,
+    save: (config: LocalLlmConfig) =>
+      ipcRenderer.invoke('local-llm:set', config) as Promise<LocalLlmConfigView>,
+    chat: (request: LocalLlmChatRequest) =>
+      ipcRenderer.invoke('local-llm:chat', request) as Promise<
+        { reply: string } | { error: string }
+      >,
   },
 } as const;
 

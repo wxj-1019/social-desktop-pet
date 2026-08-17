@@ -860,3 +860,817 @@ body,
   border-right: 1px solid #f0cfdd;
   border-bottom: 1px solid #f0cfdd;
 }
+
+/* ============================================================
+   刀剑神域 (Sword Art Online) 经典纯正【左侧全息系统菜单】
+   ============================================================ */
+
+.sao-radial-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  pointer-events: auto;
+  background: transparent;
+  user-select: none;
+  overflow: visible;
+}
+
+.sao-left-menu {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+/* 全息能量动线轨道：固定 240×260 设计坐标（与节点像素定位 1:1）。
+   不能用 inset:0/100% —— 那会随宠物窗口用户缩放而缩放，
+   缩放≠1 时弧线整体飘离图标、终点戳向宠物（"线跟着宠物动"的根因）。 */
+.sao-left-track-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 240px;
+  height: 260px;
+  pointer-events: none;
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.5));
+}
+
+/* 珠链式能量弧段：底座静止发光 */
+.sao-seg-base {
+  fill: none;
+  stroke: rgba(186, 230, 253, 0.75);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* 每段一颗高亮能量珠巡游（流动感）：
+   dash 周期 = 珠长(--comet-len) + 段长(--seg-len)，起点 offset=珠长时整段藏于 gap；
+   结束 offset=-段长 与起点同相位（mod 周期）→ 无缝循环；
+   逐段 animation-delay 形成自上而下的级联流。
+   reduced-motion 下动画被全局禁用，静态 offset=珠长使能量珠不可见。 */
+.sao-seg-run {
+  fill: none;
+  stroke: #e0f2fe;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: var(--comet-len) var(--seg-len);
+  stroke-dashoffset: var(--comet-len);
+  animation: sao-seg-run 1.2s linear infinite;
+  filter: drop-shadow(0 0 4px rgba(224, 242, 254, 0.9));
+}
+
+@keyframes sao-seg-run {
+  from {
+    stroke-dashoffset: var(--comet-len);
+  }
+  to {
+    stroke-dashoffset: calc(-1 * var(--seg-len));
+  }
+}
+
+/* 顶部全息关闭按钮 */
+.sao-left-close {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  color: #94a3b8;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: all 0.15s ease;
+  z-index: 10;
+  -webkit-app-region: no-drag;
+}
+
+.sao-left-close:hover {
+  color: #ffffff;
+  border-color: rgba(239, 68, 68, 0.6);
+  background: rgba(239, 68, 68, 0.3);
+  transform: scale(1.1);
+}
+
+/* 左侧插槽与晶体节点 */
+.sao-left-slot {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  animation: sao-left-node-pop 0.25s cubic-bezier(0.16, 1.4, 0.3, 1) both;
+  -webkit-app-region: no-drag;
+}
+
+@keyframes sao-left-node-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-16px) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.sao-ring-node {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  color: #f8fafc;
+  cursor: pointer;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.35),
+    0 0 10px rgba(56, 189, 248, 0.2);
+  transition: all 0.18s cubic-bezier(0.16, 1.3, 0.3, 1);
+  -webkit-app-region: no-drag;
+}
+
+.sao-ring-node:hover,
+.sao-ring-node--active {
+  transform: scale(1.22);
+  z-index: 20;
+}
+
+/* 按压反馈：按下收缩，与悬停放大形成"按进去"的手感 */
+.sao-ring-node:active {
+  transform: scale(0.92);
+}
+
+/* 不同节点的 SAO 水晶主题色 */
+.sao-ring-node--cyan {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.8);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.45);
+}
+
+.sao-ring-node--cyan:hover {
+  background: rgba(56, 189, 248, 0.25);
+}
+
+.sao-ring-node--indigo {
+  color: #818cf8;
+  border-color: rgba(129, 140, 248, 0.8);
+  box-shadow: 0 0 14px rgba(129, 140, 248, 0.45);
+}
+
+.sao-ring-node--indigo:hover {
+  background: rgba(129, 140, 248, 0.25);
+}
+
+.sao-ring-node--purple {
+  color: #c084fc;
+  border-color: rgba(192, 132, 252, 0.8);
+  box-shadow: 0 0 14px rgba(192, 132, 252, 0.45);
+}
+
+.sao-ring-node--purple:hover {
+  background: rgba(192, 132, 252, 0.25);
+}
+
+.sao-ring-node--amber {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.8);
+  box-shadow: 0 0 14px rgba(251, 191, 36, 0.45);
+}
+
+.sao-ring-node--amber:hover {
+  background: rgba(251, 191, 36, 0.25);
+}
+
+.sao-ring-node--teal {
+  color: #2dd4bf;
+  border-color: rgba(45, 212, 191, 0.8);
+  box-shadow: 0 0 14px rgba(45, 212, 191, 0.45);
+}
+
+.sao-ring-node--teal:hover,
+.sao-ring-node--teal.sao-ring-node--active {
+  background: rgba(45, 212, 191, 0.25);
+}
+
+/* 悬停时向右侧内侧浮现的 SAO 全息发光胶囊标签（宽阔安全区，永不被裁切） */
+.sao-ring-pill--right {
+  position: absolute;
+  left: 38px;
+  top: 50%;
+  transform: translateY(-50%) translateX(-6px);
+  opacity: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.45),
+    0 0 8px rgba(56, 189, 248, 0.3);
+  white-space: nowrap;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 30;
+}
+
+.sao-ring-node:hover .sao-ring-pill--right {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.sao-ring-pill--right strong {
+  font-size: 11px;
+  font-weight: 600;
+  color: #f8fafc;
+  line-height: 1.2;
+}
+
+.sao-ring-pill--right small {
+  font-size: 8.5px;
+  color: #38bdf8;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  letter-spacing: 0.05em;
+}
+
+/* SAO 环形二级全息快捷面板（展开时位于右侧安全区） */
+.sao-radial-sub--right {
+  position: absolute;
+  width: 160px;
+  padding: 6px 8px;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(45, 212, 191, 0.45);
+  border-radius: 10px;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.5),
+    0 0 12px rgba(45, 212, 191, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: sao-sub-pop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 40;
+  -webkit-app-region: no-drag;
+}
+
+@keyframes sao-sub-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.sao-radial-sub__title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #5eead4;
+  padding-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sao-gem-mini {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  transform: rotate(45deg);
+  background: #2dd4bf;
+  box-shadow: 0 0 6px #2dd4bf;
+}
+
+.sao-radial-sub__items {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+}
+
+.sao-sub-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  -webkit-app-region: no-drag;
+}
+
+.sao-sub-chip:hover {
+  background: rgba(45, 212, 191, 0.22);
+  border-color: rgba(45, 212, 191, 0.5);
+  color: #5eead4;
+}
+
+.sao-sub-chip:active {
+  transform: scale(0.95);
+}
+
+.sao-sub-chip--active {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+}
+
+.sao-sub-chip--native {
+  color: #94a3b8;
+}
+
+/* ============================================================
+   SAO 菜单 · 统一靛青色板（去掉彩虹配色，层级靠亮度而非色相）
+   ============================================================ */
+
+.sao-ring-node--cyan,
+.sao-ring-node--indigo,
+.sao-ring-node--purple,
+.sao-ring-node--amber,
+.sao-ring-node--teal {
+  color: #c7d2fe;
+  border-color: rgba(129, 140, 248, 0.55);
+  background: rgba(49, 46, 129, 0.6);
+  box-shadow: 0 0 14px rgba(99, 102, 241, 0.35);
+}
+
+.sao-ring-node--cyan:hover,
+.sao-ring-node--indigo:hover,
+.sao-ring-node--purple:hover,
+.sao-ring-node--amber:hover,
+.sao-ring-node--teal:hover,
+.sao-ring-node--teal.sao-ring-node--active {
+  color: #e0e7ff;
+  border-color: rgba(165, 180, 252, 0.9);
+  background: rgba(99, 102, 241, 0.45);
+  box-shadow:
+    0 0 18px rgba(99, 102, 241, 0.55),
+    inset 0 0 8px rgba(165, 180, 252, 0.2);
+}
+
+/* 轨道颜色统一为靛青（替换旧的 cyan 拖影） */
+.sao-left-track-svg {
+  filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.45));
+}
+
+/* ============================================================
+   SAO 菜单 · 链节式全息轨道（SAO "高级托盘"感：节点间由
+   旋转的能量链节连接，而非普通实线）
+   ============================================================ */
+
+/* 弧段底座：低亮度靛青细链 */
+.sao-seg-base {
+  fill: none;
+  stroke: rgba(129, 140, 248, 0.5);
+  stroke-width: 1.5;
+  stroke-dasharray: 1.5 3;
+  stroke-linecap: round;
+}
+
+/* 能量珠：更亮的链节巡游（颜色随主题统一） */
+.sao-seg-run {
+  fill: none;
+  stroke: #a5b4fc;
+  stroke-width: 3;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 5px rgba(165, 180, 252, 0.9));
+}
+
+/* 链节端点小节点：在每个弧段两端画光点（由 SVG 层感知的圆珠感） */
+.sao-left-slot::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid rgba(165, 180, 252, 0.35);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  pointer-events: none;
+}
+
+.sao-left-slot:hover::before {
+  opacity: 1;
+}
+
+/* ============================================================
+   SAO 二级面板 · 毛玻璃升级（blur + 渐变底 + 内高光）
+   ============================================================ */
+
+.sao-radial-sub--right {
+  background: linear-gradient(150deg, rgba(30, 27, 75, 0.82), rgba(15, 23, 42, 0.9));
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid rgba(129, 140, 248, 0.5);
+  border-radius: 12px;
+  box-shadow:
+    0 10px 30px rgba(2, 6, 23, 0.6),
+    0 0 16px rgba(99, 102, 241, 0.35),
+    inset 0 1px 0 rgba(199, 210, 254, 0.18);
+}
+
+.sao-radial-sub__title {
+  color: #a5b4fc;
+  border-bottom-color: rgba(129, 140, 248, 0.25);
+}
+
+.sao-gem-mini {
+  background: #818cf8;
+  box-shadow: 0 0 6px #818cf8;
+}
+
+.sao-sub-chip {
+  background: rgba(129, 140, 248, 0.08);
+  border-color: rgba(129, 140, 248, 0.18);
+  color: #c7d2fe;
+}
+
+.sao-sub-chip:hover {
+  background: rgba(99, 102, 241, 0.28);
+  border-color: rgba(165, 180, 252, 0.6);
+  color: #e0e7ff;
+}
+
+.sao-sub-chip--active {
+  background: rgba(99, 102, 241, 0.4);
+  border-color: rgba(165, 180, 252, 0.7);
+  color: #e0e7ff;
+}
+
+.sao-sub-chip--native {
+  color: #818cf8;
+}
+
+/* ============================================================
+   ClassicMenu · 经典环状菜单（第二套 UI：毛玻璃深色 + 环绕布局）
+   ============================================================ */
+
+.classic-radial-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  pointer-events: auto;
+  background: transparent;
+  user-select: none;
+}
+
+.classic-track-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 240px;
+  height: 260px;
+  pointer-events: none;
+}
+
+.classic-close {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(10px);
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  z-index: 10;
+  -webkit-app-region: no-drag;
+}
+
+.classic-close:hover {
+  color: #ffffff;
+  border-color: rgba(239, 68, 68, 0.6);
+  background: rgba(239, 68, 68, 0.3);
+  transform: scale(1.1);
+}
+
+.classic-slot {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  animation: classic-node-pop 0.22s cubic-bezier(0.16, 1.4, 0.3, 1) both;
+  -webkit-app-region: no-drag;
+}
+
+@keyframes classic-node-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.classic-node {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1.5px solid rgba(165, 180, 252, 0.4);
+  background: linear-gradient(160deg, rgba(30, 27, 75, 0.75), rgba(15, 23, 42, 0.85));
+  backdrop-filter: blur(10px);
+  color: #c7d2fe;
+  cursor: pointer;
+  box-shadow:
+    0 4px 12px rgba(2, 6, 23, 0.4),
+    0 0 10px rgba(99, 102, 241, 0.25);
+  transition: all 0.16s cubic-bezier(0.16, 1.3, 0.3, 1);
+  -webkit-app-region: no-drag;
+}
+
+.classic-node:hover,
+.classic-node--active {
+  transform: scale(1.2);
+  border-color: rgba(165, 180, 252, 0.85);
+  background: rgba(99, 102, 241, 0.5);
+  box-shadow:
+    0 4px 16px rgba(2, 6, 23, 0.5),
+    0 0 16px rgba(99, 102, 241, 0.5);
+  z-index: 20;
+}
+
+.classic-node:active {
+  transform: scale(0.94);
+}
+
+.classic-pill {
+  position: absolute;
+  left: 40px;
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  opacity: 0;
+  pointer-events: none;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: linear-gradient(150deg, rgba(30, 27, 75, 0.9), rgba(15, 23, 42, 0.94));
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(129, 140, 248, 0.45);
+  font-size: 11px;
+  font-weight: 600;
+  color: #e0e7ff;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  z-index: 30;
+}
+
+.classic-node:hover .classic-pill {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.classic-sub {
+  position: absolute;
+  width: 148px;
+  padding: 6px;
+  background: linear-gradient(150deg, rgba(30, 27, 75, 0.85), rgba(15, 23, 42, 0.92));
+  backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid rgba(129, 140, 248, 0.5);
+  border-radius: 12px;
+  box-shadow:
+    0 10px 28px rgba(2, 6, 23, 0.6),
+    0 0 16px rgba(99, 102, 241, 0.3),
+    inset 0 1px 0 rgba(199, 210, 254, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: sao-sub-pop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 40;
+  -webkit-app-region: no-drag;
+}
+
+.classic-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid rgba(129, 140, 248, 0.18);
+  border-radius: 6px;
+  background: rgba(129, 140, 248, 0.08);
+  color: #c7d2fe;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  -webkit-app-region: no-drag;
+}
+
+.classic-chip:hover {
+  background: rgba(99, 102, 241, 0.3);
+  border-color: rgba(165, 180, 252, 0.6);
+  color: #e0e7ff;
+}
+
+.classic-chip:active {
+  transform: scale(0.96);
+}
+
+.classic-chip--on {
+  background: rgba(99, 102, 241, 0.42);
+  border-color: rgba(165, 180, 252, 0.7);
+  color: #e0e7ff;
+}
+
+.classic-chip--muted {
+  color: #818cf8;
+}
+
+/* ============================================================
+   SAO 二级菜单 · 动态锚定毛玻璃卡片（聊天/模型/引导卡）
+   ============================================================ */
+
+.sao-radial-sub--right {
+  width: auto; /* 由 subPanelPos 显式指定，不再固定 160px */
+}
+
+/* 提示卡 */
+.sao-sub-note {
+  margin: 2px 0 6px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: #94a3b8;
+}
+
+/* 迷你聊天 */
+.sao-sub--chat {
+  width: 168px;
+}
+
+.sao-chat-log {
+  max-height: 118px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 2px;
+  margin-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.sao-chat-empty {
+  margin: 8px 0;
+  text-align: center;
+  font-size: 10.5px;
+  color: #64748b;
+}
+
+.sao-chat-row {
+  max-width: 88%;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.sao-chat-row--user {
+  align-self: flex-end;
+  background: rgba(99, 102, 241, 0.5);
+  color: #eef2ff;
+  border-bottom-right-radius: 2px;
+}
+
+.sao-chat-row--pet {
+  align-self: flex-start;
+  background: rgba(129, 140, 248, 0.18);
+  border: 1px solid rgba(129, 140, 248, 0.28);
+  color: #c7d2fe;
+  border-bottom-left-radius: 2px;
+}
+
+.sao-chat-form {
+  display: flex;
+  gap: 4px;
+}
+
+.sao-chat-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #e0e7ff;
+  font-size: 10.5px;
+  outline: none;
+}
+
+.sao-chat-form input:focus {
+  border-color: rgba(165, 180, 252, 0.7);
+}
+
+.sao-chat-form button {
+  flex: none;
+  width: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(129, 140, 248, 0.4);
+  border-radius: 7px;
+  background: rgba(99, 102, 241, 0.4);
+  color: #e0e7ff;
+  cursor: pointer;
+}
+
+.sao-chat-form button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 模型二级菜单 */
+.sao-sub--model {
+  width: 168px;
+}
+
+.sao-model-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px;
+  font-size: 10.5px;
+  color: #c7d2fe;
+}
+
+.sao-model-field {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+
+.sao-model-field span {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.sao-model-field input {
+  padding: 5px 7px;
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #e0e7ff;
+  font-size: 10px;
+  outline: none;
+}
+
+.sao-model-field input:focus {
+  border-color: rgba(165, 180, 252, 0.7);
+}
+
+.sao-model-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.sao-model-actions button {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid rgba(129, 140, 248, 0.4);
+  border-radius: 7px;
+  background: rgba(99, 102, 241, 0.35);
+  color: #e0e7ff;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sao-model-actions button:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.55);
+}
+
+.sao-model-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sao-model-actions small {
+  font-size: 9.5px;
+  flex: none;
+}
+
+.sao-model-actions small.ok {
+  color: #6ee7b7;
+}
+
+.sao-model-actions small.err {
+  color: #fca5a5;
+}

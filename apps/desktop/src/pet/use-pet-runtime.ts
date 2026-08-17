@@ -134,6 +134,7 @@ export function usePetRuntime(options: UsePetRuntimeOptions = {}): PetRuntimeCon
       }
     });
 
+    let offProfileChanged: (() => void) | undefined;
     if (profileApi) {
       void profileApi.get().then((next) => {
         if (disposed) return;
@@ -157,12 +158,21 @@ export function usePetRuntime(options: UsePetRuntimeOptions = {}): PetRuntimeCon
           localStorage.setItem('pet:onboarded', '1');
         }
       });
+      // 设置页写入档案 → main 推送变更：气泡开关/减弱动态对运行中桌宠即时生效
+      if (typeof profileApi.onChanged === 'function') {
+        offProfileChanged = profileApi.onChanged((next) => {
+          if (disposed) return;
+          setProfile(next);
+          rendererRef.current?.setReducedMotion(next.reducedMotion);
+        });
+      }
     }
 
     return () => {
       disposed = true;
       offSnapshot();
       offVisual();
+      offProfileChanged?.();
       rendererRef.current?.dispose();
       rendererRef.current = null;
     };

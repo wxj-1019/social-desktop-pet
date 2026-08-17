@@ -35,6 +35,7 @@ function makeHarness(iconAvailable = true): TrayHarness {
     onSetScale: vi.fn(),
     onHide: vi.fn(),
     onShow: vi.fn(),
+    onSetMenuStyle: vi.fn(),
     onQuit: vi.fn(),
   };
   const menus: TrayMenuItem[][] = [];
@@ -250,11 +251,20 @@ describe('TrayController.dispatch', () => {
     item(harness, '好友面板').click?.();
     expect(harness.handlers.onOpenPanel).toHaveBeenCalledWith('friends');
 
+    item(harness, '设置').click?.();
+    expect(harness.handlers.onOpenPanel).toHaveBeenCalledWith('settings');
+
     item(harness, '鼠标穿透').click?.();
     expect(controller.snapshot.passThrough).toBe(true);
 
     item(harness, '勿扰').click?.();
     expect(controller.snapshot.dnd).toBe(true);
+
+    // 菜单皮肤切换：默认 sao → classic → sao 往返
+    item(harness, '菜单皮肤').click?.();
+    expect(harness.handlers.onSetMenuStyle).toHaveBeenCalledWith('classic');
+    item(harness, '菜单皮肤').click?.();
+    expect(harness.handlers.onSetMenuStyle).toHaveBeenCalledWith('sao');
 
     item(harness, '隐藏桌宠').click?.();
     expect(harness.handlers.onHide).toHaveBeenCalledTimes(1);

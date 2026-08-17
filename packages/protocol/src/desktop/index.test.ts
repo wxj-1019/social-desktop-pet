@@ -5,6 +5,8 @@ import { ActionIntentSchema, EmotionSchema } from '../index.js';
 import {
   ActionSourceSchema,
   BooleanSettingSchema,
+  LocalLlmChatRequestSchema,
+  LocalLlmConfigSchema,
   PanelOpenSchema,
   PetActionDecisionSchema,
   PetActionRequestSchema,
@@ -118,6 +120,7 @@ describe('protocol/desktop/runtime snapshot', () => {
       online: true,
       dnd: false,
       hidden: false,
+      passThrough: false,
     });
     expect(snap.state).toBe('CHATTING');
     expect(snap.online).toBe(true);
@@ -344,15 +347,52 @@ describe('protocol/desktop/social events', () => {
 
 describe('protocol/desktop/panel & settings', () => {
   it('parses every panel view and rejects unknown views', () => {
-    for (const view of ['login', 'chat', 'friends'] as const) {
+    for (const view of [
+      'login',
+      'chat',
+      'friends',
+      'character',
+      'memories',
+      'settings',
+      'model',
+    ] as const) {
       expect(PanelOpenSchema.parse({ view }).view).toBe(view);
     }
-    expect(() => PanelOpenSchema.parse({ view: 'settings' })).toThrow();
+    expect(() => PanelOpenSchema.parse({ view: 'unknown' })).toThrow();
   });
 
   it('parses a boolean setting and rejects extras', () => {
     expect(BooleanSettingSchema.parse({ enabled: true }).enabled).toBe(true);
     expect(() => BooleanSettingSchema.parse({ enabled: true, extra: 1 })).toThrow();
+  });
+
+  it('parses a local LLM config (empty apiKey allowed for keep-old-key) and rejects bad ones', () => {
+    const config = LocalLlmConfigSchema.parse({
+      enabled: true,
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'sk-test',
+      model: 'gpt-4o-mini',
+    });
+    expect(config.model).toBe('gpt-4o-mini');
+    // 留空密钥 = 保留旧密钥
+    expect(LocalLlmConfigSchema.parse({ ...config, apiKey: '' }).apiKey).toBe('');
+    expect(() => LocalLlmConfigSchema.parse({ ...config, baseUrl: '' })).toThrow();
+    expect(() => LocalLlmConfigSchema.parse({ ...config, model: '' })).toThrow();
+    expect(() => LocalLlmConfigSchema.parse({ ...config, extra: 1 })).toThrow();
+  });
+
+  it('parses a local LLM chat request and enforces message limits', () => {
+    const request = LocalLlmChatRequestSchema.parse({
+      messages: [
+        { role: 'system', content: 'you are a pet' },
+        { role: 'user', content: '你好' },
+      ],
+    });
+    expect(request.messages).toHaveLength(2);
+    expect(() =>
+      LocalLlmChatRequestSchema.parse({ messages: [{ role: 'bogus', content: 'x' }] }),
+    ).toThrow();
+    expect(() => LocalLlmChatRequestSchema.parse({ messages: [] })).toThrow();
   });
 });
 

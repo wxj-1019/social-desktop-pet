@@ -69,7 +69,13 @@ describe('usePetRuntime · 气泡自动消失（7.4 短驻留）', () => {
 
 describe('usePetRuntime · 窗口重建状态恢复', () => {
   it('hydrates the initial visual motion and expression from the runtime snapshot', async () => {
-    installRuntimeSnapshot({ state: 'SLEEPING', online: true, dnd: false, hidden: false });
+    installRuntimeSnapshot({
+      state: 'SLEEPING',
+      online: true,
+      dnd: false,
+      hidden: false,
+      passThrough: false,
+    });
     const { result } = renderHook(() => usePetRuntime());
 
     await waitFor(() => expect(result.current.snapshot?.state).toBe('SLEEPING'));

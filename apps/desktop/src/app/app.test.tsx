@@ -38,6 +38,26 @@ function installFakePet(initResult: unknown): {
     },
     onDeepLink: vi.fn(() => vi.fn()),
     consumeDeepLinkPayload: vi.fn().mockResolvedValue(null),
+    petProfile: {
+      get: vi.fn().mockResolvedValue({
+        version: 1,
+        petId: 'star-isle',
+        displayName: '星屿',
+        reducedMotion: false,
+        dnd: false,
+        bubbleEnabled: true,
+      }),
+      set: vi.fn((p: unknown) => Promise.resolve(p)),
+      onChanged: vi.fn(() => vi.fn()),
+    },
+    getPetScale: vi.fn().mockResolvedValue(1),
+    localLlm: {
+      getView: vi
+        .fn()
+        .mockResolvedValue({ enabled: false, baseUrl: '', model: '', hasApiKey: false }),
+      save: vi.fn(),
+      chat: vi.fn(),
+    },
     panel: {
       open: vi.fn(),
       close: vi.fn(),
@@ -115,16 +135,29 @@ describe('AppPanel · panel.onNavigate 消费（I1）', () => {
     expect(document.querySelector('.login-page')).not.toBeNull();
   });
 
-  it('未登录：panel:navigate chat/friends 被忽略（不切 tab，仍停留登录页）', async () => {
+  it('未登录：panel:navigate 切入本地模式并定位 tab（不再静默丢弃）', async () => {
     const fake = installFakePet(SIGNED_OUT_RESULT);
     render(<AppPanel />);
     await act(async () => {});
     expect(document.querySelector('.login-page')).not.toBeNull();
 
+    // chat → 本地模式聊天页
     act(() => fake.navigate('chat'));
+    expect(document.querySelector('.login-page')).toBeNull();
+    expect(screen.getByPlaceholderText(/说点什么/)).not.toBeNull();
+
+    // friends → 云端功能登录引导（有明确出口而非静默）
     act(() => fake.navigate('friends'));
-    expect(document.querySelector('.login-page')).not.toBeNull();
-    expect(document.querySelector('.app-tabs')).toBeNull();
+    expect(screen.getByRole('heading', { name: /好友需要登录后使用/ })).not.toBeNull();
+
+    // settings → 本地模式设置页可达（等待 profile 读取后渲染）
+    act(() => fake.navigate('settings'));
+    expect(await screen.findByRole('heading', { name: '设置' })).not.toBeNull();
+
+    // model → 本地模式模型页可达（BYOK 输入框同屏可见）
+    act(() => fake.navigate('model'));
+    expect(await screen.findByRole('heading', { name: '模型' })).not.toBeNull();
+    expect(screen.getByLabelText('本地模型 API Key')).not.toBeNull();
   });
 
   it('卸载时取消 onNavigate 订阅', async () => {

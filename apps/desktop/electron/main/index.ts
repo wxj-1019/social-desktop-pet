@@ -12,7 +12,7 @@
 import { join } from 'node:path';
 
 import type { PanelOpen, PetRuntimeSnapshot } from '@pet/protocol';
-import { app, BrowserWindow, screen } from 'electron';
+import { app, BrowserWindow, screen, session as electronSession } from 'electron';
 
 import { DeepLinkController } from './deep-link-controller.js';
 import {
@@ -26,6 +26,8 @@ import {
 } from './display-controller.js';
 import { broadcastPetSnapshot, registerIpcAllowlist, sendPetVisual } from './ipc/register.js';
 import type { PetIpcDependencies } from './ipc/register.js';
+import { callLocalLlm } from './local-llm-chat.js';
+import { LocalLlmStore } from './local-llm-store.js';
 import { deliverPanelMessage } from './panel-delivery.js';
 import { PendingInviteStore } from './pending-invite-store.js';
 import { PetDragController } from './pet-drag-controller.js';
@@ -119,6 +121,11 @@ const startup = new StartupController({
 const startupArgs = parseStartupArgs(process.argv);
 
 void app.whenReady().then(async () => {
+  // dev：清 HTTP 磁盘缓存。Electron 会话缓存跨重启复用，vite 模块的 304 复验
+  // 偶发命中旧 ETag，导致面板窗加载到旧模块（prod 不受影响，构建产物带内容哈希）
+  if (!app.isPackaged) {
+    await electronSession.defaultSession.clearCache().catch(() => undefined);
+  }
   // 9.8 / 8.3：先创建会话并启动唯一恢复操作，IPC 必须在 renderer 加载前可用。
   const secureStorage = new SecureStorageController({ dir: app.getPath('userData') });
   const createdSession = new SessionController(
@@ -138,6 +145,8 @@ void app.whenReady().then(async () => {
   positionStore = new PositionStore(app.getPath('userData'));
   // 6.3：深链 pending 跨重启持久化（userData/pending-invite.json）
   const pendingStore = new PendingInviteStore(join(app.getPath('userData'), 'pending-invite.json'));
+  // 本地 BYOK 模型配置（userData/local-llm.json；密钥 safeStorage 加密落盘）
+  const localLlmStore = new LocalLlmStore(join(app.getPath('userData'), 'local-llm.json'));
   // Task 6：安全拖动控制器；拖动结束即持久化当前位置（可靠触发点——
   // 部分环境 setPosition 不触发 'moved' 事件，不能依赖窗口事件做唯一保存）
   const clearScheduledPositionSave = (): void => {
@@ -254,6 +263,8 @@ void app.whenReady().then(async () => {
     const win = alivePetWindow();
     if (win) setPassThrough(win, enabled);
     tray?.setPassThroughForced(enabled);
+    // 快照同步（SAO 菜单/设置页反射当前穿透态）
+    runtime?.syncPassThrough(enabled);
     // 穿透状态给用户即时反馈：一次性气泡提示（穿透后仍可经托盘/右键恢复）
     if (enabled) {
       runtime?.showBubble('穿透已开启，点击会穿过我。托盘或右键可以恢复');
@@ -294,6 +305,20 @@ void app.whenReady().then(async () => {
 
   /** 当前缩放比例（设置页滑块初始值） */
   const getPetScale = (): number => positionStore?.load().scale ?? DEFAULT_PET_SCALE;
+
+  // ---- 隐藏/显示桌宠：托盘与 SAO 菜单共用的单一入口（窗口 + 运行时状态同步） ----
+  const hidePet = (): void => {
+    drag?.cancel(); // 隐藏前解除进行中的拖动，避免残留会话
+    wander?.stop();
+    alivePetWindow()?.hide();
+    runtime?.setHidden(true);
+  };
+  const showPet = (): void => {
+    const win = alivePetWindow();
+    win?.show();
+    win?.setIgnoreMouseEvents(false);
+    runtime?.setHidden(false);
+  };
 
   // ---- 8.2 面板：首次打开时懒创建，锚定到宠物旁 ----
   // C1 修复：深链 payload（deeplink:payload）只投递到面板渲染进程，不再发往桌宠窗；
@@ -408,6 +433,17 @@ void app.whenReady().then(async () => {
     setDnd: syncDnd,
     setPetScale,
     getPetScale,
+    hidePet,
+    showPet,
+    localLlm: {
+      view: () => localLlmStore.view(),
+      save: (config) => localLlmStore.save(config),
+      chat: async (request) => {
+        const config = localLlmStore.load();
+        if (!config || !config.enabled || !config.apiKey) return { error: 'not_configured' };
+        return callLocalLlm(config, request.messages);
+      },
+    },
     // 角色皮肤切换：保存 profile 后用新 character 参数重建桌宠窗
     //（销毁旧窗 → createAndWirePetWindow 读 profileStore.petId 创建新窗；
     // 重载瞬间空白可接受——角色切换是低频操作，运行时不重启）
@@ -489,17 +525,13 @@ void app.whenReady().then(async () => {
       onSetDnd: (enabled) => syncDnd(enabled),
       onSetScale: (scale) => setPetScale(scale),
       onSetPassThrough: setPassThroughFromMain,
-      onHide: () => {
-        drag?.cancel(); // 隐藏前解除进行中的拖动，避免残留会话
-        wander?.stop();
-        alivePetWindow()?.hide();
-        runtime?.setHidden(true);
-      },
-      onShow: () => {
-        const win = alivePetWindow();
-        win?.show();
-        win?.setIgnoreMouseEvents(false);
-        runtime?.setHidden(false);
+      onHide: hidePet,
+      onShow: showPet,
+      onSetMenuStyle: (style) => {
+        // 托盘换肤：写档案（重启保留） + 广播给桌宠窗即时切换
+        const profile = profileStore!.load();
+        profileStore!.save({ ...profile, menuStyle: style });
+        alivePetWindow()?.webContents.send('pet:profile-changed', profileStore!.load());
       },
       onQuit: () => {
         quitting = true;
@@ -510,6 +542,8 @@ void app.whenReady().then(async () => {
   tray.create(trayIconPath());
   // 托盘创建后同步持久化的勿扰状态（菜单勾选与 runtime/档案一致）
   tray.setDndForced(profileStore.load().dnd);
+  // 同步档案中的菜单皮肤（托盘单选勾选与档案一致）
+  tray.setMenuStyleForced(profileStore.load().menuStyle ?? 'sao');
 
   // Windows：注册 pet:// 为默认协议（用户点击链接拉起应用）
   if (process.platform === 'win32') {

@@ -1,5 +1,19 @@
-/** 设置页：桌宠大小 / 气泡开关 / 减弱动态（大小写回 Main setPetScale，其余写 petProfile）。 */
-import { Bell, BellOff, Maximize2, Settings2, Turtle } from 'lucide-react';
+/**
+ * 设置页：桌宠大小 / 气泡开关 / 减弱动态 / 勿扰 / 鼠标穿透。
+ * 大小写回 Main setPetScale；气泡/减弱动态写 petProfile（main 广播给桌宠窗即时生效）；
+ * 勿扰/穿透经 Main 单一入口（runtime + 托盘同步），初始值与后续变化由运行时快照驱动。
+ * 本地模型（BYOK）已独立为「模型」tab，见 model-settings.tsx。
+ */
+import type { PetRuntimeSnapshot } from '@pet/protocol';
+import {
+  Bell,
+  BellOff,
+  EyeOff,
+  Maximize2,
+  MousePointerClick,
+  Settings2,
+  Turtle,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 /** 设置页滑块范围（60%–140%，Main 端 MIN/MAX_PET_SCALE 内） */
@@ -10,10 +24,12 @@ export function SettingsPage() {
   const [bubbleEnabled, setBubbleEnabled] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [petScale, setPetScale] = useState(1);
+  const [dnd, setDnd] = useState(false);
+  const [passThrough, setPassThrough] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    void window.pet?.petProfile.get().then((profile) => {
+    void window.pet?.petProfile?.get().then((profile) => {
       setBubbleEnabled(profile.bubbleEnabled);
       setReducedMotion(profile.reducedMotion);
       setLoaded(true);
@@ -21,10 +37,25 @@ export function SettingsPage() {
     void window.pet?.getPetScale?.().then((scale) => {
       if (typeof scale === 'number') setPetScale(scale);
     });
+    // 勿扰/穿透：快照为唯一状态源（托盘、SAO 菜单、本页三处入口同源反射）
+    const runtime = window.pet?.petRuntime;
+    if (runtime) {
+      void runtime.getSnapshot().then((snapshot: PetRuntimeSnapshot) => {
+        setDnd(snapshot.dnd);
+        setPassThrough(snapshot.passThrough);
+      });
+      const off = runtime.onSnapshot((snapshot: PetRuntimeSnapshot) => {
+        setDnd(snapshot.dnd);
+        setPassThrough(snapshot.passThrough);
+      });
+      return off;
+    }
+    return undefined;
   }, []);
 
   async function save(next: { bubbleEnabled?: boolean; reducedMotion?: boolean }) {
-    const profile = await window.pet.petProfile.get();
+    const profile = await window.pet?.petProfile?.get();
+    if (!profile) return;
     const updated = { ...profile, ...next };
     const saved = await window.pet.petProfile.set(updated);
     setBubbleEnabled(saved.bubbleEnabled);
@@ -110,6 +141,62 @@ export function SettingsPage() {
             checked={reducedMotion}
             onChange={(e) => void save({ reducedMotion: e.target.checked })}
             aria-label="减弱动态效果开关"
+          />
+        </label>
+
+        <label className="settings-item">
+          <span className="settings-item__icon" aria-hidden="true">
+            {dnd ? <BellOff size={16} /> : <Bell size={16} />}
+          </span>
+          <span className="settings-item__text">
+            <strong>勿扰模式</strong>
+            <small>开启后星屿保持安静，不冒泡不闲逛</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={dnd}
+            onChange={(e) => {
+              setDnd(e.target.checked);
+              window.pet?.petRuntime?.setDnd?.(e.target.checked);
+            }}
+            aria-label="勿扰模式开关"
+          />
+        </label>
+
+        <label className="settings-item">
+          <span className="settings-item__icon" aria-hidden="true">
+            <MousePointerClick size={16} />
+          </span>
+          <span className="settings-item__text">
+            <strong>鼠标穿透</strong>
+            <small>开启后点击会穿过桌宠；关闭即可恢复交互</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={passThrough}
+            onChange={(e) => {
+              setPassThrough(e.target.checked);
+              window.pet?.petRuntime?.setPassThrough?.(e.target.checked);
+            }}
+            aria-label="鼠标穿透开关"
+          />
+        </label>
+
+        <label className="settings-item">
+          <span className="settings-item__icon" aria-hidden="true">
+            <EyeOff size={16} />
+          </span>
+          <span className="settings-item__text">
+            <strong>隐藏桌宠</strong>
+            <small>临时收起星屿；从托盘"显示桌宠"恢复</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={false}
+            onChange={(e) => {
+              if (e.target.checked) window.pet?.petRuntime?.setHidden?.(true);
+            }}
+            aria-label="隐藏桌宠"
           />
         </label>
       </div>

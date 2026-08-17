@@ -1,12 +1,13 @@
 /**
- * 本地模式聊天（第 3–6 周 Alpha 本地降级）—— 规则引擎，不依赖后端。
- * 第 7–10 周 AI 接入后，本地模式仍作为断网兜底保留。
+ * 本地模式聊天 —— 规则引擎兜底 + 可选本地 BYOK 模型（OpenAI 兼容）。
+ * 配置并启用本地模型（设置页）后走真实 LLM（Main 侧调用，密钥不出主进程）；
+ * 未配置/调用失败自动回退规则引擎，本地模式永远可用。
  *
  * Task 11：本地回复经 window.pet.petRuntime.chatEvent 推送
- * （start → done，source: local_chat）；动作由 Main petRuntime 驱动，
- * 不再在 renderer 用 setTimeout 模拟 CHATTING。window.pet 缺失时跳过事件。
+ * （start → done，source: local_chat）；动作由 Main petRuntime 驱动。
  */
-import { HardDrive, Send } from 'lucide-react';
+import type { LocalLlmConfigView } from '@pet/protocol';
+import { Send, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import {
@@ -21,32 +22,35 @@ interface LocalChatProps {
   onLoginClick: () => void;
 }
 
+/** BYOK 模型的系统提示词：本地小宠物人格，短句、无身份承诺（10.4） */
+const LLM_SYSTEM_PROMPT =
+  '你是用户的桌面小宠物"星屿"，温暖、好奇、话少。用中文回复，一次不超过两句话（60字以内），' +
+  '语气轻松可爱，可以适度用颜文字。不讨论敏感话题，不扮演真实人类，不说自己是大模型。';
+
+/** 送入 LLM 的最近历史条数（含本轮） */
+const LLM_HISTORY_WINDOW = 16;
+
 export function LocalChat({ onLoginClick }: LocalChatProps) {
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const [pending, setPending] = useState(false);
+  const [llmView, setLlmView] = useState<LocalLlmConfigView | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  // 启动恢复本地对话
+  // 启动恢复本地对话 + 查询本地模型配置（enabled && hasApiKey 才走 LLM）
   useEffect(() => {
     setHistory(loadLocalHistory());
+    void window.pet?.localLlm?.getView().then((view) => setLlmView(view));
   }, []);
 
   // 新消息滚动到底部
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [history]);
+  }, [history, pending]);
 
-  function send(e: React.FormEvent) {
-    e.preventDefault();
-    const text = input.trim();
-    if (!text) return;
-    const reply = localReply(text);
-    const userMsg: ChatMessage = { role: 'user', text, at: new Date().toISOString() };
-    const petMsg: ChatMessage = { role: 'pet', text: reply, at: new Date().toISOString() };
-    setHistory((prev) => appendLocalMessage(appendLocalMessage(prev, userMsg), petMsg));
-    setInput('');
-    // 本地回复 → Main petRuntime（start/done；CHATTING→IDLE 由 Main 状态机处理）
-    window.pet?.petRuntime?.chatEvent({ phase: 'start', source: 'local_chat', text });
+  const llmReady = llmView?.enabled === true && llmView.hasApiKey === true;
+
+  function emitDone(reply: string) {
     window.pet?.petRuntime?.chatEvent({
       phase: 'done',
       source: 'local_chat',
@@ -54,23 +58,52 @@ export function LocalChat({ onLoginClick }: LocalChatProps) {
     });
   }
 
+  /** LLM 路径：历史映射为 OpenAI messages → Main 侧调用；失败回退规则引擎 */
+  async function replyViaLlm(text: string, prior: ChatMessage[]): Promise<string> {
+    const messages = [
+      { role: 'system' as const, content: LLM_SYSTEM_PROMPT },
+      ...prior.slice(-LLM_HISTORY_WINDOW).map((m) => ({
+        role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
+        content: m.text,
+      })),
+      { role: 'user' as const, content: text },
+    ];
+    const result = await window.pet?.localLlm?.chat({ messages });
+    if (result && 'reply' in result && result.reply) return result.reply;
+    return localReply(text);
+  }
+
+  function send(e: React.FormEvent) {
+    e.preventDefault();
+    const text = input.trim();
+    if (!text || pending) return;
+    const userMsg: ChatMessage = { role: 'user', text, at: new Date().toISOString() };
+    const withUser = appendLocalMessage(history, userMsg);
+    setHistory(withUser);
+    setInput('');
+    // 本地回复 → Main petRuntime（start；CHATTING→IDLE 由 Main 状态机处理）
+    window.pet?.petRuntime?.chatEvent({ phase: 'start', source: 'local_chat', text });
+
+    if (!llmReady) {
+      const reply = localReply(text);
+      const petMsg: ChatMessage = { role: 'pet', text: reply, at: new Date().toISOString() };
+      setHistory(appendLocalMessage(withUser, petMsg));
+      emitDone(reply);
+      return;
+    }
+
+    setPending(true);
+    void replyViaLlm(text, withUser)
+      .then((reply) => {
+        const petMsg: ChatMessage = { role: 'pet', text: reply, at: new Date().toISOString() };
+        setHistory((prev) => appendLocalMessage(prev, petMsg));
+        emitDone(reply);
+      })
+      .finally(() => setPending(false));
+  }
+
   return (
-    <main className="local-chat" aria-labelledby="local-chat-title">
-      <div className="chat-heading chat-heading--character">
-        <div className="character-presence">
-          <div className="character-presence__avatar" aria-hidden="true">
-            <StarIsleVisual />
-          </div>
-          <div className="character-presence__copy">
-            <h2 id="local-chat-title">星屿</h2>
-            <p>不联网也能陪你</p>
-          </div>
-        </div>
-        <span className="status-chip">
-          <HardDrive size={13} aria-hidden="true" />
-          仅此设备
-        </span>
-      </div>
+    <main className="local-chat" aria-label="本地聊天">
       <ul className="chat-list" role="log" aria-label="对话记录">
         {history.length === 0 && (
           <li className="chat-empty">
@@ -91,9 +124,18 @@ export function LocalChat({ onLoginClick }: LocalChatProps) {
             <span className="chat-bubble">{message.text}</span>
           </li>
         ))}
+        {pending && (
+          <li className="chat-msg pet" aria-live="polite">
+            <span className="chat-msg__avatar" aria-hidden="true">
+              <StarIsleVisual />
+            </span>
+            <span className="chat-bubble chat-bubble--typing">…</span>
+          </li>
+        )}
         <div ref={bottomRef} />
       </ul>
       <button className="local-login-prompt" onClick={onLoginClick}>
+        <Sparkles size={13} style={{ marginRight: 6 }} aria-hidden="true" />
         登录后解锁好友与云端记忆
       </button>
       <form className="chat-input-row" onSubmit={send}>
