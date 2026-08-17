@@ -41,7 +41,7 @@ const CATEGORY_MAP: Record<string, ContentCategory> = {
 /** OpenAI 兼容审核客户端（12.5 免费端点） */
 export function createOpenAiCompatibleModerator(config: ModerationConfig): OutputModerator {
   return {
-    async moderate(text: string, allowlistedMemoryIds: string[]): Promise<OutputModerationResult> {
+    async moderate(text: string, _allowlistedMemoryIds: string[]): Promise<OutputModerationResult> {
       const res = await fetch(`${config.baseUrl}/moderations`, {
         method: 'POST',
         headers: {
@@ -62,15 +62,11 @@ export function createOpenAiCompatibleModerator(config: ModerationConfig): Outpu
       if (!result || !result.flagged) {
         return { passed: true, blockedCategories: [], crisisLevel: 'none' };
       }
-      // 命中类目 → 协议类别（allowlist 记忆 ID 不拦截——引用自己的记忆不算泄漏）
-      const allowlistActive = allowlistedMemoryIds.length > 0;
+      // 命中类目 → 协议类别。注意：allowlistedMemoryIds（"引用自己的记忆不算泄漏"）
+      // 在 OpenAI 类目层面无法区分（类目名不含 'memory'，原 includes('memory')
+      // 判断是死代码、从不放行）—— 宁可误拦不可漏拦，语义核对待内容层实现（V-11）
       const blocked = Object.entries(result.categories)
-        .filter(([category, flagged]) => {
-          if (!flagged) return false;
-          // 敏感细节类目（记忆相关内容）在 allowlist 激活时放行
-          if (allowlistActive && category.includes('memory')) return false;
-          return true;
-        })
+        .filter(([, flagged]) => flagged)
         .map(([category]) => CATEGORY_MAP[category])
         .filter((c): c is ContentCategory => c !== undefined);
       return {

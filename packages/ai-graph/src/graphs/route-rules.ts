@@ -8,23 +8,33 @@
  *   模型）；L2 = 记忆融合/情绪对话（中等能力）；L3 = 复杂长对话（高能力）；
  * - 保守策略：拿不准归 L2（记忆融合档，检索 + 中等模型兜底），不降级到 L1。
  */
-import type { RouteLevel } from '@pet/protocol';
+import type { ActionIntent, RouteLevel } from '@pet/protocol';
 
 export interface RouteDecision {
   level: Exclude<RouteLevel, 'SAFETY'>;
   reason: string;
 }
 
-/** L0 动作指令：整句锚定（防"睡觉是什么"误判），本地执行不调模型 */
-const ACTION_COMMANDS: Array<{ test: RegExp; name: string }> = [
-  { test: /^坐下$/u, name: 'sit' },
-  { test: /^站起来$/u, name: 'stand' },
-  { test: /^睡觉$/u, name: 'sleep' },
-  { test: /^打个招呼$/u, name: 'wave' },
-  { test: /^跳舞$/u, name: 'dance' },
-  { test: /^拍拍手$/u, name: 'cheer' },
-  { test: /^摸摸头$/u, name: 'touch' },
-  { test: /^抱抱$/u, name: 'touch' },
+export interface ActionCommand {
+  test: RegExp;
+  name: string;
+  /** 桌宠意图（本地状态机执行） */
+  intent: ActionIntent;
+  /** L0 本地回复文案（与意图同源，单一真相源） */
+  reply: string;
+}
+
+/** L0 动作指令：整句锚定（防"睡觉是什么"误判），本地执行不调模型。
+ *  命令名/意图/回复文案三合一——chat-flow-nodes 的 localReplyNode 同源消费 */
+export const ACTION_COMMANDS: ActionCommand[] = [
+  { test: /^坐下$/u, name: 'sit', intent: 'sit', reply: '好，我坐下啦～' },
+  { test: /^站起来$/u, name: 'stand', intent: 'idle', reply: '好，我站起来啦！' },
+  { test: /^睡觉$/u, name: 'sleep', intent: 'sleep', reply: '那我先睡一会儿…' },
+  { test: /^打个招呼$/u, name: 'wave', intent: 'wave', reply: '嗨～你好！' },
+  { test: /^跳舞$/u, name: 'dance', intent: 'cheer', reply: '跟着节奏跳一段！' },
+  { test: /^拍拍手$/u, name: 'cheer', intent: 'cheer', reply: '啪叽啪叽！' },
+  { test: /^摸摸头$/u, name: 'touch', intent: 'touch', reply: '唔…好舒服～' },
+  { test: /^抱抱$/u, name: 'touch', intent: 'touch', reply: '唔…好舒服～' },
 ];
 
 /** L2 记忆需求信号：明确引用过去事实/偏好 → 需要记忆融合 */

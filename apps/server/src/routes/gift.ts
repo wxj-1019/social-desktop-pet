@@ -8,6 +8,7 @@
  * 5. 提交后 Realtime 通知（第 5 步；deliverEvent 内部处理）
  * 6. 响应与 WS 事件同一 eventId（第 6 步）
  */
+import { LIMITS } from '@pet/config';
 import { type Hono } from 'hono';
 import type pg from 'pg';
 
@@ -27,8 +28,6 @@ import { requireAuth, type BusinessVariables } from './business.js';
 
 /** 免费点心白名单（6.6：服务端白名单内；snack_id 不信任客户端任意值） */
 export const FREE_SNACK_WHITELIST = ['snack_cookie', 'snack_candy', 'snack_tea'];
-/** 每日免费点心配额（9.4 第 3 步；后续移入 packages/config） */
-export const DAILY_GIFT_LIMIT = 3;
 
 export interface GiftDeps {
   pool: pg.Pool;
@@ -80,7 +79,7 @@ export function registerGiftRoutes(
       const todayCount = await todayGiftCount(client, userId);
       const verdict = canSendGift({
         todayCount,
-        dailyLimit: DAILY_GIFT_LIMIT,
+        dailyLimit: LIMITS.dailyGiftPerFriend,
         isActiveFriend: friendship !== null,
         isBlocked: blocked,
       });

@@ -10,11 +10,13 @@
  * 权限过滤在 store 侧完成（owner + visibility + purpose + 时间有效性 +
  * memory_status=active，见服务端 recallMemories）；本模块不信任候选之外的内容。
  */
+import { DEFAULT_ROUTE_TABLE } from '@pet/config';
 import type {
   MemoryCategory,
   MemoryPurpose,
   MemorySourceType,
   MemoryVisibility,
+  RouteLevel,
 } from '@pet/protocol';
 
 import type { NodeFn } from '../runtime/types.js';
@@ -74,13 +76,14 @@ const IMPORTANCE_WEIGHT = 0.2;
 /** 时间衰减半衰期：30 天（指数降权不删除） */
 export const MEMORY_HALF_LIFE_MS = 30 * 24 * 60 * 60 * 1000;
 
-/** 检索默认 top-k（10.3 L2/L3 档） */
-export const DEFAULT_RETRIEVAL_TOPK = 6;
-
-/** 10.3 路由级 → 检索 top-k（L1=3 轻量 / L2/L3=6；L0 不检索） */
+/**
+ * 10.3 路由级 → 检索 top-k（L1=3 / L2/L3=6；L0/SAFETY/未知 → 0 不检索）。
+ * 单一真相源：直接读 @pet/config 的 DEFAULT_ROUTE_TABLE.memoryRetrievalTopK
+ * （此前本地硬编码 3/6 会与 config 双头漂移；L0/SAFETY 不会到达本节点，返回 0 兜底）
+ */
 export function retrievalTopKForLevel(level?: string): number {
-  if (level === 'L1') return 3;
-  return DEFAULT_RETRIEVAL_TOPK;
+  if (!level) return 0;
+  return DEFAULT_ROUTE_TABLE[level as RouteLevel]?.memoryRetrievalTopK ?? 0;
 }
 
 /**

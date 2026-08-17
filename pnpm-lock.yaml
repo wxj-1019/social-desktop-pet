@@ -194,6 +194,9 @@ importers:
 
   packages/ai-graph:
     dependencies:
+      '@pet/config':
+        specifier: workspace:*
+        version: link:../config
       '@pet/protocol':
         specifier: workspace:*
         version: link:../protocol

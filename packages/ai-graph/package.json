@@ -21,6 +21,7 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
+    "@pet/config": "workspace:*",
     "@pet/protocol": "workspace:*"
   }
 }

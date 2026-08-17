@@ -18,7 +18,7 @@ import type {
   MemoryRetrievalStore,
   OutputModerator,
 } from '@pet/ai-graph';
-import { LIMITS } from '@pet/config';
+import { DEFAULT_FEATURE_FLAGS, LIMITS } from '@pet/config';
 import { type Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
 import { streamSSE } from 'hono/streaming';
@@ -122,17 +122,19 @@ async function loadRecentTurns(
   }
 }
 
-/** 12.7：每日预算记账（chat_usage 表；token 估算 = 字符数/4） */
+/** 12.7：每日预算记账（chat_usage 表；token 估算 = 字符数/4）。
+ *  双条件成本保护：request_count 超 dailyChatRequestsPerUser（保守请求上限）
+ *  或 token_estimate 超 dailyTokenBudgetPerUser（12.7 真实 token 预算，此前只记账不比对） */
 async function checkAndRecordDailyUsage(
   pool: pg.Pool,
   userId: string,
   message: string,
   outputChars: number,
-  dailyLimit: number,
-): Promise<'ok' | 'daily_limit'> {
+): Promise<'ok' | 'daily_limit' | 'token_budget_exceeded'> {
   const client = await pool.connect();
   try {
     await client.query('begin');
+    const tokenEstimate = Math.ceil((message.length + outputChars) / 4);
     const { rows } = await client.query(
       `insert into chat_usage (user_id, usage_date, request_count, token_estimate)
        values ($1, current_date, 1, $2)
@@ -140,11 +142,15 @@ async function checkAndRecordDailyUsage(
        do update set
          request_count = chat_usage.request_count + 1,
          token_estimate = chat_usage.token_estimate + excluded.token_estimate
-       returning request_count`,
-      [userId, Math.ceil((message.length + outputChars) / 4)],
+       returning request_count, token_estimate`,
+      [userId, tokenEstimate],
     );
     await client.query('commit');
-    return Number(rows[0]?.request_count ?? 1) > dailyLimit ? 'daily_limit' : 'ok';
+    const requestCount = Number(rows[0]?.request_count ?? 1);
+    const totalTokens = Number(rows[0]?.token_estimate ?? tokenEstimate);
+    if (requestCount > LIMITS.dailyChatRequestsPerUser) return 'daily_limit';
+    if (totalTokens > LIMITS.dailyTokenBudgetPerUser) return 'token_budget_exceeded';
+    return 'ok';
   } catch (e) {
     await client.query('rollback');
     throw e;
@@ -170,8 +176,14 @@ export function registerChatRoutes(
     if (typeof message !== 'string' || message.length === 0) {
       return c.json({ error: '缺少 message' }, 400);
     }
-    if (message.length > 2000) {
-      return c.json({ error: 'message 过长（≤2000）' }, 400);
+    if (message.length > LIMITS.chatMessageMaxChars) {
+      return c.json({ error: `message 过长（≤${LIMITS.chatMessageMaxChars}）` }, 400);
+    }
+
+    // 12.7 AI Kill Switch（运维兜底：AI_ENABLED=false 或默认开关关闭 → 直接 503，
+    // 不调模型不流式；此前 feature flag 从未接入路由层）
+    if (process.env['AI_ENABLED'] === 'false' || !DEFAULT_FEATURE_FLAGS.aiEnabled) {
+      return c.json({ error: 'ai_disabled' }, 503);
     }
 
     // 12.7 速率限制（每设备 60s 窗口）
@@ -183,17 +195,11 @@ export function registerChatRoutes(
     if (!enterConcurrency(deviceId, LIMITS.concurrencyPerDevice)) {
       return c.json({ error: 'concurrency_limit' }, 429);
     }
-    // 12.7 每日预算（chat_usage 记账；超限拒绝）
-    const usage = await checkAndRecordDailyUsage(
-      deps.pool,
-      userId,
-      message,
-      0,
-      LIMITS.dailyChatRequestsPerUser,
-    );
-    if (usage === 'daily_limit') {
+    // 12.7 每日预算（chat_usage 记账；请求数或 token 预算任一超限拒绝）
+    const usage = await checkAndRecordDailyUsage(deps.pool, userId, message, 0);
+    if (usage === 'daily_limit' || usage === 'token_budget_exceeded') {
       leaveConcurrency(deviceId);
-      return c.json({ error: 'daily_limit' }, 429);
+      return c.json({ error: usage }, 429);
     }
 
     const id = typeof threadId === 'string' && threadId.length > 0 ? threadId : crypto.randomUUID();

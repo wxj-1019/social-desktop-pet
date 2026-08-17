@@ -5,6 +5,12 @@
 export const LIMITS = {
   /** 6.5 每位好友每天最多 3 次可见拜访事件 */
   visitsPerFriendPerDay: 3,
+  /** 6.6 每日免费点心配额（9.4 第 3 步；原 gift.ts 本地常量收敛于此） */
+  dailyGiftPerFriend: 3,
+  /** 10.x chat 消息长度上限（字符；原 chat.ts 本地 2000） */
+  chatMessageMaxChars: 2000,
+  /** 10.6 记忆值长度上限（字符；原 memories.ts 本地 2000） */
+  memoryValueMaxChars: 2000,
   /** 6.6 留言上限：200 Unicode 码点，UTF-8 ≤ 2KB */
   messageMaxCodepoints: 200,
   messageMaxBytes: 2048,

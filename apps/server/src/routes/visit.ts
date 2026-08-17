@@ -5,6 +5,7 @@
  *   active_display_device_id = 当前设备（旧设备被停用后拒绝云端功能）；
  * 9.4 可靠写入：visits + 权威事件 + 双方 inbox + WS 通知。
  */
+import { LIMITS } from '@pet/config';
 import { type Hono } from 'hono';
 import type pg from 'pg';
 
@@ -68,6 +69,19 @@ export function registerVisitRoutes(
       }
 
       const roomId = await findOrCreateRoom(client, userId, toUserId);
+
+      // 6.5 配额：每位好友每天最多 N 次可见拜访事件（此前 LIMITS 配置从未执行）
+      const { rows: cntRows } = await client.query(
+        `select count(*)::int as cnt from visits
+         where from_user = $1 and to_user = $2
+           and created_at >= date_trunc('day', now())`,
+        [userId, toUserId],
+      );
+      const todayVisits = Number(cntRows[0]?.cnt ?? 0);
+      if (todayVisits >= LIMITS.visitsPerFriendPerDay) {
+        await client.query('rollback');
+        return c.json({ error: 'visit_limit' }, 429);
+      }
 
       // visits + 权威事件（A 类，双方 inbox）
       const { rows: vRows } = await client.query(

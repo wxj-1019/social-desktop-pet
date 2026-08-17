@@ -4,7 +4,7 @@
  * 框架阶段：每个节点是可编译的 stub，标注 TODO 与对应设计稿章节，
  * 后续实现工作（第 7-10 周）在此填入真实逻辑（模型调用/分类器/检索等）。
  */
-import type { ActionIntent, OutputModerationResult } from '@pet/protocol';
+import type { OutputModerationResult } from '@pet/protocol';
 
 import type { LlmClient } from '../llm/types.js';
 import type { NodeFn } from '../runtime/types.js';
@@ -15,7 +15,7 @@ import { detectCrisis } from './crisis-rules.js';
 import { classifyWithLlm, ruleClassification } from './input-classifier.js';
 import { ruleModerateOutput } from './moderation-rules.js';
 import { chunkDialogue, parseModelOutput } from './parse-model-output.js';
-import { ruleRoute } from './route-rules.js';
+import { ACTION_COMMANDS, ruleRoute } from './route-rules.js';
 
 /** 10.1 认证、配额、限流 */
 export const authNode: NodeFn<ChatFlowState> = async (
@@ -147,16 +147,7 @@ const LOCAL_REPLIES: Array<{ test: RegExp; reply: string }> = [
   { test: /再见|拜拜|晚安/u, reply: '拜拜～记得早点休息。' },
 ];
 
-/** L0 动作指令 → 桌宠意图 + 本地回复文案（route-rules.ts 的 ACTION_COMMANDS 同源） */
-const ACTION_REPLIES: Record<string, { intent: ActionIntent; reply: string }> = {
-  sit: { intent: 'sit', reply: '好，我坐下啦～' },
-  stand: { intent: 'idle', reply: '好，我站起来啦！' },
-  sleep: { intent: 'sleep', reply: '那我先睡一会儿…' },
-  wave: { intent: 'wave', reply: '嗨～你好！' },
-  dance: { intent: 'cheer', reply: '跟着节奏跳一段！' },
-  cheer: { intent: 'cheer', reply: '啪叽啪叽！' },
-  touch: { intent: 'touch', reply: '唔…好舒服～' },
-};
+/** L0 动作指令 → 桌宠意图 + 本地回复文案（route-rules.ts 的 ACTION_COMMANDS 单一真相源） */
 
 export const localReplyNode: NodeFn<ChatFlowState> = async (
   state,
@@ -165,9 +156,11 @@ export const localReplyNode: NodeFn<ChatFlowState> = async (
   const hit = LOCAL_REPLIES.find((r) => r.test.test(text));
   // L0 动作指令：路由 reason 形如 action_command:<name>，映射为桌宠意图与专属文案；
   // 非动作指令（问候等）保持原兜底模板
-  const action = state.routing?.reason?.startsWith('action_command:')
-    ? ACTION_REPLIES[state.routing.reason.slice('action_command:'.length)]
-    : undefined;
+  const reason = state.routing?.reason;
+  const action =
+    reason !== undefined && reason.startsWith('action_command:')
+      ? ACTION_COMMANDS.find((c) => c.name === reason.slice('action_command:'.length))
+      : undefined;
   const responseText = action?.reply ?? hit?.reply ?? '嗯嗯，我在听你说。';
   return {
     responseText,

@@ -12,6 +12,7 @@
  * 写操作同步记 memory_audit_log（11.2）。
  */
 import type { MemoryExtractStore } from '@pet/ai-graph';
+import { LIMITS } from '@pet/config';
 import {
   MemoryConfirmationSchema,
   MemoryListItemSchema,
@@ -111,8 +112,8 @@ export function registerMemoriesRoutes(
       return c.json({ error: '缺少 confirmationId' }, 400);
     }
     const edited = typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
-    if (edited !== null && edited.length > 2000) {
-      return c.json({ error: 'value 过长（≤2000）' }, 400);
+    if (edited !== null && edited.length > LIMITS.memoryValueMaxChars) {
+      return c.json({ error: `value 过长（≤${LIMITS.memoryValueMaxChars}）` }, 400);
     }
 
     const client = await deps.pool.connect();
@@ -353,8 +354,8 @@ export function registerMemoriesRoutes(
     const memoryId = c.req.param('memoryId');
     const { value } = (await c.req.json()) as { value?: string };
     const finalValue = typeof value === 'string' ? value.trim() : '';
-    if (finalValue.length === 0 || finalValue.length > 2000) {
-      return c.json({ error: 'value 非法（1-2000 字符）' }, 400);
+    if (finalValue.length === 0 || finalValue.length > LIMITS.memoryValueMaxChars) {
+      return c.json({ error: `value 非法（1-${LIMITS.memoryValueMaxChars} 字符）` }, 400);
     }
 
     const client = await deps.pool.connect();

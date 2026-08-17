@@ -144,7 +144,9 @@ describe('retrieveMemoryNodeFactory（10.7 检索节点）', () => {
       }),
     };
     const node = retrieveMemoryNodeFactory(store);
-    const out = await node(base('喝什么'), { threadId: 't1', emit: () => undefined });
+    // 真实全图流程中 route 节点总会设置 level（此处模拟 L2 → topK 6）
+    const state = { ...base('喝什么'), routing: { level: 'L2' as const, reason: 'test' } };
+    const out = await node(state, { threadId: 't1', emit: () => undefined });
     expect(out.retrievedMemoryIds).toHaveLength(2);
     expect(out.retrievedMemories?.map((m) => m.value)).toEqual(['喜欢抹茶', '在准备考试']);
   });
@@ -167,7 +169,9 @@ describe('retrieveMemoryNodeFactory（10.7 检索节点）', () => {
     await node(l2, { threadId: 't2', emit: () => undefined });
     const l3 = { ...base('长文本'), routing: { level: 'L3' as const, reason: 'test' } };
     await node(l3, { threadId: 't3', emit: () => undefined });
-    expect(seenTopK).toEqual([3, 6, 6]);
+    // 路由缺失（异常态）→ topK 0 不检索（L0/SAFETY 不会到达本节点，undefined 兜底）
+    await node(base('没有路由'), { threadId: 't4', emit: () => undefined });
+    expect(seenTopK).toEqual([3, 6, 6, 0]);
   });
 
   it('friend_visit 场景把 purpose 透传给 store（10.7 权限过滤输入）', async () => {
