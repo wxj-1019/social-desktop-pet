@@ -3,8 +3,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { queryAdminAudit, writeAdminAudit } from './admin-audit.js';
 
 function fakePool(rows: unknown[] = []) {
-  // rest 参数声明让 mock.calls 具化为 unknown[][]（否则 [] 空元组，下面的 as 转型无法过 tsc）
-  return { query: vi.fn(async (..._args: unknown[]) => ({ rows, rowCount: rows.length })) };
+  // count 查询返回 count(*) 行（total），其余（insert/select）返回给定 rows；
+  // rest 参数声明让 mock.calls 具化为 unknown[][]（否则 [] 空元组，as 转型无法过 tsc）
+  return {
+    query: vi.fn(async (...args: unknown[]) => {
+      const sql = String(args[0]);
+      return sql.includes('count(*)')
+        ? { rows: [{ total: 7 }], rowCount: 1 }
+        : { rows, rowCount: rows.length };
+    }),
+  };
 }
 
 describe('admin audit', () => {
@@ -53,7 +61,7 @@ describe('admin audit', () => {
         resource_id: 'u1',
         reason: null,
         request_ip: null,
-        created_at: '2026-08-18T00:00:00Z',
+        created_at: new Date('2026-08-18T00:00:00Z'),
       },
     ]);
     const result = await queryAdminAudit(pool as never, {
@@ -63,9 +71,16 @@ describe('admin audit', () => {
       page: 2,
       pageSize: 10,
     });
-    expect(result.total).toBe(1);
+    expect(result.total).toBe(7);
     expect(result.items[0]!.action).toBe('user.suspend');
-    const [sql] = pool.query.mock.calls[0] as [string];
-    expect(sql).toContain('count(*)');
+    expect(result.items[0]!.createdAt).toBe('2026-08-18T00:00:00.000Z');
+    const [countSql] = pool.query.mock.calls[0] as [string];
+    expect(countSql).toContain('count(*)');
+    expect(countSql).toContain('admin_id = $1');
+    expect(countSql).toContain('action = $2');
+    expect(countSql).toContain('created_at >= $3::date');
+    const [selectSql] = pool.query.mock.calls[1] as [string];
+    expect(selectSql).toContain('limit $4');
+    expect(selectSql).toContain('offset $5');
   });
 });

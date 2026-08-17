@@ -55,19 +55,30 @@ export async function queryAdminAudit(
   pool: pg.Pool,
   q: AdminAuditQuery,
 ): Promise<{ items: AdminAuditRow[]; total: number }> {
-  const page = Math.max(1, q.page ?? 1);
-  const pageSize = Math.min(100, Math.max(1, q.pageSize ?? 20));
+  const page = Number.isFinite(q.page) ? Math.max(1, q.page!) : 1;
+  const pageSize = Number.isFinite(q.pageSize) ? Math.min(100, Math.max(1, q.pageSize!)) : 20;
   const where: string[] = [];
   const params: unknown[] = [];
-  const push = (sql: string, v: unknown) => {
-    params.push(v);
-    where.push(sql.replace('?', `$${params.length}`));
-  };
-  if (q.adminId) push('admin_id = ?', q.adminId);
-  if (q.action) push('action = ?', q.action);
-  if (q.resourceType) push('resource_type = ?', q.resourceType);
-  if (q.from) push('created_at >= ?::date', q.from);
-  if (q.to) push("created_at < ?::date + interval '1 day'", q.to);
+  if (q.adminId) {
+    params.push(q.adminId);
+    where.push(`admin_id = $${params.length}`);
+  }
+  if (q.action) {
+    params.push(q.action);
+    where.push(`action = $${params.length}`);
+  }
+  if (q.resourceType) {
+    params.push(q.resourceType);
+    where.push(`resource_type = $${params.length}`);
+  }
+  if (q.from) {
+    params.push(q.from);
+    where.push(`created_at >= $${params.length}::date`);
+  }
+  if (q.to) {
+    params.push(q.to);
+    where.push(`created_at < $${params.length}::date + interval '1 day'`);
+  }
   const whereSql = where.length > 0 ? `where ${where.join(' and ')}` : '';
 
   const count = await pool.query(
@@ -83,8 +94,7 @@ export async function queryAdminAudit(
     params,
   );
   return {
-    // count(*) 生产上恒返回 1 行（total 字段）；rows.length 仅兜底（单测 fakePool 未模拟 count 行）
-    total: Number(count.rows[0]?.total ?? count.rows.length ?? 0),
+    total: Number(count.rows[0]?.total ?? 0),
     items: rows.map((r) => ({
       id: String(r.id),
       adminId: r.admin_id ? String(r.admin_id) : null,
@@ -93,7 +103,7 @@ export async function queryAdminAudit(
       resourceId: r.resource_id as string | null,
       reason: r.reason as string | null,
       ip: r.request_ip as string | null,
-      createdAt: r.created_at as string,
+      createdAt: (r.created_at as Date).toISOString(),
     })),
   };
 }
