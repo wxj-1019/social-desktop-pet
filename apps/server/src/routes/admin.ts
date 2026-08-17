@@ -17,6 +17,7 @@ import type { PgAdminUserStore } from '../db/admin-stores.js';
 import { queryAdminAudit, writeAdminAudit } from '../lib/admin-audit.js';
 import { AuthRateLimiter, clientIpOf } from '../lib/auth-rate-limit.js';
 
+import { createAdminUsageRouter } from './admin-usage.js';
 import { createAdminUsersRouter } from './admin-users.js';
 
 export interface AdminVariables {
@@ -239,6 +240,14 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
     writeAudit: (entry) => writeAdminAudit(deps.pool, entry),
   });
   app.route('/', usersRouter);
+
+  // 用量查询（chat_usage 聚合；31 天跨度上限由子路由解析层统一拦截）
+  const usageRouter = createAdminUsageRouter({
+    pool: deps.pool,
+    jwt,
+    adminUsers: deps.adminUsers,
+  });
+  app.route('/', usageRouter);
 
   return app;
 }
