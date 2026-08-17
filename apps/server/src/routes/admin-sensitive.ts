@@ -14,6 +14,7 @@ import type { AdminVariables } from './admin.js';
 import { requireAdminAuth } from './admin.js';
 
 const SUMMARY_LIMIT = 40;
+const ADMIN_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function summarize(content: string): string {
   return content.length > SUMMARY_LIMIT ? `${content.slice(0, SUMMARY_LIMIT)}…` : content;
@@ -48,6 +49,12 @@ export function createAdminSensitiveRouter(
       : 20;
     const from = q.from ?? '';
     const to = q.to ?? '';
+    // from/to 必须是 YYYY-MM-DD，否则 Postgres 日期 cast 会 500；非法 → 422（同 audit-log 契约）
+    for (const key of ['from', 'to'] as const) {
+      if (q[key] !== undefined && !ADMIN_DATE_RE.test(q[key])) {
+        return c.json({ error: 'invalid_input' }, 422);
+      }
+    }
     const { rows } = await withUserClaims(deps.pool, userId, (client) =>
       client.query(
         `select message_id, role, content, created_at
