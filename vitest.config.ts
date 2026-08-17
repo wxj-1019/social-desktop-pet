@@ -30,6 +30,8 @@ export default defineConfig({
       'apps/desktop/electron/**/*.test.ts',
       'apps/desktop/src/**/*.test.ts',
       'apps/desktop/src/**/*.test.tsx',
+      'apps/admin/src/**/*.test.ts',
+      'apps/admin/src/**/*.test.tsx',
       'apps/server/src/**/*.test.ts',
     ],
     coverage: {
