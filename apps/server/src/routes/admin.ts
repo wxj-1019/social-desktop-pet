@@ -17,6 +17,7 @@ import type { PgAdminUserStore } from '../db/admin-stores.js';
 import { queryAdminAudit, writeAdminAudit } from '../lib/admin-audit.js';
 import { AuthRateLimiter, clientIpOf } from '../lib/auth-rate-limit.js';
 
+import { createAdminSensitiveRouter } from './admin-sensitive.js';
 import { createAdminUsageRouter } from './admin-usage.js';
 import { createAdminUsersRouter } from './admin-users.js';
 import { createAdminWaitlistRouter } from './admin-waitlist.js';
@@ -259,6 +260,15 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
     writeAudit: (entry) => writeAdminAudit(deps.pool, entry),
   });
   app.route('/', waitlistRouter);
+
+  // 敏感数据脱敏摘要（聊天/记忆；原文走 Task 18 一次性授权）
+  const sensitiveRouter = createAdminSensitiveRouter({
+    pool: deps.pool,
+    jwt,
+    adminUsers: deps.adminUsers,
+    writeAudit: (entry) => writeAdminAudit(deps.pool, entry),
+  });
+  app.route('/', sensitiveRouter);
 
   return app;
 }
