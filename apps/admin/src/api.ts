@@ -73,6 +73,34 @@ async function raw<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface AdminUserSummary {
+  userId: string;
+  email: string;
+  nickname: string | null;
+  accountStatus: string;
+  createdAt: string;
+  deviceCount: number;
+  online: boolean;
+  lastSeenAt: string | null;
+}
+
+export interface AdminUserDetail extends AdminUserSummary {
+  suspendedAt: string | null;
+  suspendedReason: string | null;
+  chatRequests7d: number;
+  petCount: number;
+  friendCount: number;
+  memoryCount: number;
+}
+
+export interface AdminDevice {
+  deviceId: string;
+  platform: string;
+  appVersion: string | null;
+  lastSeenAt: string;
+  revokedAt: string | null;
+}
+
 export const adminApi = {
   login(email: string, password: string) {
     return raw<{ accessToken: string; admin: { id: string; email: string } }>('/auth/login', {
@@ -95,5 +123,26 @@ export const adminApi = {
       chatRequestsToday: number;
       pendingInvites: number;
     }>('/overview');
+  },
+  users(params: Record<string, string>) {
+    const qs = new URLSearchParams(params).toString();
+    return raw<{ total: number; page: number; pageSize: number; items: AdminUserSummary[] }>(
+      `/users?${qs}`,
+    );
+  },
+  userDetail(userId: string) {
+    return raw<AdminUserDetail>(`/users/${userId}`);
+  },
+  userDevices(userId: string) {
+    return raw<{ items: AdminDevice[] }>(`/users/${userId}/devices`);
+  },
+  suspendUser(userId: string, reason: string) {
+    return raw<{ ok: true }>(`/users/${userId}/suspend`, { method: 'POST', body: { reason } });
+  },
+  restoreUser(userId: string) {
+    return raw<{ ok: true }>(`/users/${userId}/restore`, { method: 'POST', body: {} });
+  },
+  revokeDevice(deviceId: string) {
+    return raw<{ ok: true }>(`/devices/${deviceId}/revoke`, { method: 'POST', body: {} });
   },
 };

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { adminApi, setAccessToken } from './api.js';
+import { Layout } from './layout.js';
 import { LoginPage } from './pages/login.js';
 
 type SessionState = 'loading' | 'anonymous' | 'authed';
@@ -28,5 +29,5 @@ export function App() {
 
   if (session === 'loading') return <div className="boot">正在载入…</div>;
   if (session === 'anonymous') return <LoginPage onAuthed={() => setSession('authed')} />;
-  return <div className="boot">登录成功（主界面将在后续任务接入）</div>;
+  return <Layout onLogout={() => setSession('anonymous')} />;
 }
