@@ -72,6 +72,8 @@ describe('admin audit', () => {
       pageSize: 10,
     });
     expect(result.total).toBe(7);
+    expect(result.page).toBe(2);
+    expect(result.pageSize).toBe(10);
     expect(result.items[0]!.action).toBe('user.suspend');
     expect(result.items[0]!.createdAt).toBe('2026-08-18T00:00:00.000Z');
     const [countSql] = pool.query.mock.calls[0] as [string];

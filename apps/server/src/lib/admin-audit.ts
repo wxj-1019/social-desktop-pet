@@ -54,7 +54,7 @@ export interface AdminAuditQuery {
 export async function queryAdminAudit(
   pool: pg.Pool,
   q: AdminAuditQuery,
-): Promise<{ items: AdminAuditRow[]; total: number }> {
+): Promise<{ items: AdminAuditRow[]; total: number; page: number; pageSize: number }> {
   const page = Number.isFinite(q.page) ? Math.max(1, q.page!) : 1;
   const pageSize = Number.isFinite(q.pageSize) ? Math.min(100, Math.max(1, q.pageSize!)) : 20;
   const where: string[] = [];
@@ -95,6 +95,8 @@ export async function queryAdminAudit(
   );
   return {
     total: Number(count.rows[0]?.total ?? 0),
+    page,
+    pageSize,
     items: rows.map((r) => ({
       id: String(r.id),
       adminId: r.admin_id ? String(r.admin_id) : null,
