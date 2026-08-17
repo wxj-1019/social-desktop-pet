@@ -48,11 +48,13 @@ interface RequestOptions {
   method?: string;
   body?: unknown;
   skipRefresh?: boolean;
+  headers?: Record<string, string>;
 }
 
 async function raw<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (accessToken) headers.authorization = `Bearer ${accessToken}`;
+  if (opts.headers) Object.assign(headers, opts.headers);
   const res = await fetch(`/admin${path}`, {
     method: opts.method ?? 'GET',
     headers,
@@ -199,6 +201,39 @@ export const adminApi = {
     const qs = new URLSearchParams(params).toString();
     return raw<{ total: number; page: number; pageSize: number; items: AuditRow[] }>(
       `/audit-log?${qs}`,
+    );
+  },
+  chatSummary(userId: string) {
+    return raw<{
+      items: Array<{ messageId: string; role: string; createdAt: string; summary: string }>;
+    }>(`/users/${userId}/chat-summary?page=1&pageSize=50`);
+  },
+  memoriesSummary(userId: string) {
+    return raw<{
+      items: Array<{
+        memoryId: string;
+        category: string;
+        sensitivity: string;
+        createdAt: string;
+        summary: string;
+      }>;
+    }>(`/users/${userId}/memories-summary?page=1&pageSize=50`);
+  },
+  createSensitiveAccess(body: {
+    targetUserId: string;
+    resourceType: 'chat' | 'private_memory' | 'bond_memory';
+    reason: string;
+    scope: Record<string, unknown>;
+  }) {
+    return raw<{ grantId: string; token: string; expiresAt: string }>('/sensitive-access', {
+      method: 'POST',
+      body,
+    });
+  },
+  sensitiveContent(grantId: string, token: string) {
+    return raw<{ resourceType: string; items: Array<Record<string, unknown>> }>(
+      `/sensitive-access/${grantId}/content`,
+      { headers: { 'x-grant-token': token } },
     );
   },
 };

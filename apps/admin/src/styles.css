@@ -283,3 +283,44 @@ body {
   color: #6b7280;
   font-size: 13px;
 }
+
+.grant-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 420px;
+  margin-bottom: 18px;
+}
+
+.grant-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.grant-form input,
+.grant-form select,
+.grant-form textarea {
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.grant-form textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+.grant-form button {
+  align-self: flex-start;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: #4f46e5;
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
