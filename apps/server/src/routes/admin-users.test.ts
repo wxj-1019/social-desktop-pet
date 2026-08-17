@@ -95,6 +95,8 @@ describe('admin users routes', () => {
             suspended_reason: null,
             created_at: '2026-08-01T00:00:00Z',
             device_count: 2,
+            last_seen_at: '2026-08-18T00:00:00Z',
+            online: 1,
             chat_requests_7d: 5,
             pet_count: 1,
             friend_count: 0,
@@ -108,9 +110,16 @@ describe('admin users routes', () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { email: string; chatRequests7d: number };
+    const body = (await res.json()) as {
+      email: string;
+      chatRequests7d: number;
+      online: boolean;
+      lastSeenAt: string | null;
+    };
     expect(body.email).toBe('a@b.c');
     expect(body.chatRequests7d).toBe(5);
+    expect(body.online).toBe(true);
+    expect(body.lastSeenAt).toBe('2026-08-18T00:00:00Z');
   });
 
   it('suspends a user: status update, session+device revoke, kick + audit', async () => {

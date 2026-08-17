@@ -115,7 +115,11 @@ export function UsersPage() {
               <td>{u.online ? '在线' : '—'}</td>
               <td>{u.createdAt.slice(0, 10)}</td>
               <td>
-                <button onClick={() => void openDetail(u.userId)}>详情</button>
+                <button
+                  onClick={() => void openDetail(u.userId).catch((e: Error) => setError(e.message))}
+                >
+                  详情
+                </button>
               </td>
             </tr>
           ))}
@@ -142,6 +146,8 @@ export function UsersPage() {
             )}
             <dt>7 天聊天请求</dt>
             <dd>{selected.chatRequests7d}</dd>
+            <dt>最后在线</dt>
+            <dd>{selected.lastSeenAt ? selected.lastSeenAt : '—'}</dd>
             <dt>宠物 / 好友 / 记忆</dt>
             <dd>
               {selected.petCount} / {selected.friendCount} / {selected.memoryCount}

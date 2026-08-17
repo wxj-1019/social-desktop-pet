@@ -116,6 +116,10 @@ export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: 
       `select u.id as user_id, u.email, p.nickname, u.account_status, u.suspended_at,
               u.suspended_reason, u.created_at,
               (select count(*) from devices d where d.user_id = u.id)::int as device_count,
+              (select max(d.last_seen_at) from devices d where d.user_id = u.id) as last_seen_at,
+              (select count(*) from devices d
+                where d.user_id = u.id and d.revoked_at is null
+                  and d.last_seen_at > now() - interval '5 minutes')::int as online,
               (select coalesce(sum(request_count), 0) from chat_usage cu
                 where cu.user_id = u.id and cu.usage_date >= current_date - 6)::int as chat_requests_7d,
               (select count(*) from pets pt where pt.owner_user_id = u.id)::int as pet_count,
@@ -137,6 +141,8 @@ export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: 
       suspendedReason: r.suspended_reason as string | null,
       createdAt: r.created_at as string,
       deviceCount: Number(r.device_count),
+      online: Number(r.online) > 0,
+      lastSeenAt: r.last_seen_at as string | null,
       chatRequests7d: Number(r.chat_requests_7d),
       petCount: Number(r.pet_count),
       friendCount: Number(r.friend_count),
