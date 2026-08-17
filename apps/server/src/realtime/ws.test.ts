@@ -114,6 +114,25 @@ describe('RealtimeServer 稳定性', () => {
   });
 });
 
+describe('RealtimeServer.kickUser', () => {
+  it('关闭该用户全部连接；无连接用户为 no-op 不抛错', () => {
+    const server = new RealtimeServer(jwt, {}, 30_000);
+    const closed: string[] = [];
+    const fakeWs = (name: string) => ({ close: () => closed.push(name) });
+    const conns = (
+      server as unknown as {
+        conns: Map<string, Set<{ close(): void }>>;
+      }
+    ).conns;
+    conns.set('u1', new Set([fakeWs('ws1'), fakeWs('ws2')]));
+
+    server.kickUser('u1');
+
+    expect(closed).toEqual(['ws1', 'ws2']);
+    expect(() => server.kickUser('nobody')).not.toThrow();
+  });
+});
+
 /** 轻量轮询等待（避免引入依赖；30×50ms 上限） */
 async function viWaitFor(assert: () => void, timeoutMs = 3_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;

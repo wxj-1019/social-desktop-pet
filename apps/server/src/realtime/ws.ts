@@ -148,6 +148,13 @@ export class RealtimeServer {
     return set.size;
   }
 
+  /** 强制断开某用户全部连接（账号暂停等管理操作；close 事件自然清理 conns） */
+  kickUser(userId: string): void {
+    const set = this.conns.get(userId);
+    if (!set) return;
+    for (const ws of set) ws.close();
+  }
+
   /** 在线用户数（V-10 压测指标） */
   get onlineUsers(): number {
     return this.conns.size;
