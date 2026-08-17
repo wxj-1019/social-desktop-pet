@@ -14,9 +14,11 @@ import type pg from 'pg';
 import { createOpenAiCompatibleEmbeddingClient, embeddingConfigFromEnv } from './ai/embedding.js';
 import { createOpenAiCompatibleClient, llmConfigFromEnv } from './ai/llm.js';
 import { createOpenAiCompatibleModerator, moderationConfigFromEnv } from './ai/moderation.js';
+import { AdminSessionManager } from './auth/admin-session.js';
 import { JwtService } from './auth/jwt.js';
 import { OtpService } from './auth/otp.js';
 import { SessionManager, type SessionStore } from './auth/session.js';
+import { PgAdminSessionStore, PgAdminUserStore } from './db/admin-stores.js';
 import { migrate } from './db/migrate.js';
 import { PgOtpStore } from './db/otp-store.js';
 import { createPool } from './db/pool.js';
@@ -25,6 +27,7 @@ import { createNoopMailProvider, createSmtpMailProvider, smtpConfigFromEnv } fro
 import { PgMemoryExtractStore } from './lib/memory-store.js';
 import { runRetentionSweep } from './lib/retention.js';
 import { RealtimeServer } from './realtime/ws.js';
+import { createAdminRouter } from './routes/admin.js';
 import { createAuthRouter, type AuthDeps } from './routes/auth.js';
 import { createBusinessRouter, type BusinessDeps } from './routes/business.js';
 import { registerWaitlistRoutes, WaitlistService, type WaitlistDeps } from './routes/waitlist.js';
@@ -55,6 +58,12 @@ export interface AppDeps {
   otp?: AuthDeps['otp'];
   /** 13.2 事务邮件（waitlist 确认；SMTP 配置就绪发真实邮件，否则降级日志） */
   mail?: WaitlistDeps['mail'];
+  /** 管理后台会话（/admin；admin_sessions 表 + AdminSessionManager） */
+  adminSessions: AdminSessionManager;
+  adminSessionStore: PgAdminSessionStore;
+  adminUsers: PgAdminUserStore;
+  /** 4.3 邀请状态机（auth 注册绑定与 admin 运营邀请共用同一实例） */
+  waitlist: WaitlistService;
   /** 本地 e2e 专用：注册测试数据重置端点（仅 PET_DEV_RESET=true 时开启，生产无此端点） */
   devReset?: boolean;
 }
@@ -85,8 +94,8 @@ export function buildApp(deps: AppDeps) {
 
   const auth = createAuthRouter({
     ...deps,
-    // 4.3 邀请状态机：注册绑定（joined + claimed_by）
-    waitlist: new WaitlistService(deps.pool, deps.mail),
+    // 4.3 邀请状态机：注册绑定（joined + claimed_by）；与 admin 共用同一实例
+    waitlist: deps.waitlist,
   });
   app.route('/auth', auth);
 
@@ -110,6 +119,18 @@ export function buildApp(deps: AppDeps) {
     outputModerator: deps.outputModerator,
   });
   app.route('/', business);
+
+  // 管理后台（/admin；路由自带 basePath('/admin')，挂根路径即生效）
+  const admin = createAdminRouter({
+    pool: deps.pool,
+    jwt: deps.jwt,
+    adminSessions: deps.adminSessions,
+    adminSessionStore: deps.adminSessionStore,
+    adminUsers: deps.adminUsers,
+    realtime: deps.realtime,
+    waitlist: deps.waitlist,
+  });
+  app.route('/', admin);
 
   return app;
 }
@@ -137,6 +158,11 @@ export async function main(): Promise<void> {
   const users = new PgUsersStore(pool);
   const devices = new PgDevicesStore(pool);
 
+  // ---- 管理后台（/admin；管理员会话/账号存储，独立于用户域）----
+  const adminSessionStore = new PgAdminSessionStore(pool);
+  const adminSessions = new AdminSessionManager(adminSessionStore);
+  const adminUsers = new PgAdminUserStore(pool);
+
   // ---- 13.2 邮箱 OTP（事务邮件；devCode 仅限开发环境返回，生产绝不开启）----
   const mailProvider = (() => {
     const smtp = smtpConfigFromEnv();
@@ -150,6 +176,9 @@ export async function main(): Promise<void> {
     // dev 开关：可选读取（与 PET_DEV_RESET 同款），缺失时静默关闭，不影响生产启动
     devCodeInResponse: process.env['PET_DEV_OTP_CODE_IN_RESPONSE'] === 'true',
   });
+
+  // ---- 4.3 邀请状态机（auth 注册绑定 + admin 运营邀请共用同一实例）----
+  const waitlistService = new WaitlistService(pool, mailProvider);
 
   // ---- 自建 Realtime（9.2/9.4）----
   const realtime = new RealtimeServer(jwt);
@@ -196,6 +225,10 @@ export async function main(): Promise<void> {
     outputModerator,
     otp, // 13.2 邮箱 OTP 登录
     mail: mailProvider, // 13.2 事务邮件（waitlist 确认）
+    adminSessions,
+    adminSessionStore,
+    adminUsers,
+    waitlist: waitlistService,
     devReset: process.env['PET_DEV_RESET'] === 'true',
   });
 
