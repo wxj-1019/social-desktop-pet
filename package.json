@@ -2,18 +2,18 @@
   "name": "ai-social-desktop-pet",
   "version": "0.0.0",
   "private": true,
-  "description": "跨平台 AI 社交桌宠：面向真实好友共同养成的桌宠（Electron + Supabase + Graph Engineering）",
+  "description": "跨平台 AI 社交桌宠：面向真实好友共同养成的桌宠（Electron + 自建后端 + Graph Engineering）",
   "license": "UNLICENSED",
   "packageManager": "pnpm@9.12.0",
   "engines": {
-    "node": ">=20.11",
+    "node": ">=22",
     "pnpm": ">=9"
   },
   "scripts": {
     "dev": "pnpm --filter @pet/desktop dev",
     "dev:server": "pnpm --filter @pet/server dev",
     "migrate": "pnpm --filter @pet/server migrate",
-    "build": "pnpm -r --filter=./packages/* build && pnpm --filter @pet/desktop build && pnpm --filter @pet/server typecheck",
+    "build": "pnpm -r --filter=./packages/* build && pnpm --filter @pet/server build && pnpm --filter @pet/desktop build && pnpm --filter @pet/landing build",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -27,7 +27,7 @@
     "assets:tray": "node tools/generate-tray-icon.mjs",
     "bench:resources": "node tools/bench/resource-bench.mjs",
     "bench:ws": "node tools/bench/measure-ws.mjs",
-    "clean": "pnpm -r exec rimraf dist node_modules/.cache .turbo || true",
+    "clean": "rimraf packages/*/dist apps/server/dist apps/desktop/out apps/desktop/release coverage node_modules/.cache",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -45,7 +45,6 @@
     "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
-    "@types/pngjs": "^6.0.5",
     "eslint": "^9.12.0",
     "husky": "^9.1.7",
     "jsdom": "^30.0.1",

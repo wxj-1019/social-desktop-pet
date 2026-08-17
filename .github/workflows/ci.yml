@@ -5,9 +5,18 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+# 同一 ref 的旧运行自动取消（防排队浪费）
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -15,7 +24,7 @@ jobs:
           version: 9
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
@@ -23,6 +32,7 @@ jobs:
       # 根 references 含全部 packages + apps/server（D-13）；apps/desktop 需单独检查（审查发现 #1）
       - run: pnpm typecheck
       - run: pnpm --filter @pet/desktop typecheck
+      - run: pnpm --filter @pet/landing typecheck
       # D-13 部署产物门禁：server build 必须真实产出 dist/（tsconfig.build.json，noEmit:false）
       - run: pnpm --filter @pet/server build
       - run: pnpm test
@@ -30,6 +40,7 @@ jobs:
   # 补 2：Electron e2e 冒烟（Linux 需 xvfb + Electron 系统依赖）
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -37,7 +48,7 @@ jobs:
           version: 9
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Electron 在 Ubuntu 的运行时依赖
@@ -48,6 +59,7 @@ jobs:
   # Task 13：Windows 真机目标平台验证星屿（SVG 桌宠，不依赖后端，无 xvfb 问题）
   star-isle-windows:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -55,9 +67,8 @@ jobs:
           version: 9
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @pet/desktop typecheck
       - run: pnpm --filter @pet/desktop build
       - run: pnpm exec playwright test --config e2e/playwright.config.ts star-isle.spec.ts

@@ -18,9 +18,6 @@ export default function petConfig(extra = []) {
         '**/node_modules/**',
         '**/*.tsbuildinfo',
         'apps/desktop/release/**',
-        'packages/supabase/db/migrations/**',
-        // Supabase Edge Functions 由 Deno 类型检查，跳过 tsc/eslint 的 TS 解析
-        'packages/supabase/functions/**',
       ],
     },
     ...tseslint.configs.recommended,

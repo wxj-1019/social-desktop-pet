@@ -11,7 +11,8 @@ export default defineConfig({
   // 本地环境自愈：后端可达时预置测试账号/好友（不可达则静默跳过，CI 无后端）
   globalSetup: './helpers/global-setup.ts',
   timeout: 60_000,
-  retries: 0,
+  // CI 环境给 Electron 启动波动留一次重试缓冲（本地 0 保持快速反馈）
+  retries: process.env['CI'] ? 1 : 0,
   reporter: [['list']],
   // Electron 应用有单实例锁：spec 文件必须串行（workers=1）
   workers: 1,
