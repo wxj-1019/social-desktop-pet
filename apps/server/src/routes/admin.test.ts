@@ -146,4 +146,123 @@ describe('admin auth routes', () => {
     });
     expect(ok.status).toBe(200);
   });
+
+  it('login sets HttpOnly refresh cookie scoped to /admin', async () => {
+    const { app, users } = buildDeps();
+    const { hashPasswordArgon2 } = await import('../auth/password.js');
+    users.findByEmail.mockResolvedValue({
+      id: 'a1',
+      email: 'admin@pet.dev',
+      passwordHash: await hashPasswordArgon2('Admin@123456'),
+      status: 'active',
+      lastLoginAt: null,
+      createdAt: 0,
+    });
+    const res = await app.request('/admin/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@pet.dev', password: 'Admin@123456' }),
+    });
+    expect(res.status).toBe(200);
+    const cookie = res.headers.get('set-cookie');
+    expect(cookie).toContain('Path=/admin');
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('SameSite=Lax');
+  });
+
+  it('login with non-string email returns 401 instead of 500', async () => {
+    const { app } = buildDeps();
+    const res = await app.request('/admin/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 123, password: 'x' }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('login rejects a disabled admin with 403', async () => {
+    const { app, users } = buildDeps();
+    const { hashPasswordArgon2 } = await import('../auth/password.js');
+    users.findByEmail.mockResolvedValue({
+      id: 'a1',
+      email: 'admin@pet.dev',
+      passwordHash: await hashPasswordArgon2('Admin@123456'),
+      status: 'disabled',
+      lastLoginAt: null,
+      createdAt: 0,
+    });
+    const res = await app.request('/admin/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@pet.dev', password: 'Admin@123456' }),
+    });
+    expect(res.status).toBe(403);
+    expect(users.recordLogin).not.toHaveBeenCalled();
+  });
+
+  it('me rejects a token after the admin is disabled', async () => {
+    const { app, users } = buildDeps();
+    users.getById.mockResolvedValue({ id: 'a1', email: 'admin@pet.dev', status: 'disabled' });
+    const adminToken = await JWT.signAdmin('a1');
+    const res = await app.request('/admin/auth/me', {
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('locks the email after 5 failed login attempts', async () => {
+    const { app } = buildDeps();
+    const attempt = () =>
+      app.request('/admin/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'admin@pet.dev', password: 'wrong-password' }),
+      });
+    for (let i = 0; i < 5; i++) {
+      expect((await attempt()).status).toBe(401);
+    }
+    const res = await attempt();
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as { error: string; retryAfterSec: number };
+    expect(body.error).toBe('rate_limit');
+    expect(body.retryAfterSec).toBeGreaterThan(0);
+  });
+
+  it('revoke invalidates the refresh token', async () => {
+    const { app, users } = buildDeps();
+    const { hashPasswordArgon2 } = await import('../auth/password.js');
+    users.findByEmail.mockResolvedValue({
+      id: 'a1',
+      email: 'admin@pet.dev',
+      passwordHash: await hashPasswordArgon2('Admin@123456'),
+      status: 'active',
+      lastLoginAt: null,
+      createdAt: 0,
+    });
+    const login = await app.request('/admin/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@pet.dev', password: 'Admin@123456' }),
+    });
+    const cookie = login.headers.get('set-cookie')!.split(';')[0]!;
+    const revoke = await app.request('/admin/auth/revoke', {
+      method: 'POST',
+      headers: { cookie },
+    });
+    expect(revoke.status).toBe(200);
+    const refresh = await app.request('/admin/auth/refresh', {
+      method: 'POST',
+      headers: { cookie },
+    });
+    expect(refresh.status).toBe(401);
+  });
+
+  it('audit-log rejects malformed date params with 422', async () => {
+    const { app } = buildDeps();
+    const adminToken = await JWT.signAdmin('a1');
+    const res = await app.request('/admin/audit-log?from=not-a-date', {
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.status).toBe(422);
+  });
 });

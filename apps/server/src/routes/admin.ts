@@ -21,9 +21,12 @@ export interface AdminVariables {
   adminId: string;
 }
 
-/** 管理鉴权中间件：Bearer access token 必须携带 role=admin（用户 token 一律 401） */
+/** 管理鉴权中间件：Bearer access token 必须携带 role=admin（用户 token 一律 401）；
+ *  每请求复核 admin_users 状态（与用户侧 requireAuth 查 active_display_device_id 同策略）：
+ *  被删除 → 401，被禁用（status≠active）→ 403，禁用即时生效而无需等 access token 过期。 */
 export function requireAdminAuth(
   jwt: JwtService,
+  adminUsers: PgAdminUserStore,
 ): MiddlewareHandler<{ Variables: AdminVariables }> {
   return async (c, next) => {
     const auth = c.req.header('authorization');
@@ -31,6 +34,9 @@ export function requireAdminAuth(
     if (!token) return c.json({ error: 'admin_unauthorized' }, 401);
     try {
       const payload = await jwt.verifyAdmin(token);
+      const admin = await adminUsers.getById(payload.sub);
+      if (!admin) return c.json({ error: 'admin_unauthorized' }, 401);
+      if (admin.status !== 'active') return c.json({ error: 'admin_disabled' }, 403);
       c.set('adminId', payload.sub);
       return next();
     } catch {
@@ -89,8 +95,10 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
   app.post('/auth/login', async (c) => {
     const ip = clientIpOf(c);
     const body = (await c.req.json().catch(() => ({}))) as { email?: string; password?: string };
-    const email = (body.email ?? '').toLowerCase().trim();
+    // 畸形 JSON/字段类型（如 {"email":123}）→ 401 invalid_credentials，而非 500
+    const email = typeof body.email === 'string' ? body.email.toLowerCase().trim() : '';
     if (!email) return c.json({ error: 'invalid_credentials' }, 401);
+    const password = typeof body.password === 'string' ? body.password : '';
 
     const lock = adminLimiter.lockStatus(`admin-login:${email}`);
     if (lock.locked) return c.json({ error: 'rate_limit', retryAfterSec: lock.retryAfterSec }, 429);
@@ -100,7 +108,7 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
     }
 
     const user = await deps.adminUsers.findByEmail(email);
-    const ok = user ? (await verifyPassword(body.password ?? '', user.passwordHash)).ok : false;
+    const ok = user ? (await verifyPassword(password, user.passwordHash)).ok : false;
     if (!user || !ok) {
       adminLimiter.recordFailure(`admin-login:${email}`);
       await writeAdminAudit(deps.pool, {
@@ -168,13 +176,13 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
     return c.json({ ok: true });
   });
 
-  app.get('/auth/me', requireAdminAuth(jwt), async (c) => {
+  app.get('/auth/me', requireAdminAuth(jwt, deps.adminUsers), async (c) => {
     const admin = await deps.adminUsers.getById(c.get('adminId'));
     if (!admin) return c.json({ error: 'admin_unauthorized' }, 401);
     return c.json({ admin: { id: admin.id, email: admin.email } });
   });
 
-  app.get('/overview', requireAdminAuth(jwt), async (c) => {
+  app.get('/overview', requireAdminAuth(jwt, deps.adminUsers), async (c) => {
     const { rows } = await deps.pool.query(
       `select
          (select count(*) from auth.users)::int as total_users,
@@ -198,8 +206,16 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
     });
   });
 
-  app.get('/audit-log', requireAdminAuth(jwt), async (c) => {
+  const ADMIN_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+  app.get('/audit-log', requireAdminAuth(jwt, deps.adminUsers), async (c) => {
     const q = c.req.query();
+    // from/to 必须是 YYYY-MM-DD，否则 Postgres 日期 cast 会 500；非法 → 422
+    for (const key of ['from', 'to'] as const) {
+      if (q[key] !== undefined && !ADMIN_DATE_RE.test(q[key])) {
+        return c.json({ error: 'invalid_input' }, 422);
+      }
+    }
     const result = await queryAdminAudit(deps.pool, {
       adminId: q.adminId,
       action: q.action,
