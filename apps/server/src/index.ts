@@ -178,7 +178,10 @@ export async function main(): Promise<void> {
   });
 
   // ---- 4.3 邀请状态机（auth 注册绑定 + admin 运营邀请共用同一实例）----
-  const waitlistService = new WaitlistService(pool, mailProvider);
+  // claimUrlBase 与 registerWaitlistRoutes 同一环境变量：admin 发放与公开路由发同一链接
+  const waitlistService = new WaitlistService(pool, mailProvider, {
+    claimUrlBase: process.env['WAITLIST_CLAIM_URL_BASE'],
+  });
 
   // ---- 自建 Realtime（9.2/9.4）----
   const realtime = new RealtimeServer(jwt);

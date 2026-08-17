@@ -19,6 +19,7 @@ import { AuthRateLimiter, clientIpOf } from '../lib/auth-rate-limit.js';
 
 import { createAdminUsageRouter } from './admin-usage.js';
 import { createAdminUsersRouter } from './admin-users.js';
+import { createAdminWaitlistRouter } from './admin-waitlist.js';
 
 export interface AdminVariables {
   adminId: string;
@@ -248,6 +249,16 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
     adminUsers: deps.adminUsers,
   });
   app.route('/', usageRouter);
+
+  // waitlist 运营管理（列表、按 id 发放邀请、强制过期）
+  const waitlistRouter = createAdminWaitlistRouter({
+    pool: deps.pool,
+    jwt,
+    adminUsers: deps.adminUsers,
+    waitlist: deps.waitlist,
+    writeAudit: (entry) => writeAdminAudit(deps.pool, entry),
+  });
+  app.route('/', waitlistRouter);
 
   return app;
 }
