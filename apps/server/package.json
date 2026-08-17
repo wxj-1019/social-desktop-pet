@@ -12,6 +12,7 @@
     "typecheck": "tsc -b",
     "migrate": "tsx --env-file=.env.local src/db/migrate.ts",
     "backfill-embeddings": "tsx --env-file=.env.local scripts/backfill-embeddings.ts",
+    "admin:create": "tsx --env-file=.env.local scripts/admin-create.ts",
     "test": "vitest run"
   },
   "dependencies": {
