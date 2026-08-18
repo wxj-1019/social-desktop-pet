@@ -1,0 +1,66 @@
+﻿Analysis complete. All findings below are based on `recallMemories` (memory-store.ts:73-144) plus its callers (`chat.ts`, `memory-retrieval.ts`) and the schema (`0001_init.sql`, `0000_self_hosted.sql`, `.env.example`). No files were modified; I did not run tests (would write cache files), so the test axis is a coverage observation only.
+
+# Review: `recallMemories` (apps/server/src/lib/memory-store.ts)
+
+**What's good, briefly:** fully parameterized SQL (no injection surface), claims set transaction-locally (`set_config(..., true)`) so no cross-request RLS identity leakage, owner+purpose+visibility+sensitivity+time-validity+`active` filter matches AGENTS.md #5/10.7, dedup + scoring correctly delegated to the pure `rrfFuse`/`fuseAndScore` in ai-graph.
+
+---
+
+## 1) Potential bugs
+
+**B1 — Important (availability). Embedding HTTP call runs inside the open transaction while holding a pooled connection.**
+`pool.connect()` + `begin` (77-80) → `await this.queryEmbedding(input.query)` (114) → provider round-trip (100ms–seconds under latency/retry) → only then the vector SQL. `persistMemory` explicitly documents this exact anti-pattern ("事务内长占连接会拖垮连接池", 184-186) and moved embedding *outside* the transaction — `recallMemories` did not. With pool max 20 and concurrent chats, simultaneous recalls exhaust the pool and unrelated DB queries queue/fail.
+*Fix:* generate the embedding before `pool.connect()` (and outside any transaction).
+
+**B2 — Important (resilience). No error handling on the embedding call → provider outage kills the whole chat.**
+`queryEmbedding` (47-51) has no try/catch, unlike `embedValue` (54-64) which degrades to FTS-only. If the provider throws (network, 429, timeout), `recallMemories` throws → `retrieve_memory` node has no error handling in the graph (chat-flow.ts:87) → the route catch (chat.ts:283-289) sends an `error` SSE frame and the chat fails. This contradicts the documented "嵌入失败降级 FTS-only" and the .env.example design (missing `EMBEDDING_*` ⇒ FTS-only).
+*Fix:* wrap in try/catch, `console.warn`, return `undefined` (mirror `embedValue`).
+
+**B3 — Minor (contract drift). `MemorySearchInput.queryEmbedding` is dead — the store re-embeds the query itself.**
+The interface documents "查询向量…由调用方注入；无则服务端跳过向量臂" (memory-retrieval.ts:47-48), but `recallMemories` ignores `input.queryEmbedding` and always calls its own private `queryEmbedding(input.query)`. The graph can never reuse an embedding it already has → a redundant provider call per chat, and the contract lies.
+
+**B4 — Minor (edge case). Empty/garbage query behaves inconsistently between arms.**
+`plainto_tsquery('simple','')` yields an empty tsquery → `@@` never matches → FTS arm returns 0 rows, while the vector arm still embeds `''` (wasted call) and returns nearest neighbors. The chat route guards empty messages (chat.ts:194), but punctuation-only input ("???") hits the same split. Add a guard: skip retrieval (or return empty) for queries with no tsquery tokens.
+
+**B5 — Minor (maintainability trap). Vector arm renumbers parameters by slicing `args`.**
+`vecArgs = [...args.slice(0,3), embedding, RECALL_ARM_LIMIT, sensitivity]` (116-121) reuses the same `filter` SQL but repurposes `$4`/`$5` (FTS: query/limit → vector: embedding/limit). It works only because the vector arm never references `$4` in WHERE. Any future edit to `filter` or `args` order silently corrupts one arm (`$4::vector` cast error or wrong filter). Consider two separate SQL strings or a shared CTE with unambiguous numbering.
+
+**B6 — Nit.** `rollback` in catch even when `begin` failed (harmless — PG warns) and the catch masks the original error if rollback itself fails (rare). Also `toRetrievedMemory`'s `created_at`/`importance` casts are safe (NOT NULL in schema, 0001:132-139).
+
+---
+
+## 2) RLS / permission risks
+
+**R1 — High (security control silently disabled). RLS is bypassed in the default and likely production deployment.**
+`.env.example:5` connects as `DATABASE_URL=postgres://postgres:...` — the **superuser**. Migrations only `alter table ... enable row level security` (0001:296-299) — **no `force row level security` anywhere** (grep confirmed), no least-privilege role. Postgres semantics: superusers and table owners bypass RLS unless FORCE is set. So `private_memories_owner_only` (0001:302-303) never filters a single row; the entire "RLS 纵深防御" (AGENTS.md #4, D-13) is a no-op, and *everything* rests on the app-layer `owner_user_id = $1`.
+*Fix:* add `alter table private_memories force row level security` (and the other RLS tables), and run the app under a dedicated non-owner role (e.g. `app_user` with grants), keeping `postgres` only for migrations.
+
+**R2 — Medium (trust boundary). `recallMemories` trusts `ownerUserId` unconditionally; RLS is the only backstop and it's off (R1).**
+The store never cross-checks that the DB identity (`request.jwt.claims.sub`) equals the app-layer owner. Today the caller is sound — `state.userId` comes from JWT `sub` via `requireAuth` (chat.ts:190, 230-237; business.ts:82), and `private_chat` is the only live scenario (`friend_visit` is test-only; the graph's `retrieve_memory` node is already wired for it, chat-flow.ts:87). But the store API would happily return another user's memories for a spoofed `ownerUserId`, and the friend_visit entry point (future route) will need its own owner-selection logic. With R1 fixed, RLS blocks this; until then it's an IDOR waiting for a mis-set caller.
+*Fix:* enforce `force row level security` (R1) and/or have the store assert `rlsClaimsJson` identity matches `ownerUserId`.
+
+**R3 — Low (by design, but worth noting). Visibility/sensitivity/time-validity filtering exists only in this query path.**
+The RLS policy checks only `owner_user_id = auth.uid()` — it would allow a direct read of expired/invalidated/high-sensitivity rows even if active. Any future retrieval code path must replicate the filter verbatim or the `friend_visit` exclusion of `high` sensitivity and `public_profile`-only visibility (69-71, 32-34) silently leaks. Consider a shared SQL view/function as single source of truth. Also, `visibility`/`purpose` have no CHECK constraints (0001:127-128) — bad data can't be caught at the DB layer.
+
+**R4 — Positive/Info.** Claims are correctly transaction-scoped (`set_config(..., true)`), so pooled connections don't leak identity across requests; `{sub}` is sufficient for the current owner-only policy. No injection into the filter (all static + parameterized).
+
+---
+
+## 3) Optimization suggestions
+
+- **O1 (high impact).** Move query embedding out of the transaction and off the connection (fixes B1/B2 in one move).
+- **O2 (medium).** Run the two arms concurrently or in one round trip. They're independent but share the claims-scoped transaction: (a) single SQL with two CTEs + `UNION` carrying an `arm` tag, or (b) `Promise.all` on two dedicated clients each in its own transaction. Halves the recall DB latency.
+- **O3 (low).** `begin read only` for read-only transactions — cheaper bookkeeping and a compile-time guarantee against accidental writes.
+- **O4 (low).** `plainto_tsquery('simple', $4)` is evaluated twice (WHERE + ORDER BY, 106-107); wrap it in a CTE, or use `websearch_to_tsquery` (more forgiving for user input). `to_tsvector` is also recomputed for ranking — a generated tsvector column + GIN would help on larger tables.
+- **O5 (low).** Index coverage: the partial GIN (0001:289-291) and partial HNSW (278-281) don't include owner/purpose/visibility/sensitivity, so the FTS arm scans all *active* matches and filters by owner after. Consider a partial btree on `(owner_user_id, purpose, visibility, sensitivity)` (or GIN including owner) to narrow candidates first. Fine at current scale.
+- **O6 (low).** `RECALL_ARM_LIMIT = 20` is hardcoded regardless of `topK` — L1 (topK=3) still recalls 20+20 candidates and pays an embedding call for 3 memories. Scale the arm limit with topK (e.g. `max(topK*3, 10)`), keeping enough rank depth for RRF.
+- **O7 (info).** Honor `input.queryEmbedding` when provided (fixes B3) to avoid duplicate embedding work.
+- **O8 (nit).** Hoist `visibilityScope(...)`/`sensitivityScope(...)` into locals instead of computing twice (93-100, 120).
+
+---
+
+## Tests (observation, not run)
+
+`memory-store.test.ts:119-156` covers SQL shape of the vector arm and FTS-only degradation via scripted clients. Gaps directly tied to the findings: no test for provider **throw** (B2), empty/punctuation query (B4), the actual permission predicates (owner/purpose/visibility/sensitivity/time-validity) in the generated SQL, `set_config`/`begin` ordering, or result mapping — and nothing exercises RLS/claims against a real DB, so R1 would pass CI unnoticed.
+
+**Top priority:** B1+B2 (embedding inside transaction, no degradation) and R1 (`force row level security` + non-superuser app role) — the latter is one mis-set `ownerUserId` away from a cross-user memory disclosure.
