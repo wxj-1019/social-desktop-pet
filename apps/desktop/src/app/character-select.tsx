@@ -5,7 +5,7 @@
  * 点击卡片调用 petProfile.setCharacter → Main 保存 profile + 重载桌宠窗。
  * 当前选中态从 petProfile.get() 读取（切换后立即高亮，桌宠窗后台重载）。
  */
-import { Check } from 'lucide-react';
+import { ArrowLeft, Check } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 import type { PetId } from '@pet/protocol';
@@ -17,7 +17,7 @@ export interface CharacterSelectProps {
   onBack: () => void;
 }
 
-export function CharacterSelect(_props: CharacterSelectProps) {
+export function CharacterSelect({ onBack }: CharacterSelectProps) {
   const characters = listCharacters();
   const [currentId, setCurrentId] = useState<PetId | null>(null);
   const [switching, setSwitching] = useState(false);
@@ -45,6 +45,13 @@ export function CharacterSelect(_props: CharacterSelectProps) {
 
   return (
     <div className="character-select" data-testid="character-select">
+      <div className="character-select__header">
+        <button className="character-select__back" type="button" onClick={onBack} aria-label="返回">
+          <ArrowLeft size={14} aria-hidden="true" />
+          返回
+        </button>
+        <h3 className="character-select__title">角色</h3>
+      </div>
       <p className="character-select__hint">点击卡片即可切换桌宠形象，下次启动自动保持。</p>
       <div className="character-cards" role="radiogroup" aria-label="可选角色">
         {characters.map((c) => {

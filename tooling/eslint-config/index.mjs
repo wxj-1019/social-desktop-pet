@@ -18,6 +18,9 @@ export default function petConfig(extra = []) {
         '**/node_modules/**',
         '**/*.tsbuildinfo',
         'apps/desktop/release/**',
+        // 独立 git worktree（如 .worktrees/*），其源码与当前工作树版本可能不同，
+        // 不应参与当前工作树的 lint
+        '**/.worktrees/**',
       ],
     },
     ...tseslint.configs.recommended,
