@@ -23,7 +23,8 @@ win:
     - target: nsis
       arch:
         - x64
-  # 图标：V-12 角色/视觉资产就绪后提供 build/icon.ico（当前用 Electron 默认）
+  # 应用图标：占位星屿头像（pnpm assets:icon 生成；V-12 角色资产就绪后替换）
+  icon: icon.ico
 
 nsis:
   oneClick: false

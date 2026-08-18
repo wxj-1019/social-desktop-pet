@@ -26,6 +26,7 @@
     "test:e2e:star-isle": "pnpm --filter @pet/desktop build && playwright test --config e2e/playwright.config.ts star-isle.spec.ts",
     "package:win": "pnpm --filter @pet/desktop package:win",
     "assets:tray": "node tools/generate-tray-icon.mjs",
+    "assets:icon": "node tools/generate-app-icon.mjs",
     "bench:resources": "node tools/bench/resource-bench.mjs",
     "bench:ws": "node tools/bench/measure-ws.mjs",
     "clean": "rimraf packages/*/dist apps/server/dist apps/desktop/out apps/desktop/release apps/admin/dist coverage node_modules/.cache",
