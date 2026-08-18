@@ -14,7 +14,7 @@
     "dev:server": "pnpm --filter @pet/server dev",
     "dev:admin": "pnpm --filter @pet/admin dev",
     "migrate": "pnpm --filter @pet/server migrate",
-    "build": "pnpm -r --filter=./packages/* build && pnpm --filter @pet/server build && pnpm --filter @pet/desktop build && pnpm --filter @pet/landing build",
+    "build": "pnpm -r --filter=./packages/* build && pnpm --filter @pet/server build && pnpm --filter @pet/desktop build && pnpm --filter @pet/landing build && pnpm --filter @pet/admin build",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -28,7 +28,7 @@
     "assets:tray": "node tools/generate-tray-icon.mjs",
     "bench:resources": "node tools/bench/resource-bench.mjs",
     "bench:ws": "node tools/bench/measure-ws.mjs",
-    "clean": "rimraf packages/*/dist apps/server/dist apps/desktop/out apps/desktop/release coverage node_modules/.cache",
+    "clean": "rimraf packages/*/dist apps/server/dist apps/desktop/out apps/desktop/release apps/admin/dist coverage node_modules/.cache",
     "prepare": "husky"
   },
   "lint-staged": {

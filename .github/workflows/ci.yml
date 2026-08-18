@@ -29,12 +29,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm lint
-      # 根 references 含全部 packages + apps/server（D-13）；apps/desktop 需单独检查（审查发现 #1）
+      # 根 references 含全部 packages + apps/server（D-13）；apps/desktop/landing/admin 需单独检查（审查发现 #1 + admin 门禁）
       - run: pnpm typecheck
       - run: pnpm --filter @pet/desktop typecheck
       - run: pnpm --filter @pet/landing typecheck
+      - run: pnpm --filter @pet/admin typecheck
       # D-13 部署产物门禁：server build 必须真实产出 dist/（tsconfig.build.json，noEmit:false）
       - run: pnpm --filter @pet/server build
+      - run: pnpm --filter @pet/admin build
       - run: pnpm test
 
   # 补 2：Electron e2e 冒烟（Linux 需 xvfb + Electron 系统依赖）
@@ -72,3 +74,66 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @pet/desktop build
       - run: pnpm exec playwright test --config e2e/playwright.config.ts star-isle.spec.ts
+
+  e2e-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: pet
+          POSTGRES_DB: pet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @pet/server build
+      - run: pnpm --filter @pet/admin build
+      # 管理后台 GUI e2e 用真实浏览器（API 级 spec 不需要，但 admin-ui 需要 Chromium）
+      - run: pnpm exec playwright install --with-deps chromium
+      # 管理后台 e2e 依赖管理员账号（admin:create 幂等：已存在时退出码 1，忽略即可）
+      - name: Provision e2e admin account
+        run: cd apps/server && DATABASE_URL=postgres://postgres:pet@localhost:5432/pet ADMIN_PASSWORD=E2eAdmin@123456 pnpm exec tsx scripts/admin-create.ts e2e-admin@pet.dev || true
+      - name: Start server with e2e env
+        run: |
+          cd apps/server
+          DATABASE_URL=postgres://postgres:pet@localhost:5432/pet \
+          JWT_SECRET=ci-e2e-secret-at-least-32-bytes-long \
+          PET_DEV_RESET=true \
+          PET_DEV_OTP_CODE_IN_RESPONSE=true \
+          WAITLIST_ADMIN_TOKEN=e2e-waitlist-admin \
+          PORT=8787 \
+          node dist/index.js &
+          npx -y wait-on http://127.0.0.1:8787/healthz -t 30000
+      # 管理后台构建产物预览（/admin 同源代理到 8787），供 GUI e2e 真实打开
+      - name: Start admin preview
+        run: |
+          cd apps/admin
+          npx vite preview --host 127.0.0.1 --port 5175 &
+          npx -y wait-on http://127.0.0.1:5175 -t 30000
+      - run: pnpm exec playwright test --config e2e/playwright.config.ts
+          otp.spec.ts
+          waitlist.spec.ts
+          admin.spec.ts
+          admin-ui.spec.ts
+          login.spec.ts
+          chat.spec.ts
+          ws-realtime.spec.ts
+          gift-pet.spec.ts
+          memory.spec.ts
+          crisis.spec.ts
+          deep-link.spec.ts
