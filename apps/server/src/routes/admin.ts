@@ -284,6 +284,27 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
     });
   });
 
+  // 总览 24h 趋势：按小时聚合聊天消息（generate_series 补零，运营看波动节奏）
+  app.get('/overview/trend', requireAdminAuth(jwt, deps.adminUsers), async (c) => {
+    const { rows } = await deps.pool.query(
+      `select gs as hour, coalesce(count(m.message_id), 0)::int as messages
+       from generate_series(
+              date_trunc('hour', now()) - interval '23 hours',
+              date_trunc('hour', now()),
+              interval '1 hour'
+            ) gs
+       left join chat_messages m on date_trunc('hour', m.created_at) = gs
+       group by gs
+       order by gs`,
+    );
+    return c.json({
+      items: rows.map((r) => ({
+        hour: new Date(r.hour as Date).toISOString(),
+        messages: Number(r.messages),
+      })),
+    });
+  });
+
   app.get('/audit-log', requireAdminAuth(jwt, deps.adminUsers), async (c) => {
     const q = c.req.query();
     // from/to 必须是日历级合法日期，否则 Postgres 日期 cast 会 500（2026-02-30 等）；非法 → 422

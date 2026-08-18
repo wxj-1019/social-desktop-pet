@@ -54,7 +54,7 @@ export function createAdminWaitlistRouter(
     );
     const { rows } = await deps.pool.query(
       `select w.id, w.email, w.status, w.created_at, w.invited_at, w.invite_expires_at,
-              w.claimed_at
+              w.claimed_at, w.invite_mail_status, w.invite_mail_at
        from waitlist w
        where ($1 = '' or w.status = $1) and ($2 = '' or w.email ilike '%' || $2 || '%')
        order by w.created_at desc
@@ -73,6 +73,8 @@ export function createAdminWaitlistRouter(
         invitedAt: r.invited_at as string | null,
         inviteExpiresAt: r.invite_expires_at as string | null,
         claimedAt: r.claimed_at as string | null,
+        inviteMailStatus: r.invite_mail_status as string,
+        inviteMailAt: r.invite_mail_at as string | null,
       })),
     });
   });
