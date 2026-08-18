@@ -10,7 +10,11 @@
  * 客户端解析器见 apps/desktop/src/lib/api/sse.ts（fetch + ReadableStream，
  * 不用 EventSource——后者无法带 Authorization header）。
  */
-import { buildChatFlow, initialChatFlowState } from '@pet/ai-graph';
+import { type Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
+import { streamSSE } from 'hono/streaming';
+import type pg from 'pg';
+
 import type {
   GraphEvent,
   LlmClient,
@@ -18,11 +22,8 @@ import type {
   MemoryRetrievalStore,
   OutputModerator,
 } from '@pet/ai-graph';
+import { buildChatFlow, initialChatFlowState } from '@pet/ai-graph';
 import { DEFAULT_FEATURE_FLAGS, LIMITS } from '@pet/config';
-import { type Hono } from 'hono';
-import type { MiddlewareHandler } from 'hono';
-import { streamSSE } from 'hono/streaming';
-import type pg from 'pg';
 
 import type { JwtService } from '../auth/jwt.js';
 import { runMemoryExtract } from '../lib/run-memory-extract.js';

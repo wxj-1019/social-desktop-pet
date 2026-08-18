@@ -13,7 +13,6 @@
  * StarIsleVisual 渲染抛错时由 PetVisualBoundary 降级为 PetFallback（同样可交互）。
  * window.pet 缺失（非 Electron）时所有指针处理静默跳过。
  */
-import type { PetInteraction, PetRuntimeSnapshot } from '@pet/protocol';
 import {
   Component,
   useEffect,
@@ -24,6 +23,8 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
+
+import type { PetInteraction, PetRuntimeSnapshot } from '@pet/protocol';
 
 import { ClassicMenu } from './classic-menu.js';
 import { PetBubble } from './pet-bubble.js';

@@ -9,8 +9,9 @@
  *   过期/已用 7 天清理（一次性授权不留痕太久）、admin_audit_log 180 天上限
  * 幂等可重入（delete 按时间条件）；每 24h 由服务入口触发。
  */
-import { RETENTION } from '@pet/config';
 import type pg from 'pg';
+
+import { RETENTION } from '@pet/config';
 
 /** 幂等回执 / 审计日志保留天数（无专门 RETENTION 条目，取 180 天保守上限） */
 const STALE_RECORD_DAYS = 180;

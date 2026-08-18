@@ -1,5 +1,6 @@
-import type { PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import type { PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
 
 import { PetRuntimeController } from './pet-runtime-controller.js';
 

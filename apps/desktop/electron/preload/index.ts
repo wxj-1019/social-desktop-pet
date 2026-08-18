@@ -4,6 +4,8 @@
  * Task 7：新增 petRuntime / panel / petProfile 命名空间，类型全部来自 @pet/protocol；
  * 所有 subscribe 返回 void cleanup；session / deepLink 等既有 API 保持不变。
  */
+import { contextBridge, ipcRenderer } from 'electron';
+
 import type {
   LocalLlmChatRequest,
   LocalLlmConfig,
@@ -19,7 +21,6 @@ import type {
   PetSocialEvent,
   PetVisualCommand,
 } from '@pet/protocol';
-import { contextBridge, ipcRenderer } from 'electron';
 
 import type { SessionIpcResult } from '../main/session-service.js';
 

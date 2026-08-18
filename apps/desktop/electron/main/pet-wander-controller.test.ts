@@ -1,5 +1,6 @@
-import type { PetFacing, PetVisualCommand } from '@pet/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import type { PetFacing, PetVisualCommand } from '@pet/protocol';
 
 import type { DisplayLike } from './display-controller.js';
 import { PetWanderController, type WanderWindowPort } from './pet-wander-controller.js';

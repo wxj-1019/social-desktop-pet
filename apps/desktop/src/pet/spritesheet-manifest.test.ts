@@ -1,5 +1,6 @@
-import { PetMotionSchema } from '@pet/protocol';
 import { describe, expect, it } from 'vitest';
+
+import { PetMotionSchema } from '@pet/protocol';
 
 import {
   CODENONO_MOTION_MAP,

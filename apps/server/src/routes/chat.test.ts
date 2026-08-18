@@ -1,6 +1,7 @@
-import { LIMITS } from '@pet/config';
 import { Hono } from 'hono';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { LIMITS } from '@pet/config';
 
 import { JwtService } from '../auth/jwt.js';
 

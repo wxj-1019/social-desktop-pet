@@ -1,6 +1,7 @@
-import type { PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
 import type { BrowserWindow } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
 
 import { PetDragController } from '../pet-drag-controller.js';
 import { PetRuntimeController } from '../pet-runtime-controller.js';

@@ -8,6 +8,9 @@
  *    越权 surface 调用一律拒绝
  * 4. main→renderer 推送辅助 broadcastPetSnapshot / sendPetVisual（Task 10 接线）
  */
+import { ipcMain, screen } from 'electron';
+import type { BrowserWindow } from 'electron';
+
 import {
   BooleanSettingSchema,
   LocalLlmChatRequestSchema,
@@ -31,8 +34,6 @@ import type {
   PetRuntimeSnapshot,
   PetVisualCommand,
 } from '@pet/protocol';
-import { ipcMain, screen } from 'electron';
-import type { BrowserWindow } from 'electron';
 
 import type { DisplayLike } from '../display-controller.js';
 import type { PetDragController } from '../pet-drag-controller.js';

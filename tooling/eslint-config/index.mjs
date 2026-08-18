@@ -29,6 +29,11 @@ export default function petConfig(extra = []) {
           {
             'newlines-between': 'always',
             groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
+            // @pet/* 固定归 internal：不依赖 resolver（干净克隆无 packages/*/dist 时
+            // 解析失败会被判 external，导致同一文件在本地/CI 归类相反、互相冲突地报错）。
+            // pathGroupsExcludedImportTypes 不含 external，确保强制重映射生效
+            pathGroups: [{ pattern: '@pet/**', group: 'internal' }],
+            pathGroupsExcludedImportTypes: ['builtin', 'object'],
             alphabetize: { order: 'asc', caseInsensitive: true },
           },
         ],

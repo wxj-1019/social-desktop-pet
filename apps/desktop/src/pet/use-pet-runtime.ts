@@ -10,9 +10,10 @@
  * 合并进本地 StarIsleVisualState 供组件消费。卸载清理全部订阅并 dispose。
  * window.pet 缺失（非 Electron）时静默降级，不抛错。
  */
+import { useCallback, useEffect, useRef, useState } from 'react';
+
 import { stateToExpression, stateToMotion } from '@pet/pet-state';
 import type { PetProfile, PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
-import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   DEFAULT_VISUAL_STATE,

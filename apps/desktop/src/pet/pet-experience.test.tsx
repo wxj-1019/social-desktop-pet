@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import type { PetProfile, PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { PetProfile, PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
 
 import { PetExperience } from './pet-experience.js';
 

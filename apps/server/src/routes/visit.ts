@@ -5,9 +5,10 @@
  *   active_display_device_id = 当前设备（旧设备被停用后拒绝云端功能）；
  * 9.4 可靠写入：visits + 权威事件 + 双方 inbox + WS 通知。
  */
-import { LIMITS } from '@pet/config';
 import { type Hono } from 'hono';
 import type pg from 'pg';
+
+import { LIMITS } from '@pet/config';
 
 import type { JwtService } from '../auth/jwt.js';
 import { deliverEvent, flushPendingDeliveries } from '../lib/inbox.js';

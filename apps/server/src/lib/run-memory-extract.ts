@@ -5,10 +5,11 @@
  * 4 条 user 消息（含当前 turn），跑 memory-extract 图（抽取→注入过滤→去重→
  * 分级确认→落库/确认队列）。任何失败只记日志，绝不阻塞/影响已流式的回复。
  */
+import type pg from 'pg';
+
 import { buildMemoryExtractFlow } from '@pet/ai-graph';
 import type { LlmClient, MemoryExtractStore } from '@pet/ai-graph';
 import { DEFAULT_FEATURE_FLAGS } from '@pet/config';
-import type pg from 'pg';
 
 export interface RunMemoryExtractInput {
   userId: string;

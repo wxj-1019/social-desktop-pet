@@ -1,3 +1,5 @@
+import { describe, expect, it } from 'vitest';
+
 import {
   actionIntentToMotion as stateActionIntentToMotion,
   emotionToExpression as stateEmotionToExpression,
@@ -8,7 +10,6 @@ import {
   stateToExpression as stateStateToExpression,
   stateToMotion as stateStateToMotion,
 } from '@pet/pet-state';
-import { describe, expect, it } from 'vitest';
 
 import { isModelReady, parseModelManifest } from './model-loader.js';
 import {

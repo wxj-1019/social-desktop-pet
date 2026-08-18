@@ -11,8 +11,9 @@
  */
 import { join } from 'node:path';
 
-import type { PanelOpen, PetRuntimeSnapshot } from '@pet/protocol';
 import { app, BrowserWindow, screen, session as electronSession } from 'electron';
+
+import type { PanelOpen, PetRuntimeSnapshot } from '@pet/protocol';
 
 import { DeepLinkController } from './deep-link-controller.js';
 import {

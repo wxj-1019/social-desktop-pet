@@ -5,9 +5,10 @@
  * 点击卡片调用 petProfile.setCharacter → Main 保存 profile + 重载桌宠窗。
  * 当前选中态从 petProfile.get() 读取（切换后立即高亮，桌宠窗后台重载）。
  */
-import type { PetId } from '@pet/protocol';
 import { Check } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+
+import type { PetId } from '@pet/protocol';
 
 import { listCharacters } from '../pet/character-registry.js';
 

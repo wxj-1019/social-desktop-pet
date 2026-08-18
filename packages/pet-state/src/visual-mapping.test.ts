@@ -1,5 +1,6 @@
-import type { ActionIntent, Emotion, PetExpression, PetMotion, PetState } from '@pet/protocol';
 import { describe, expect, it } from 'vitest';
+
+import type { ActionIntent, Emotion, PetExpression, PetMotion, PetState } from '@pet/protocol';
 
 import {
   actionIntentToMotion,

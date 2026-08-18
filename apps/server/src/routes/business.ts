@@ -2,15 +2,16 @@
  * 业务路由 —— 挂载 invite/gift/visit/sync 真实实现（9.3–9.6/6.3）+ chat（10.1 SSE）。
  * 统一结构：鉴权 → 校验 → 事务 → Inbox → WS 通知（9.4 可靠写入流程）。
  */
+import { Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
+import type pg from 'pg';
+
 import type {
   LlmClient,
   MemoryExtractStore,
   MemoryRetrievalStore,
   OutputModerator,
 } from '@pet/ai-graph';
-import { Hono } from 'hono';
-import type { MiddlewareHandler } from 'hono';
-import type pg from 'pg';
 
 import type { JwtService } from '../auth/jwt.js';
 import type { RealtimeServer } from '../realtime/ws.js';

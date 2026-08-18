@@ -4,7 +4,6 @@
  * 勿扰/穿透经 Main 单一入口（runtime + 托盘同步），初始值与后续变化由运行时快照驱动。
  * 本地模型（BYOK）已独立为「模型」tab，见 model-settings.tsx。
  */
-import type { PetRuntimeSnapshot } from '@pet/protocol';
 import {
   Bell,
   BellOff,
@@ -15,6 +14,8 @@ import {
   Turtle,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+
+import type { PetRuntimeSnapshot } from '@pet/protocol';
 
 /** 设置页滑块范围（60%–140%，Main 端 MIN/MAX_PET_SCALE 内） */
 const SCALE_MIN = 0.6;

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import type { PetRuntimeSnapshot } from '@pet/protocol';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import type { PetRuntimeSnapshot } from '@pet/protocol';
 
 import { usePetRuntime } from './use-pet-runtime.js';
 

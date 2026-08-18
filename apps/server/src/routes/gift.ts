@@ -8,9 +8,10 @@
  * 5. 提交后 Realtime 通知（第 5 步；deliverEvent 内部处理）
  * 6. 响应与 WS 事件同一 eventId（第 6 步）
  */
-import { LIMITS } from '@pet/config';
 import { type Hono } from 'hono';
 import type pg from 'pg';
+
+import { LIMITS } from '@pet/config';
 
 import type { JwtService } from '../auth/jwt.js';
 import { canSendGift } from '../lib/business-rules.js';

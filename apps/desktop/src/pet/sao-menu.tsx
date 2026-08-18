@@ -10,7 +10,6 @@
  * 3. 悬停胶囊稳居中间宽阔安全区：完全无裁切，字迹晶莹通透
  * 4. 动线 100% 像素级无缝贯穿中心
  */
-import type { LocalLlmConfigView } from '@pet/protocol';
 import {
   Brain,
   EyeOff,
@@ -26,6 +25,8 @@ import {
   X,
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
+
+import type { LocalLlmConfigView } from '@pet/protocol';
 
 import { localReply } from '../lib/local-mode.js';
 

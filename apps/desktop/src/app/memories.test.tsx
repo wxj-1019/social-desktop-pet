@@ -2,9 +2,10 @@
  * 记忆中心页单测（11.3 v1）—— 列表渲染 / 来源展开 / 修改 / 删除 / 空态 / 待确认队列。
  */
 // @vitest-environment jsdom
-import type { MemoryListItem } from '@pet/protocol';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { MemoryListItem } from '@pet/protocol';
 
 import { api } from '../lib/api/client.js';
 

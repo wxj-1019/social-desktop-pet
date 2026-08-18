@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import type { MemoryConfirmation } from '@pet/protocol';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import type { MemoryConfirmation } from '@pet/protocol';
 
 import { MemoryConfirmCard } from './memory-confirm-card.js';
 
