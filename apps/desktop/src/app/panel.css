@@ -1850,6 +1850,60 @@
   accent-color: var(--panel-accent);
 }
 
+/* 桌宠大小实时预览行：星屿头像随滑块缩放（设置页 P1 可发现性优化） */
+.settings-item--preview,
+.settings-item--preview:hover {
+  cursor: default;
+  border-color: var(--panel-border);
+}
+
+.settings-item__icon--preview {
+  width: 56px;
+  height: 56px;
+  background: transparent;
+  overflow: hidden;
+}
+
+.settings-preview-pet {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.settings-preview-pet svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.settings-preview-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--panel-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 行内动作按钮（隐藏桌宠等一次性动作；替换语义错位的常驻 false checkbox） */
+.settings-item__action {
+  padding: 6px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-xs);
+  background: var(--panel-accent-tint);
+  color: var(--panel-accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+  -webkit-app-region: no-drag;
+}
+
+.settings-item__action:hover {
+  background: var(--panel-accent);
+  color: #ffffff;
+}
+
 /* ============================================================
    7. 动画与辅助工具 (Animations & Utilities)
    ============================================================ */

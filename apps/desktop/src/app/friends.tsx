@@ -133,6 +133,13 @@ export function FriendsPage({ userId }: FriendsPageProps) {
         }
       },
       onReconnected: () => void pullSync(),
+      onStatus: (status) => {
+        // 云端可达性 → 桌宠在线状态：断线时星屿给"网络不在，我先陪你"气泡
+        //（connecting 不改变状态，避免重连抖动反复切 OFFLINE/ONLINE）
+        if (status === 'connected' || status === 'disconnected') {
+          window.pet?.petRuntime?.setOnline?.(status === 'connected');
+        }
+      },
     });
     client.connect();
     return () => client.close();

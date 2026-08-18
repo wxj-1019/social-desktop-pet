@@ -129,6 +129,29 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     runtime.stop();
   });
 
+  it('emits an offline bubble once per 60s cooldown window (P2 断线降级人格化)', () => {
+    vi.useFakeTimers();
+    const visuals: PetVisualCommand[] = [];
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+
+    runtime.setOnline(false);
+    expect(visuals).toContainEqual({ type: 'bubble', text: '网络不在，我先陪你～' });
+
+    // 冷却期内反复断线：不重复刷气泡
+    runtime.setOnline(true);
+    runtime.setOnline(false);
+    expect(visuals.filter((c) => c.type === 'bubble')).toHaveLength(1);
+
+    // 冷却过期后再次断线：允许再次提示
+    vi.advanceTimersByTime(61_000);
+    runtime.setOnline(true);
+    runtime.setOnline(false);
+    expect(visuals.filter((c) => c.type === 'bubble')).toHaveLength(2);
+
+    runtime.stop();
+  });
+
   it('wanders: random 30-90s enters WALKING, then returns to IDLE after 3-5s', () => {
     vi.useFakeTimers();
     const snapshots: PetRuntimeSnapshot[] = [];

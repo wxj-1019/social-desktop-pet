@@ -59,11 +59,23 @@ interface MenuItemNode {
   onClick: () => void;
 }
 
-/** 二级毛玻璃面板的锚点：从节点圆心向右弹出，垂直方向钳制在窗口内 */
+/** 二级毛玻璃面板的锚点：从节点圆心向右弹出，水平/垂直都钳制在 240×260 设计窗口内。
+ * 此前只钳垂直、left 不钳：controls（x≈61）+24+168=253 > 240，面板被窗口右缘裁掉
+ * （chat 节点也越界约 2px）。整套菜单（轨道/节点）是 240×260 固定设计坐标、不随
+ * 窗口缩放，故按设计宽 240 钳制即可保证任意窗口缩放下不裁切。 */
 const SUB_PANEL_W = 168;
+const SUB_PANEL_MARGIN = 8;
+const SUB_PANEL_RIGHT_EDGE_MAX = 240 - SUB_PANEL_W - SUB_PANEL_MARGIN;
 const subPanelPos = (node: { x: number; y: number }, height: number) => {
-  const top = Math.min(Math.max(node.y - height / 2, 8), 260 - height - 8);
-  return { left: node.x + NODE_RADIUS + 10, top, width: SUB_PANEL_W };
+  const top = Math.min(
+    Math.max(node.y - height / 2, SUB_PANEL_MARGIN),
+    260 - height - SUB_PANEL_MARGIN,
+  );
+  const left = Math.min(
+    Math.max(node.x + NODE_RADIUS + 10, SUB_PANEL_MARGIN),
+    SUB_PANEL_RIGHT_EDGE_MAX,
+  );
+  return { left, top, width: SUB_PANEL_W };
 };
 
 /**

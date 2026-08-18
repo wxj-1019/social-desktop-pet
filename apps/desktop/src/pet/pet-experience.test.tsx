@@ -39,6 +39,7 @@ let pet: FakePet;
 let onSnapshotCleanup: ReturnType<typeof vi.fn>;
 let onVisualCommandCleanup: ReturnType<typeof vi.fn>;
 let visualCommandHandler: (command: PetVisualCommand) => void;
+let snapshotHandler: (snapshot: PetRuntimeSnapshot) => void;
 
 function installFakePet(state: PetRuntimeSnapshot['state'] = 'IDLE'): void {
   const snapshot: PetRuntimeSnapshot = {
@@ -59,11 +60,15 @@ function installFakePet(state: PetRuntimeSnapshot['state'] = 'IDLE'): void {
   onSnapshotCleanup = vi.fn();
   onVisualCommandCleanup = vi.fn();
   visualCommandHandler = () => undefined;
+  snapshotHandler = () => undefined;
 
   pet = {
     petRuntime: {
       getSnapshot: vi.fn(async () => snapshot),
-      onSnapshot: vi.fn(() => onSnapshotCleanup),
+      onSnapshot: vi.fn((cb: (snapshot: PetRuntimeSnapshot) => void) => {
+        snapshotHandler = cb;
+        return onSnapshotCleanup;
+      }),
       onVisualCommand: vi.fn((cb: (command: PetVisualCommand) => void) => {
         visualCommandHandler = cb;
         return onVisualCommandCleanup;
@@ -274,6 +279,21 @@ describe('PetExperience（星屿直连交互面）', () => {
     expect(document.querySelector('.pet-experience')?.getAttribute('data-state')).toBe('IDLE');
   });
 
+  it('clicking the bubble opens the chat panel (气泡直达聊天的短路径)', async () => {
+    render(<PetExperience />);
+    await act(async () => {
+      visualCommandHandler({ type: 'bubble', text: '你好，我是星屿' });
+    });
+    const bubble = document.querySelector('.pet-speech');
+    expect(bubble).not.toBeNull();
+
+    firePointer(bubble!, 'down', { screenX: 120, screenY: 20 });
+    firePointer(bubble!, 'up', { screenX: 120, screenY: 20 });
+    expect(pet.panel.open).toHaveBeenCalledWith({ view: 'chat' });
+    // 气泡点击不应误触任何摸头/身体互动
+    expect(pet.petRuntime.interaction).not.toHaveBeenCalled();
+  });
+
   it('renders the fallback when the visual component throws', () => {
     function ThrowingVisual(): never {
       throw new Error('visual boom');
@@ -295,5 +315,26 @@ describe('PetExperience（星屿直连交互面）', () => {
     expect(screen.getByTestId('sao-menu')).not.toBeNull();
     expect(event.defaultPrevented).toBe(true);
     expect(pet.petRuntime.showContextMenu).not.toHaveBeenCalled();
+  });
+
+  it('closes the radial menu when pass-through turns on (菜单留在屏幕上将无法点击关闭)', () => {
+    render(<PetExperience />);
+    const container = document.querySelector('.pet-experience');
+    act(() => {
+      container!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    });
+    expect(screen.getByTestId('sao-menu')).not.toBeNull();
+
+    // 任一入口（SAO/设置页/托盘）开启穿透 → 快照广播 passThrough:true → 菜单立即收起
+    act(() => {
+      snapshotHandler({
+        state: 'IDLE',
+        online: true,
+        dnd: false,
+        hidden: false,
+        passThrough: true,
+      });
+    });
+    expect(screen.queryByTestId('sao-menu')).toBeNull();
   });
 });

@@ -62,6 +62,9 @@ const ACTION_DURATION_MS: Readonly<Record<ActionIntent, number>> = {
   comfort: 1_500,
 };
 
+/** 断线气泡冷却：60s 内反复断线不重复提示，避免网络抖动刷屏（P2 断线降级人格化） */
+const OFFLINE_BUBBLE_COOLDOWN_MS = 60_000;
+
 /** 点心名称映射（送礼气泡显示文案；未知 id 回退"点心"） */
 export function snackLabel(snackId: string): string {
   switch (snackId) {
@@ -121,6 +124,8 @@ export class PetRuntimeController {
   private startupBubbleSent = false;
   /** 最近一次用户/系统活动时刻（活动窗口起点；溜达仅在窗口内挂起） */
   private lastActivityAt = 0;
+  /** 上次断线气泡时刻（60s 冷却，防抖动刷屏） */
+  private lastOfflineBubbleAt = 0;
 
   constructor(options: PetRuntimeOptions) {
     this.options = options;
@@ -176,6 +181,12 @@ export class PetRuntimeController {
     if (this.online === online) return;
     this.online = online;
     if (this.stopped) return;
+    // 断线降级人格化（P2）：一次性气泡"网络不在，我先陪你"；60s 冷却防抖动刷屏。
+    // 恢复在线不播音，静默回到正常状态即可。
+    if (!online && this.nowMs() - this.lastOfflineBubbleAt > OFFLINE_BUBBLE_COOLDOWN_MS) {
+      this.lastOfflineBubbleAt = this.nowMs();
+      this.emitVisual({ type: 'bubble', text: '网络不在，我先陪你～' });
+    }
     this.reconcileMode(true);
   }
 

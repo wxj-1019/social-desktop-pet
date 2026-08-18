@@ -129,6 +129,10 @@ function makeDeps() {
   const getPetScale = vi.fn(() => 1);
   const hidePet = vi.fn();
   const showPet = vi.fn();
+  const autoLaunch = {
+    get: vi.fn(() => false),
+    set: vi.fn(),
+  };
   const localLlm = {
     view: vi.fn(() => ({ enabled: false, baseUrl: '', model: '', hasApiKey: false })),
     save: vi.fn(),
@@ -153,6 +157,7 @@ function makeDeps() {
     getPetScale,
     hidePet,
     showPet,
+    autoLaunch,
     localLlm,
     reloadPetWithCharacter,
   };
@@ -170,6 +175,7 @@ function makeDeps() {
     setDnd,
     setPetScale,
     getPetScale,
+    autoLaunch,
     reloadPetWithCharacter,
     deps,
     snapshots,
@@ -265,6 +271,27 @@ describe('基础通道（Task 7）', () => {
     await expect(handler?.(eventFrom(pet), undefined)).resolves.toBe('4.5.6-test');
     await expect(handler?.(eventFrom(panel), undefined)).resolves.toBe('4.5.6-test');
   });
+
+  it('app:get-auto-launch is panel-only and returns the injected value', async () => {
+    const { pet, panel, autoLaunch, deps } = makeDeps();
+    autoLaunch.get.mockReturnValue(true);
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.invokeHandlers.get('app:get-auto-launch');
+
+    await expect(handler?.(eventFrom(panel), undefined)).resolves.toBe(true);
+    await expect(handler?.(eventFrom(pet), undefined)).rejects.toThrow(IpcSenderError);
+  });
+
+  it('app:set-auto-launch validates the payload and forwards to the injected port', () => {
+    const { panel, autoLaunch, deps } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.onHandlers.get('app:set-auto-launch');
+
+    expect(() => handler?.(eventFrom(panel), { enabled: true })).not.toThrow();
+    expect(autoLaunch.set).toHaveBeenCalledWith(true);
+    expect(() => handler?.(eventFrom(panel), { enabled: 'yes' })).toThrow(IpcPayloadError);
+    expect(autoLaunch.set).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('channel-to-surface binding（Task 7）', () => {
@@ -288,7 +315,11 @@ describe('channel-to-surface binding（Task 7）', () => {
   it('rejects panel-only on-channels when the pet window sends', () => {
     const { pet, deps } = makeDeps();
     registerIpcAllowlist(deps);
-    const panelOnly: Array<[string, unknown]> = [['panel:close', undefined]];
+    const panelOnly: Array<[string, unknown]> = [
+      ['panel:close', undefined],
+      ['app:set-auto-launch', { enabled: true }],
+      ['pet:set-online', { enabled: false }],
+    ];
     for (const [channel, payload] of panelOnly) {
       const handler = electronMocks.onHandlers.get(channel);
       expect(() => handler?.(eventFrom(pet), payload), channel).toThrow(IpcSenderError);
@@ -305,6 +336,18 @@ describe('channel-to-surface binding（Task 7）', () => {
     ).not.toThrow();
     // handleChatStart 一定广播 speaking 视觉指令（状态无关）
     expect(visuals).toContainEqual({ type: 'speaking', active: true });
+  });
+
+  it('pet:set-online forwards panel connectivity to the runtime and validates payload', () => {
+    const { panel, runtime, deps } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.onHandlers.get('pet:set-online');
+
+    expect(() => handler?.(eventFrom(panel), { enabled: false })).not.toThrow();
+    expect(runtime.snapshot.state).toBe('OFFLINE');
+    expect(() => handler?.(eventFrom(panel), { enabled: true })).not.toThrow();
+    expect(runtime.snapshot.state).toBe('IDLE');
+    expect(() => handler?.(eventFrom(panel), { enabled: 'yes' })).toThrow(IpcPayloadError);
   });
 
   it('allows panel:open from the pet window（桌宠双击打开面板）', () => {

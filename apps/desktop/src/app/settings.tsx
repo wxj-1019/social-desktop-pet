@@ -10,12 +10,15 @@ import {
   EyeOff,
   Maximize2,
   MousePointerClick,
+  Rocket,
   Settings2,
   Turtle,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import type { PetRuntimeSnapshot } from '@pet/protocol';
+
+import { StarIsleVisual } from '../pet/star-isle-visual.js';
 
 /** 设置页滑块范围（60%–140%，Main 端 MIN/MAX_PET_SCALE 内） */
 const SCALE_MIN = 0.6;
@@ -25,6 +28,7 @@ export function SettingsPage() {
   const [bubbleEnabled, setBubbleEnabled] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [petScale, setPetScale] = useState(1);
+  const [autoLaunch, setAutoLaunch] = useState(false);
   const [dnd, setDnd] = useState(false);
   const [passThrough, setPassThrough] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -37,6 +41,9 @@ export function SettingsPage() {
     });
     void window.pet?.getPetScale?.().then((scale) => {
       if (typeof scale === 'number') setPetScale(scale);
+    });
+    void window.pet?.autoLaunch?.get().then((enabled) => {
+      if (typeof enabled === 'boolean') setAutoLaunch(enabled);
     });
     // 勿扰/穿透：快照为唯一状态源（托盘、SAO 菜单、本页三处入口同源反射）
     const runtime = window.pet?.petRuntime;
@@ -113,6 +120,45 @@ export function SettingsPage() {
           />
         </label>
 
+        <div className="settings-item settings-item--preview" aria-hidden="true">
+          <span className="settings-item__icon settings-item__icon--preview">
+            <div
+              className="settings-preview-pet"
+              style={{
+                width: `${Math.round(34 * petScale)}px`,
+                height: `${Math.round(34 * petScale)}px`,
+              }}
+            >
+              <StarIsleVisual variant="head" />
+            </div>
+          </span>
+          <span className="settings-item__text">
+            <strong>实时预览</strong>
+            <small>星屿大小随上方滑块即时变化</small>
+          </span>
+          <span className="settings-preview-value">{Math.round(petScale * 100)}%</span>
+        </div>
+
+        <label className="settings-item">
+          <span className="settings-item__icon" aria-hidden="true">
+            <Rocket size={16} />
+          </span>
+          <span className="settings-item__text">
+            <strong>开机自启</strong>
+            <small>随 Windows 一起启动，星屿每天等你（正式版生效）</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={autoLaunch}
+            onChange={(e) => {
+              const enabled = e.target.checked;
+              setAutoLaunch(enabled);
+              window.pet?.autoLaunch?.set?.(enabled);
+            }}
+            aria-label="开机自启开关"
+          />
+        </label>
+
         <label className="settings-item">
           <span className="settings-item__icon" aria-hidden="true">
             {bubbleEnabled ? <Bell size={16} /> : <BellOff size={16} />}
@@ -135,7 +181,7 @@ export function SettingsPage() {
           </span>
           <span className="settings-item__text">
             <strong>减弱动态效果</strong>
-            <small>减少星屿的动作幅度，适合容易晕动的人</small>
+            <small>减少动作幅度，让动画更安静，适合容易晕动的人</small>
           </span>
           <input
             type="checkbox"
@@ -183,7 +229,7 @@ export function SettingsPage() {
           />
         </label>
 
-        <label className="settings-item">
+        <div className="settings-item">
           <span className="settings-item__icon" aria-hidden="true">
             <EyeOff size={16} />
           </span>
@@ -191,15 +237,14 @@ export function SettingsPage() {
             <strong>隐藏桌宠</strong>
             <small>临时收起星屿；从托盘"显示桌宠"恢复</small>
           </span>
-          <input
-            type="checkbox"
-            checked={false}
-            onChange={(e) => {
-              if (e.target.checked) window.pet?.petRuntime?.setHidden?.(true);
-            }}
-            aria-label="隐藏桌宠"
-          />
-        </label>
+          <button
+            type="button"
+            className="settings-item__action"
+            onClick={() => window.pet?.petRuntime?.setHidden?.(true)}
+          >
+            收起
+          </button>
+        </div>
       </div>
     </main>
   );

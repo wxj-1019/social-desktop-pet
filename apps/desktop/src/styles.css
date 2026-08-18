@@ -843,9 +843,20 @@ body,
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   text-align: center;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
   z-index: 1;
   box-shadow: 0 4px 14px rgba(184, 63, 104, 0.16);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+/* 气泡可点击直达聊天：悬停给轻微"可点"暗示 */
+.pet-speech:hover {
+  border-color: #e39ab4;
+  box-shadow: 0 6px 18px rgba(184, 63, 104, 0.28);
+  transform: translateX(-50%) translateY(-1px);
 }
 /* 指向角色头顶的小尾巴 */
 .pet-speech::after {
@@ -1007,6 +1018,13 @@ body,
   z-index: 10;
   -webkit-app-region: no-drag;
 }
+/* 关闭钮命中区外扩：20px 视觉 → 32px 可点击 */
+.sao-left-close::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+}
 
 .sao-left-close:hover {
   color: #ffffff;
@@ -1053,6 +1071,14 @@ body,
     0 0 10px rgba(56, 189, 248, 0.2);
   transition: all 0.18s cubic-bezier(0.16, 1.3, 0.3, 1);
   -webkit-app-region: no-drag;
+}
+/* 命中区外扩：视觉仍是 28px 水晶球，实际可点击区域达 40px
+   （240×260 小窗内 28px 目标过小，误触率高的常见差评点） */
+.sao-ring-node::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
 }
 
 .sao-ring-node:hover,
@@ -1457,6 +1483,13 @@ body,
     0 0 10px rgba(99, 102, 241, 0.25);
   transition: all 0.16s cubic-bezier(0.16, 1.3, 0.3, 1);
   -webkit-app-region: no-drag;
+}
+/* 命中区外扩：视觉 32px，可点击区域 44px（与 SAO 菜单同一可点性标准） */
+.classic-node::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
 }
 
 .classic-node:hover,
