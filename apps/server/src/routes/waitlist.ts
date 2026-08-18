@@ -113,7 +113,9 @@ export class WaitlistService {
                status = 'invited',
                invite_code_hash = $2,
                invited_at = now(),
-               invite_expires_at = now() + make_interval(secs => $3)
+               invite_expires_at = now() + make_interval(secs => $3),
+               invite_mail_status = 'pending',
+               invite_mail_at = null
              where email = $1 and status = 'pending'
              returning email`,
             [email, hashInviteCode(code), Math.ceil(ttl / 1000)],
@@ -137,7 +139,9 @@ export class WaitlistService {
              status = 'invited',
              invite_code_hash = $2,
              invited_at = now(),
-             invite_expires_at = now() + make_interval(secs => $3)
+             invite_expires_at = now() + make_interval(secs => $3),
+             invite_mail_status = 'pending',
+             invite_mail_at = null
            where email = $1 and status = 'pending'
            returning email`,
           [email, hashInviteCode(code), Math.ceil(ttl / 1000)],
@@ -148,7 +152,7 @@ export class WaitlistService {
         }
       }
       invited.push({ email, code });
-      // 邀请邮件：兑换码明文只进邮件；失败仅日志（状态已推进，可补发）
+      // 邀请邮件：兑换码明文只进邮件；发送结果回写 waitlist（0016）供运营追踪补发
       if (this.mail) {
         const claimUrl = this.options.claimUrlBase
           ? `${this.options.claimUrlBase}?code=${code}&email=${encodeURIComponent(email)}`
@@ -161,10 +165,29 @@ export class WaitlistService {
               `<p>兑换码：<strong>${code}</strong>（30 天内有效）</p>` +
               (claimUrl ? `<p>前往兑换：<a href="${claimUrl}">${claimUrl}</a></p>` : ''),
           )
-          .catch((e) => console.warn('[waitlist] 邀请邮件发送失败：', (e as Error).message));
+          .then(() => this.markInviteMail(email, 'sent'))
+          .catch((e) => {
+            console.warn('[waitlist] 邀请邮件发送失败：', (e as Error).message);
+            void this.markInviteMail(email, 'failed').catch(() => undefined);
+          });
+      } else {
+        // 无邮件供应商（本地开发）：显式标记 skipped，后台能看到"未配置"而非永远 pending
+        await this.markInviteMail(email, 'skipped');
       }
     }
     return { invited, skipped };
+  }
+
+  /** 0016：邀请邮件结果回写（仅作用于最新一次 invited 状态的行） */
+  private async markInviteMail(
+    email: string,
+    status: 'sent' | 'failed' | 'skipped',
+  ): Promise<void> {
+    await this.pool.query(
+      `update waitlist set invite_mail_status = $2, invite_mail_at = now()
+       where email = $1 and status = 'invited'`,
+      [email, status],
+    );
   }
 
   /** 公开兑换：invited → joined（校验码 + 邮箱匹配；惰性过期判定） */

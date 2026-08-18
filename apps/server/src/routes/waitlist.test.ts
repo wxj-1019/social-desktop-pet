@@ -273,7 +273,14 @@ describe('邀请状态机（4.3：pending → invited → joined/expired）', ()
         }),
         release: vi.fn(),
       };
-      const pool = { connect: vi.fn(async () => client) };
+      const pool = {
+        connect: vi.fn(async () => client),
+        // 0016：邀请后无邮件供应商 → markInviteMail('skipped') 走 pool.query
+        query: vi.fn(async (_sql: string, _params?: unknown[]) => ({
+          rows: [],
+          rowCount: 0,
+        })),
+      };
       const service = new WaitlistService(pool as never);
 
       const result = await service.invite(['a@b.com'], {
@@ -290,6 +297,12 @@ describe('邀请状态机（4.3：pending → invited → joined/expired）', ()
       expect(calls.some((s) => s.includes("status = 'invited'"))).toBe(true);
       expect(calls.some((s) => s.includes('admin_audit_log'))).toBe(true);
       expect(client.release).toHaveBeenCalled();
+      // 邮件状态回写为 skipped（无供应商）
+      const mark = pool.query.mock.calls.find(([sql]) =>
+        String(sql).includes('invite_mail_status'),
+      ) as [string, unknown[]] | undefined;
+      expect(mark).toBeDefined();
+      expect(mark![1]).toEqual(['a@b.com', 'skipped']);
     });
 
     it('审计钩子抛错 → 整体回滚，邀请不生效', async () => {
@@ -315,6 +328,60 @@ describe('邀请状态机（4.3：pending → invited → joined/expired）', ()
       ).rejects.toThrow('audit down');
       expect(calls).toContain('rollback');
       expect(calls).not.toContain('commit');
+    });
+  });
+
+  describe('WaitlistService.invite 邮件状态追踪（0016）', () => {
+    function makeMailPool() {
+      // 邀请 UPDATE 以 invite_code_hash 为特征（"set status" 被多行 SQL 拆开不可匹配）
+      const query = vi.fn(async (sql: string) =>
+        sql.includes('invite_code_hash') ? { rowCount: 1, rows: [] } : { rows: [], rowCount: 0 },
+      );
+      return { pool: { query }, query };
+    }
+
+    it('邮件发送成功 → 回写 sent', async () => {
+      const { pool, query } = makeMailPool();
+      const mail = { send: vi.fn(async () => undefined) };
+      const service = new WaitlistService(pool as never, mail as never);
+
+      const result = await service.invite(['a@b.com']);
+      expect(result.invited).toHaveLength(1);
+      await vi.waitFor(() => {
+        const mark = query.mock.calls.find(([sql]) =>
+          String(sql).includes('invite_mail_status = $2'),
+        ) as [string, unknown[]] | undefined;
+        expect(mark).toBeDefined();
+        expect(mark![1]).toEqual(['a@b.com', 'sent']);
+      });
+    });
+
+    it('邮件发送失败 → 回写 failed（邀请不回滚）', async () => {
+      const { pool, query } = makeMailPool();
+      const mail = { send: vi.fn(async () => Promise.reject(new Error('smtp down'))) };
+      const service = new WaitlistService(pool as never, mail as never);
+
+      const result = await service.invite(['a@b.com']);
+      expect(result.invited).toHaveLength(1); // 邮件失败不回滚邀请（可人工跟进）
+      await vi.waitFor(() => {
+        const mark = query.mock.calls.find(([sql]) =>
+          String(sql).includes('invite_mail_status = $2'),
+        ) as [string, unknown[]] | undefined;
+        expect(mark).toBeDefined();
+        expect(mark![1]).toEqual(['a@b.com', 'failed']);
+      });
+    });
+
+    it('无邮件供应商 → 回写 skipped', async () => {
+      const { pool, query } = makeMailPool();
+      const service = new WaitlistService(pool as never);
+
+      await service.invite(['a@b.com']);
+      const mark = query.mock.calls.find(([sql]) =>
+        String(sql).includes('invite_mail_status = $2'),
+      ) as [string, unknown[]] | undefined;
+      expect(mark).toBeDefined();
+      expect(mark![1]).toEqual(['a@b.com', 'skipped']);
     });
   });
 

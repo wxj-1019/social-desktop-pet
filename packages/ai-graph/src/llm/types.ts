@@ -12,8 +12,13 @@ export interface LlmMessage {
 
 export interface LlmClient {
   /**
+   * 当前模型名（chat_usage 记账维度，12.7 观测）。
+   * 可选：测试桩/旧实现可不带，消费方需容忍 undefined。
+   */
+  model?: string;
+  /**
    * 流式对话：token 经 onToken 回调逐片返回，resolve 完整文本。
-   * @param messages 对话消息（10.4 人格 system prompt 由调用方构造）
+   * @param messages 10.4 人格 system prompt 由调用方构造
    */
   streamChat(messages: LlmMessage[], onToken: (token: string) => void): Promise<string>;
 }
