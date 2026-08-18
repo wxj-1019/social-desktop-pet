@@ -100,7 +100,26 @@ export class AuthRateLimiter {
   }
 }
 
-/** 客户端 IP：优先 x-forwarded-for 首段（生产反代注入），否则 local（与 waitlist 同策略） */
-export function clientIpOf(c: { req: { header(name: string): string | undefined } }): string {
-  return c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local';
+/**
+ * 客户端 IP：仅在可信代理模式（PET_TRUST_PROXY=true，反代负责覆盖而非透传 XFF）下
+ * 取 x-forwarded-for 首段；否则用 TCP 连接对端地址。直接信任客户端可伪造的 XFF
+ * 会被轮换任意头值绕过 IP 限流、并伪造审计来源 IP。
+ * （@hono/node-server 将 IncomingMessage 挂在 c.env.incoming，socket 可能已销毁故全链路可选）
+ */
+export function clientIpOf(c: {
+  req: { header(name: string): string | undefined };
+  env?: unknown;
+}): string {
+  if (process.env['PET_TRUST_PROXY'] === 'true') {
+    const first = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  const env = c.env as
+    | {
+        server?: { incoming?: { socket?: { remoteAddress?: string } } };
+        incoming?: { socket?: { remoteAddress?: string } };
+      }
+    | undefined;
+  const incoming = env?.server?.incoming ?? env?.incoming;
+  return incoming?.socket?.remoteAddress ?? 'local';
 }

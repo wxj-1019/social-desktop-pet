@@ -25,8 +25,12 @@ export interface AdminAuditRow {
   createdAt: string;
 }
 
-export async function writeAdminAudit(pool: pg.Pool, entry: AdminAuditEntry): Promise<void> {
-  await pool.query(
+/** 审计插入（可绑定事务 client 或 pool；事务内调用保证"动作与审计同生共死"） */
+export async function writeAdminAuditOn(
+  exec: { query(text: string, params?: unknown[]): Promise<unknown> },
+  entry: AdminAuditEntry,
+): Promise<void> {
+  await exec.query(
     `insert into admin_audit_log (admin_id, action, resource_type, resource_id, reason, request_ip, metadata)
      values ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
     [
@@ -39,6 +43,10 @@ export async function writeAdminAudit(pool: pg.Pool, entry: AdminAuditEntry): Pr
       JSON.stringify(entry.metadata ?? {}),
     ],
   );
+}
+
+export async function writeAdminAudit(pool: pg.Pool, entry: AdminAuditEntry): Promise<void> {
+  await writeAdminAuditOn(pool, entry);
 }
 
 export interface AdminAuditQuery {
@@ -55,8 +63,11 @@ export async function queryAdminAudit(
   pool: pg.Pool,
   q: AdminAuditQuery,
 ): Promise<{ items: AdminAuditRow[]; total: number; page: number; pageSize: number }> {
-  const page = Number.isFinite(q.page) ? Math.max(1, q.page!) : 1;
-  const pageSize = Number.isFinite(q.pageSize) ? Math.min(100, Math.max(1, q.pageSize!)) : 20;
+  // trunc 收敛小数（pageSize=1.5 直接进 LIMIT 会 PG 报错 500）；与 users/waitlist 路由同策略
+  const page = Number.isFinite(q.page) ? Math.max(1, Math.trunc(q.page!)) : 1;
+  const pageSize = Number.isFinite(q.pageSize)
+    ? Math.min(100, Math.max(1, Math.trunc(q.pageSize!)))
+    : 20;
   const where: string[] = [];
   const params: unknown[] = [];
   if (q.adminId) {

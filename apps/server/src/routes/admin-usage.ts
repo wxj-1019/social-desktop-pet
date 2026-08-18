@@ -7,6 +7,7 @@ import type pg from 'pg';
 
 import type { JwtService } from '../auth/jwt.js';
 import type { PgAdminUserStore } from '../db/admin-stores.js';
+import { isValidUuid } from '../lib/validate.js';
 
 import type { AdminVariables } from './admin.js';
 import { requireAdminAuth } from './admin.js';
@@ -87,6 +88,7 @@ export function createAdminUsageRouter(deps: AdminUsageDeps): Hono<{ Variables: 
 
   app.get('/usage/users/:userId', auth, async (c) => {
     const userId = c.req.param('userId');
+    if (!isValidUuid(userId)) return c.json({ error: 'invalid_input' }, 422);
     const q = c.req.query();
     const range = parseRange(q.from, q.to);
     if (!range) return c.json({ error: 'invalid_input' }, 422);

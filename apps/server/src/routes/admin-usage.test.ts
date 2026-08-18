@@ -57,9 +57,12 @@ describe('admin usage routes', () => {
       },
     ]);
     const token = await JWT.signAdmin('a1');
-    const res = await app.request('/usage/users/u1?from=2026-08-01', {
-      headers: { authorization: `Bearer ${token}` },
-    });
+    const res = await app.request(
+      '/usage/users/11111111-1111-4111-8111-111111111111?from=2026-08-01',
+      {
+        headers: { authorization: `Bearer ${token}` },
+      },
+    );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: Array<{ requests: number }> };
     expect(body.items[0]!.requests).toBe(5);

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { PgAdminUserStore } from './admin-stores.js';
+import { PgAdminSessionStore, PgAdminUserStore } from './admin-stores.js';
 
 function fakePool(rows: unknown[] = []) {
   return { query: vi.fn(async (..._args: unknown[]) => ({ rows, rowCount: rows.length })) };
@@ -46,5 +46,29 @@ describe('PgAdminUserStore', () => {
     const [s2] = pool.query.mock.calls[1] as [string, unknown[]];
     expect(s1).toContain('update admin_users set status');
     expect(s2).toContain('last_login_at');
+  });
+});
+
+describe('PgAdminSessionStore', () => {
+  it('rotateToken marks last_seen_at in the same transaction（会话活跃数据基础）', async () => {
+    const sqls: string[] = [];
+    const client = {
+      query: vi.fn(async (sql: string) => {
+        sqls.push(sql);
+        return { rowCount: 1, rows: [] };
+      }),
+      release: vi.fn(),
+    };
+    const pool = { connect: vi.fn(async () => client) };
+    const store = new PgAdminSessionStore(pool as never);
+    const rotated = await store.rotateToken(
+      'h1',
+      { tokenHash: 'h2', adminId: 'a1', expiresAt: 1, revokedAt: null },
+      0,
+    );
+    expect(rotated).toBe(true);
+    expect(sqls.some((s) => s.includes('last_seen_at'))).toBe(true);
+    expect(sqls.at(-1)).toBe('commit');
+    expect(client.release).toHaveBeenCalled();
   });
 });
