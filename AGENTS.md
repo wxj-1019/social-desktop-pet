@@ -32,6 +32,7 @@ ai-social-desktop-pet/
 | 改记忆中心页（查看/修改/删除/来源）             | `apps/desktop/src/app/memories.tsx` + `apps/server/src/routes/memories.ts`（GET /memories、edit）                | 11.3                     |
 | 加一张表 / 改 RLS / 索引                        | `apps/server/migrations/`（新 migration，0003 起自建兼容层）                                                     | 9.9 / 11.2               |
 | 加/改一个 HTTP 路由（礼物/拜访/邀请/sync/chat） | `apps/server/src/routes/*.ts`                                                                                    | 9.4 / 6.x                |
+| 改管理后台（页面/路由/审计/管理员/敏感授权）    | `apps/admin/src/*` + `apps/server/src/routes/admin*.ts`（部署见 `docs/admin-deploy.md`）                         | 管理后台设计稿           |
 | 改登录/刷新/设备撤销/密码哈希/OTP（9.8 / 13.2） | `apps/server/src/auth/*`（jwt + session + password + otp）+ `routes/auth.ts`                                     | 9.8 / 13.2               |
 | 改在线状态/收件箱投递/心跳                      | `apps/server/src/realtime/ws.ts`                                                                                 | 9.2 / 9.4                |
 | 改桌宠窗口/穿透/托盘/更新                       | `apps/desktop/electron/main/*`                                                                                   | 8.1–8.7                  |
@@ -61,6 +62,7 @@ ai-social-desktop-pet/
 pnpm install          # 装依赖
 pnpm dev              # 启动桌面端（electron-vite，renderer 直接吃共享包源码，无需先 build）
 pnpm dev:server       # 启动自建后端（apps/server，tsx watch，需 DATABASE_URL）
+pnpm dev:admin        # 启动运营管理后台（apps/admin :5175，/admin 代理到 8787；另见 docs/admin-deploy.md）
 pnpm migrate          # 应用 apps/server/migrations（需 Postgres 运行中）
 pnpm typecheck        # 全 workspace 类型检查（含 references 链）
 pnpm --filter @pet/desktop typecheck   # 桌面端单独检查（root 不含 desktop）
