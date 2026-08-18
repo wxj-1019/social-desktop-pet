@@ -19,9 +19,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      - uses: pnpm/action-setup@v4 # 版本统一以 package.json 的 packageManager 为准（pnpm@9.12.0）
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -45,9 +43,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      - uses: pnpm/action-setup@v4 # 版本统一以 package.json 的 packageManager 为准（pnpm@9.12.0）
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -64,9 +60,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      - uses: pnpm/action-setup@v4 # 版本统一以 package.json 的 packageManager 为准（pnpm@9.12.0）
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -93,9 +87,7 @@ jobs:
           --health-retries=10
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      - uses: pnpm/action-setup@v4 # 版本统一以 package.json 的 packageManager 为准（pnpm@9.12.0）
       - uses: actions/setup-node@v4
         with:
           node-version: 22
