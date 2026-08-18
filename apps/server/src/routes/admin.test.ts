@@ -32,7 +32,10 @@ class MemoryAdminStore implements AdminSessionStore {
     const cur = this.sessions.get(tokenHash);
     if (cur) this.sessions.set(tokenHash, { ...cur, revokedAt: Date.now() });
   }
-  async revokeAllForAdmin() {}
+  async revokeAllForAdmin(adminId: string) {
+    for (const [h, s] of this.sessions)
+      if (s.adminId === adminId) this.sessions.set(h, { ...s, revokedAt: Date.now() });
+  }
 }
 
 function buildDeps() {
@@ -264,5 +267,102 @@ describe('admin auth routes', () => {
       headers: { authorization: `Bearer ${adminToken}` },
     });
     expect(res.status).toBe(422);
+  });
+
+  it('audit-log rejects non-uuid adminId with 422 (not PG 22P02 → 500)', async () => {
+    const { app } = buildDeps();
+    const adminToken = await JWT.signAdmin('a1');
+    const res = await app.request('/admin/audit-log?adminId=not-a-uuid', {
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it('login and refresh responses are no-store (token 不进任何缓存)', async () => {
+    const { app, users } = buildDeps();
+    const { hashPasswordArgon2 } = await import('../auth/password.js');
+    users.findByEmail.mockResolvedValue({
+      id: 'a1',
+      email: 'admin@pet.dev',
+      passwordHash: await hashPasswordArgon2('Admin@123456'),
+      status: 'active',
+      lastLoginAt: null,
+      createdAt: 0,
+    });
+    const login = await app.request('/admin/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@pet.dev', password: 'Admin@123456' }),
+    });
+    expect(login.headers.get('cache-control')).toBe('no-store');
+    const cookie = login.headers.get('set-cookie')!.split(';')[0]!;
+    const refresh = await app.request('/admin/auth/refresh', {
+      method: 'POST',
+      headers: { cookie },
+    });
+    expect(refresh.status).toBe(200);
+    expect(refresh.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('audit: disabled-admin login attempts are recorded (admin.login_rejected)', async () => {
+    const { app, users, pool } = buildDeps();
+    const { hashPasswordArgon2 } = await import('../auth/password.js');
+    users.findByEmail.mockResolvedValue({
+      id: 'a1',
+      email: 'admin@pet.dev',
+      passwordHash: await hashPasswordArgon2('Admin@123456'),
+      status: 'disabled',
+      lastLoginAt: null,
+      createdAt: 0,
+    });
+    const res = await app.request('/admin/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@pet.dev', password: 'Admin@123456' }),
+    });
+    expect(res.status).toBe(403);
+    const auditCall = pool.query.mock.calls.find(
+      (call) =>
+        String(call[0]).includes('insert into admin_audit_log') &&
+        (call[1] as unknown[])[1] === 'admin.login_rejected',
+    );
+    expect(auditCall).toBeDefined();
+  });
+
+  it('refresh rejects a disabled admin with 403 and revokes all their sessions', async () => {
+    const { app, store, users } = buildDeps();
+    const mgr = new AdminSessionManager(store);
+    const token = await mgr.createRefreshToken('a1');
+    users.getById.mockResolvedValue({ id: 'a1', email: 'admin@pet.dev', status: 'disabled' });
+    const res = await app.request('/admin/auth/refresh', {
+      method: 'POST',
+      headers: { cookie: `admin_refresh=${token}` },
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'admin_disabled' });
+    // 停用即全撤：该管理员全部 refresh session 已撤销
+    const { hashRefreshToken } = await import('../auth/session.js');
+    expect(store.sessions.get(hashRefreshToken(token))!.revokedAt).not.toBeNull();
+  });
+
+  it('refresh of unknown cookie token returns 401', async () => {
+    const { app } = buildDeps();
+    const res = await app.request('/admin/auth/refresh', {
+      method: 'POST',
+      headers: { cookie: 'admin_refresh=unknown-token' },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses to start in production without ADMIN_COOKIE_SECURE (fail-closed)', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('ADMIN_COOKIE_SECURE', '');
+    try {
+      expect(() => buildDeps()).toThrow(/ADMIN_COOKIE_SECURE/);
+      vi.stubEnv('ADMIN_COOKIE_SECURE', 'true');
+      expect(() => buildDeps()).not.toThrow();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
