@@ -100,9 +100,6 @@ jobs:
       - run: pnpm -r --filter=./packages/* build
       - run: pnpm --filter @pet/server build
       - run: pnpm --filter @pet/admin build
-      # 全链路 spec（login/chat/ws-realtime 等）要启动 Electron：构建桌面端 + xvfb 与系统依赖
-      - run: pnpm --filter @pet/desktop build
-      - run: sudo apt-get update && sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libpango-1.0-0 libcairo2
       # 管理后台 GUI e2e 用真实浏览器（API 级 spec 不需要，但 admin-ui 需要 Chromium）
       - run: pnpm exec playwright install --with-deps chromium
       - name: Start server with e2e env
@@ -125,15 +122,10 @@ jobs:
           cd apps/admin
           npx vite preview --host 127.0.0.1 --port 5175 &
           npx -y wait-on http://127.0.0.1:5175 -t 30000
-      - run: xvfb-run -a pnpm exec playwright test --config e2e/playwright.config.ts
+      # 本 job 只跑需要真实后端的 HTTP/GUI spec；Electron 全链路 spec（需 xvfb+桌面端构建）
+      # 由 e2e job 覆盖（其后端相关断言在无后端时优雅跳过）
+      - run: pnpm exec playwright test --config e2e/playwright.config.ts
           otp.spec.ts
           waitlist.spec.ts
           admin.spec.ts
           admin-ui.spec.ts
-          login.spec.ts
-          chat.spec.ts
-          ws-realtime.spec.ts
-          gift-pet.spec.ts
-          memory.spec.ts
-          crisis.spec.ts
-          deep-link.spec.ts
