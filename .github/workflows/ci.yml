@@ -49,8 +49,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Electron 在 Ubuntu 的运行时依赖
-      - run: sudo apt-get update && sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2
+      # Electron 在 Ubuntu 的运行时依赖（ubuntu-latest = 24.04，libasound2 已改名 libasound2t64）
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libpango-1.0-0 libcairo2
       # 干净克隆无 packages/*/dist：app 构建前先构建共享包（否则 @pet/* 入口解析失败）
       - run: pnpm -r --filter=./packages/* build
       - run: pnpm --filter @pet/desktop build
@@ -76,8 +76,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
+      # pgvector 镜像（迁移 0001 需 vector 扩展；postgres:16 官方镜像没有，迁移会失败）
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_PASSWORD: pet
           POSTGRES_DB: pet
