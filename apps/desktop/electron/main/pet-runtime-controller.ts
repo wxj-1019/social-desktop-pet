@@ -45,6 +45,9 @@ const WANDER_DURATION_MAX_MS = 5_000;
 /** 活动窗口：距最近一次用户/系统活动超过该时长后停止溜达，让空闲降级（SITTING）可达 */
 const WANDER_STOP_IDLE_MS = 150_000;
 
+/** 冷启动默认气泡文案（落岛开场：一次性，帮助用户定位桌宠） */
+const STARTUP_BUBBLE_TEXT = '我在这儿。今天也一起待着吧。';
+
 /** 瞬时动作播放时长；结束后按届时的状态回到基础动作。 */
 const ACTION_DURATION_MS: Readonly<Record<ActionIntent, number>> = {
   idle: 0,
@@ -114,6 +117,8 @@ export class PetRuntimeController {
   private passThrough = false;
   private started = false;
   private stopped = false;
+  /** 冷启动默认气泡只发一次（落岛开场）；勿扰/隐藏时不发 */
+  private startupBubbleSent = false;
   /** 最近一次用户/系统活动时刻（活动窗口起点；溜达仅在窗口内挂起） */
   private lastActivityAt = 0;
 
@@ -134,6 +139,11 @@ export class PetRuntimeController {
     this.enterModeState('boot');
     this.emitSnapshot();
     this.emitVisual({ type: 'motion', motion: 'happy', intensity: 1 }); // 伸懒腰开场（7.2）
+    // 落岛开场默认气泡：每次冷启动一次（非勿扰/非隐藏时），帮用户定位桌宠
+    if (!this.startupBubbleSent && this.isBubbleAllowed()) {
+      this.startupBubbleSent = true;
+      this.emitVisual({ type: 'bubble', text: STARTUP_BUBBLE_TEXT });
+    }
     this.armBootTimeout();
     this.ensureTickTimer();
   }

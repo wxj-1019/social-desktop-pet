@@ -46,6 +46,8 @@
 **改动**：`generateNode` 改为缓冲完整 `parsed.dialogue` 后一次性返回（不逐 chunk emit token），由 `moderate_output` 审核通过后新增一个 `stream_reply` 节点负责流式 emit；或保留逐 chunk 但审核前置为"边生成边审"（推荐前者，改动面小）。
 **DoD**：新增测试断言"审核拦截时客户端未收到任何 token"；现有 chat-flow 测试按新 emit 时序更新。
 
+> 2026-08-17 验证结论：当前代码与测试已满足该 DoD。生产图执行顺序为 `generate -> moderate_output -> approve_action -> stream_reply`；阻断路径不经过 `stream_reply`，因此在审核拦截时客户端不会收到任何 token。见 `packages/ai-graph/src/graphs/chat-flow.ts:112-123`、`packages/ai-graph/src/graphs/chat-flow-nodes.ts:318-331`、`packages/ai-graph/src/graphs/chat-flow.test.ts:302-318`。
+
 ### 1.4 更新链路（静默失败 + prerelease 比较）
 
 **问题**：`apps/desktop/electron/main/update-source.ts:36-42` fetch 拒绝/`res.json()` 抛错/挂起无超时 → 违反"失败按无更新"契约；manifest 只 `as` 强转。`update-controller.ts:71` prerelease 用字符串比较（`beta.10 < beta.9`）。

@@ -27,7 +27,6 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
-
 import { localReply } from '../lib/local-mode.js';
 
 export interface SaoMenuProps {

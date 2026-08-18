@@ -39,9 +39,9 @@ let onSnapshotCleanup: ReturnType<typeof vi.fn>;
 let onVisualCommandCleanup: ReturnType<typeof vi.fn>;
 let visualCommandHandler: (command: PetVisualCommand) => void;
 
-function installFakePet(): void {
+function installFakePet(state: PetRuntimeSnapshot['state'] = 'IDLE'): void {
   const snapshot: PetRuntimeSnapshot = {
-    state: 'IDLE',
+    state,
     online: true,
     dnd: false,
     hidden: false,
@@ -244,6 +244,33 @@ describe('PetExperience（星屿直连交互面）', () => {
     });
     const bubble = document.querySelector('.pet-speech');
     expect(bubble?.textContent).toBe('你好，我是星屿');
+  });
+
+  it('shows the landing base on cold start (STARTING) and removes it after the landing window', async () => {
+    vi.useFakeTimers();
+    installFakePet('STARTING');
+    render(<PetExperience />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(document.querySelector('.pet-landing-base')).not.toBeNull();
+    expect(document.querySelector('.pet-experience')?.getAttribute('data-state')).toBe('STARTING');
+
+    act(() => {
+      vi.advanceTimersByTime(2_600);
+    });
+    expect(document.querySelector('.pet-landing-base')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('does not show the landing base when the pet is already IDLE (restore / hot reload)', async () => {
+    installFakePet('IDLE');
+    render(<PetExperience />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(document.querySelector('.pet-landing-base')).toBeNull();
+    expect(document.querySelector('.pet-experience')?.getAttribute('data-state')).toBe('IDLE');
   });
 
   it('renders the fallback when the visual component throws', () => {

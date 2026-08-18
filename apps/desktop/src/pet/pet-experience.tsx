@@ -13,9 +13,10 @@
  * StarIsleVisual 渲染抛错时由 PetVisualBoundary 降级为 PetFallback（同样可交互）。
  * window.pet 缺失（非 Electron）时所有指针处理静默跳过。
  */
-import type { PetInteraction } from '@pet/protocol';
+import type { PetInteraction, PetRuntimeSnapshot } from '@pet/protocol';
 import {
   Component,
+  useEffect,
   useRef,
   useState,
   type ComponentType,
@@ -207,6 +208,8 @@ export function PetExperience({
   };
 
   const [saoOpen, setSaoOpen] = useState(false);
+  /** 落岛开场：首次快照为 STARTING 时显示脚下底座，约 2.6s 后自动退出（帮用户定位桌宠） */
+  const [landingVisible, setLandingVisible] = useState(false);
 
   /** 切换环形菜单 UI 风格（写档案 → onChanged 广播驱动重渲染；立即关闭菜单） */
   const switchMenuStyle = (style: 'sao' | 'classic') => {
@@ -223,10 +226,29 @@ export function PetExperience({
     setSaoOpen((prev) => !prev);
   };
 
+  // 落岛开场时长：底座展示窗口（入场 250ms + 停留 + 退场 600ms ≈ 2.6s）
+  const LANDING_BASE_MS = 2_600;
+  useEffect(() => {
+    if (!landingVisible) return;
+    const timer = setTimeout(() => setLandingVisible(false), LANDING_BASE_MS);
+    return () => clearTimeout(timer);
+  }, [landingVisible]);
+  // 首次快照为 STARTING（冷启动）→ 展示落岛底座；非冷启动（恢复/角色切换）不展示
+  const prevStateRef = useRef<PetRuntimeSnapshot['state'] | null>(null);
+  useEffect(() => {
+    const state = snapshot?.state ?? null;
+    if (state === 'STARTING' && prevStateRef.current === null && !landingVisible) {
+      setLandingVisible(true);
+    }
+    prevStateRef.current = state;
+  }, [snapshot, landingVisible]);
+
   return (
     <div
       className={isDragging ? 'pet-experience pet-dragging' : 'pet-experience'}
       data-testid="pet-experience"
+      data-state={snapshot?.state ?? null}
+      data-landing={landingVisible ? 'true' : null}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -237,6 +259,7 @@ export function PetExperience({
         <VisualComponent state={visualState} />
       </PetVisualBoundary>
       {profile?.bubbleEnabled ? <PetBubble text={bubbleText} /> : null}
+      {landingVisible ? <div className="pet-landing-base" aria-hidden="true" /> : null}
       {(profile?.menuStyle ?? 'sao') === 'classic' ? (
         <ClassicMenu
           isOpen={saoOpen}

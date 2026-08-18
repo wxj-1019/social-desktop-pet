@@ -16,6 +16,37 @@ function makeRuntime(visuals: PetVisualCommand[], snapshots: PetRuntimeSnapshot[
 }
 
 describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
+  it('emits the cold-start landing bubble exactly once, and not while DND', () => {
+    vi.useFakeTimers();
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const visuals: PetVisualCommand[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+
+    runtime.start();
+    const landing = visuals.filter((c) => c.type === 'bubble' && c.text?.includes('我在这儿'));
+    expect(landing).toHaveLength(1);
+    expect(visuals.some((c) => c.type === 'motion' && c.motion === 'happy')).toBe(true);
+
+    // 重复 start（幂等保护）不重复发默认气泡
+    runtime.start();
+    expect(visuals.filter((c) => c.type === 'bubble' && c.text?.includes('我在这儿'))).toHaveLength(
+      1,
+    );
+    runtime.stop();
+
+    // 勿扰启动：不发默认气泡（气泡由 isBubbleAllowed 抑制）
+    const dndVisuals: PetVisualCommand[] = [];
+    const dndSnapshots: PetRuntimeSnapshot[] = [];
+    const dndRuntime = makeRuntime(dndVisuals, dndSnapshots);
+    dndRuntime.setDnd(true);
+    dndRuntime.start();
+    // 勿扰提示气泡允许存在；落岛默认气泡必须被抑制
+    expect(
+      dndVisuals.filter((c) => c.type === 'bubble' && c.text?.includes('我在这儿')),
+    ).toHaveLength(0);
+    dndRuntime.stop();
+  });
+
   it('boots to IDLE, broadcasts happy stretch, then degrades to SITTING after the activity window', () => {
     vi.useFakeTimers();
     const snapshots: PetRuntimeSnapshot[] = [];

@@ -861,6 +861,67 @@ body,
   border-bottom: 1px solid #f0cfdd;
 }
 
+/* ---- 落岛开场（冷启动定位反馈）----
+   桌宠脚下出现奶白底座 + 一次落地回弹，帮用户在任何壁纸上快速定位窗口；
+   仅 data-state=STARTING 期间出现，2.6s 后由渲染层移除。 */
+.pet-landing-base {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  width: 176px;
+  height: 26px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #fff8fb;
+  border: 1.5px solid #b83f68;
+  box-shadow:
+    0 3px 10px rgba(184, 63, 104, 0.2),
+    inset 0 0 10px rgba(242, 170, 189, 0.25);
+  opacity: 0;
+  animation: pet-landing-base 2.6s ease-out forwards;
+  pointer-events: none;
+  z-index: 0;
+}
+@keyframes pet-landing-base {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.82);
+  }
+  12% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.96);
+  }
+}
+
+/* 落点回弹：rig 整体一次轻微下压 → 弹起 → 落定（reduced-motion 下被全局禁动） */
+[data-landing='true'] .star-isle__rig {
+  animation: pet-landing-bounce 1s var(--ease-spring) forwards;
+}
+@keyframes pet-landing-bounce {
+  0% {
+    transform: translateY(0) scaleY(1);
+  }
+  18% {
+    transform: translateY(7px) scaleY(0.96);
+  }
+  42% {
+    transform: translateY(-9px) scaleY(1.02);
+  }
+  68% {
+    transform: translateY(0) scaleY(0.99);
+  }
+  100% {
+    transform: translateY(0) scaleY(1);
+  }
+}
+
 /* ============================================================
    刀剑神域 (Sword Art Online) 经典纯正【左侧全息系统菜单】
    ============================================================ */
