@@ -18,6 +18,19 @@ function StatusPill({ status }: { status: string }) {
   return <span className={cls}>{label}</span>;
 }
 
+/** 邀请邮件投递结果（0016 追踪）：运营据此判断该人工跟进谁 */
+const MAIL_PILLS: Record<string, [string, string]> = {
+  sent: ['已送达', 'pill ok'],
+  failed: ['发送失败', 'pill danger'],
+  skipped: ['未配置', 'pill muted'],
+  pending: ['发送中', 'pill'],
+};
+
+function MailPill({ status }: { status: string }) {
+  const [label, cls] = MAIL_PILLS[status] ?? ['未发送', 'pill muted'];
+  return <span className={cls}>{label}</span>;
+}
+
 export function WaitlistPage() {
   const [status, setStatus] = useState('');
   const [keyword, setKeyword] = useState('');
@@ -118,6 +131,7 @@ export function WaitlistPage() {
             <tr>
               <th>邮箱</th>
               <th>状态</th>
+              <th>邮件</th>
               <th>报名时间</th>
               <th>邀请时间</th>
               <th>邀请到期</th>
@@ -131,6 +145,9 @@ export function WaitlistPage() {
                 <td>{row.email}</td>
                 <td>
                   <StatusPill status={row.status} />
+                </td>
+                <td>
+                  {row.status === 'invited' ? <MailPill status={row.inviteMailStatus} /> : '—'}
                 </td>
                 <td>{row.createdAt.slice(0, 10)}</td>
                 <td>{row.invitedAt ? row.invitedAt.slice(0, 10) : '—'}</td>

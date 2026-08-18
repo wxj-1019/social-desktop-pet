@@ -116,6 +116,9 @@ export interface UsageRow {
   usageDate: string;
   requests: number;
   tokens: number;
+  fails: number;
+  limitHits: number;
+  model?: string | null;
 }
 
 export interface WaitlistRow {
@@ -126,6 +129,8 @@ export interface WaitlistRow {
   invitedAt: string | null;
   inviteExpiresAt: string | null;
   claimedAt: string | null;
+  inviteMailStatus: string;
+  inviteMailAt: string | null;
 }
 
 export interface AuditRow {
@@ -165,6 +170,9 @@ export const adminApi = {
       suspendedUsers: number;
       pendingInvites: number;
     }>('/overview');
+  },
+  overviewTrend() {
+    return raw<{ items: Array<{ hour: string; messages: number }> }>('/overview/trend');
   },
   admins() {
     return raw<{
@@ -211,9 +219,10 @@ export const adminApi = {
     return raw<{ ok: true }>(`/devices/${deviceId}/revoke`, { method: 'POST', body: {} });
   },
   usage(from: string, to: string) {
-    return raw<{ summary: { requests: number; tokens: number }; items: UsageRow[] }>(
-      `/usage?from=${from}&to=${to}`,
-    );
+    return raw<{
+      summary: { requests: number; tokens: number; fails: number; limitHits: number };
+      items: UsageRow[];
+    }>(`/usage?from=${from}&to=${to}`);
   },
   usageForUser(userId: string, from: string, to: string) {
     return raw<{ items: UsageRow[] }>(`/usage/users/${userId}?from=${from}&to=${to}`);

@@ -157,7 +157,7 @@ describe('UsersPage', () => {
     vi.spyOn(api, 'userDetail').mockResolvedValue(detail);
     vi.spyOn(api, 'userDevices').mockResolvedValue({ items: [] });
     const usageForUser = vi.spyOn(api, 'usageForUser').mockResolvedValue({
-      items: [{ usageDate: '2026-08-18', requests: 3, tokens: 500 }],
+      items: [{ usageDate: '2026-08-18', requests: 3, tokens: 500, fails: 0, limitHits: 0 }],
     });
     const chatSummary = vi.spyOn(api, 'chatSummary').mockResolvedValue({
       items: [

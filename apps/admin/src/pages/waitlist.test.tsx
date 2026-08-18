@@ -18,6 +18,8 @@ const row = {
   invitedAt: null,
   inviteExpiresAt: null,
   claimedAt: null,
+  inviteMailStatus: 'pending',
+  inviteMailAt: null,
 };
 
 describe('WaitlistPage', () => {

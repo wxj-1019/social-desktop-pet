@@ -13,6 +13,54 @@ interface Overview {
   pendingInvites: number;
 }
 
+interface TrendPoint {
+  hour: string;
+  messages: number;
+}
+
+/** 24 小时消息趋势（小时粒度柱状图，每 3 小时一个刻度标签） */
+function HourlyTrend({ points }: { points: TrendPoint[] }) {
+  if (points.length === 0) return null;
+  const max = Math.max(1, ...points.map((p) => p.messages));
+  const W = 720;
+  const H = 130;
+  const bw = W / points.length;
+  return (
+    <div className="table-panel chart-panel">
+      <svg viewBox={`0 0 ${W} ${H + 22}`} role="img" aria-label="近 24 小时聊天消息趋势">
+        {points.map((p, i) => {
+          const bh = Math.max(2, Math.round((p.messages / max) * H));
+          const label = p.hour.slice(11, 13);
+          return (
+            <g key={p.hour}>
+              <rect
+                x={Math.round(i * bw + bw * 0.15)}
+                y={H - bh}
+                width={Math.max(3, Math.round(bw * 0.7))}
+                height={bh}
+                rx={4}
+                className="chart-bar"
+              >
+                <title>{`${p.hour.slice(5, 16).replace('T', ' ')}：${p.messages} 条消息`}</title>
+              </rect>
+              {i % 3 === 0 && (
+                <text
+                  x={Math.round(i * bw + bw / 2)}
+                  y={H + 16}
+                  textAnchor="middle"
+                  className="chart-label"
+                >
+                  {label}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 interface Card {
   label: string;
   value: number;
@@ -22,15 +70,16 @@ interface Card {
 
 export function OverviewPage({ onNavigate }: { onNavigate?: (view: string) => void }) {
   const [data, setData] = useState<Overview | null>(null);
+  const [trend, setTrend] = useState<TrendPoint[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(() => {
     setRefreshing(true);
-    adminApi
-      .overview()
-      .then((d) => {
+    Promise.all([adminApi.overview(), adminApi.overviewTrend().catch(() => ({ items: [] }))])
+      .then(([d, t]) => {
         setData(d);
+        setTrend(t.items);
         setError(null);
       })
       .catch((e: Error) => setError(e.message))
@@ -92,6 +141,12 @@ export function OverviewPage({ onNavigate }: { onNavigate?: (view: string) => vo
           );
         })}
       </div>
+      {trend && (
+        <>
+          <h3 style={{ marginTop: 26 }}>近 24 小时聊天消息</h3>
+          <HourlyTrend points={trend} />
+        </>
+      )}
     </section>
   );
 }

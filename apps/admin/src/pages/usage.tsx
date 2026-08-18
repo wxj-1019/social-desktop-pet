@@ -52,7 +52,7 @@ export function UsagePage() {
   const [from, setFrom] = useState(daysAgo(7));
   const [to, setTo] = useState(today());
   const [data, setData] = useState<{
-    summary: { requests: number; tokens: number };
+    summary: { requests: number; tokens: number; fails: number; limitHits: number };
     items: UsageRow[];
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +97,16 @@ export function UsagePage() {
               <div className="stat-value">{data.summary.tokens}</div>
               <div className="stat-label">区间 token 估算</div>
             </div>
+            <div className="stat-card">
+              <div className="stat-value">
+                {data.summary.requests > 0
+                  ? `${((data.summary.fails / data.summary.requests) * 100).toFixed(1)}%`
+                  : '0%'}
+              </div>
+              <div className="stat-label">
+                失败率（失败 {data.summary.fails} / 限流 {data.summary.limitHits}）
+              </div>
+            </div>
           </div>
           <TrendChart items={data.items} />
           <div className="table-panel" style={{ marginTop: 20 }}>
@@ -106,6 +116,8 @@ export function UsagePage() {
                   <th>日期</th>
                   <th>请求数</th>
                   <th>token 估算</th>
+                  <th>失败</th>
+                  <th>限流</th>
                 </tr>
               </thead>
               <tbody>
@@ -114,6 +126,10 @@ export function UsagePage() {
                     <td>{r.usageDate}</td>
                     <td>{r.requests}</td>
                     <td>{r.tokens}</td>
+                    <td>{r.fails > 0 ? <span className="pill danger">{r.fails}</span> : 0}</td>
+                    <td>
+                      {r.limitHits > 0 ? <span className="pill muted">{r.limitHits}</span> : 0}
+                    </td>
                   </tr>
                 ))}
               </tbody>

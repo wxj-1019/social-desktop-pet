@@ -12,8 +12,8 @@ afterEach(() => {
 describe('UsagePage', () => {
   it('renders summary and rows from the API', async () => {
     vi.spyOn(await import('../api.js').then((m) => m.adminApi), 'usage').mockResolvedValue({
-      summary: { requests: 30, tokens: 4000 },
-      items: [{ usageDate: '2026-08-18', requests: 20, tokens: 2500 }],
+      summary: { requests: 30, tokens: 4000, fails: 3, limitHits: 1 },
+      items: [{ usageDate: '2026-08-18', requests: 20, tokens: 2500, fails: 1, limitHits: 0 }],
     });
     await act(async () => {
       render(<UsagePage />);
