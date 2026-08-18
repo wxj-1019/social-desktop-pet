@@ -44,6 +44,13 @@ export class AdminUnauthorized extends Error {
   }
 }
 
+/** 全局会话失效回调：refresh 失败（会话过期/被停用）时通知 App 返回登录页 */
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+  unauthorizedHandler = fn;
+}
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -64,8 +71,10 @@ async function raw<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     const refreshed = await refreshOnce();
     if (refreshed) {
       setAccessToken(refreshed.accessToken);
+      // 401 = 服务端鉴权中间件已拒绝、动作未执行，重试一次安全（不会重复执行写操作）
       return raw<T>(path, { ...opts, skipRefresh: true });
     }
+    unauthorizedHandler?.();
     throw new AdminUnauthorized();
   }
   if (!res.ok) {
@@ -149,9 +158,36 @@ export const adminApi = {
     return raw<{
       totalUsers: number;
       onlineDevices: number;
+      totalDevices: number;
       chatRequestsToday: number;
+      chatRequests7d: number;
+      signups7d: number;
+      suspendedUsers: number;
       pendingInvites: number;
     }>('/overview');
+  },
+  admins() {
+    return raw<{
+      items: Array<{
+        id: string;
+        email: string;
+        status: 'active' | 'disabled';
+        lastLoginAt: string | null;
+        createdAt: string;
+      }>;
+    }>('/admins');
+  },
+  disableAdmin(id: string) {
+    return raw<{ ok: true }>(`/admins/${id}/disable`, { method: 'POST', body: {} });
+  },
+  enableAdmin(id: string) {
+    return raw<{ ok: true }>(`/admins/${id}/enable`, { method: 'POST', body: {} });
+  },
+  changePassword(currentPassword: string, newPassword: string) {
+    return raw<{ ok: true }>('/auth/change-password', {
+      method: 'POST',
+      body: { currentPassword, newPassword },
+    });
   },
   users(params: Record<string, string>) {
     const qs = new URLSearchParams(params).toString();

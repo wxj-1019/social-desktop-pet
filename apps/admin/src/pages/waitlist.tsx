@@ -1,21 +1,47 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { adminApi, type WaitlistRow } from '../api.js';
+import { Pagination } from '../pagination.js';
+
+const PAGE_SIZE = 50;
+
+/** waitlist 状态 → 中文徽章（视觉语义：pending 待定灰 / invited 强调 / joined 成功 / expired 危险） */
+const STATUS_PILLS: Record<string, [string, string]> = {
+  pending: ['待邀请', 'pill muted'],
+  invited: ['已邀请', 'pill'],
+  joined: ['已加入', 'pill ok'],
+  expired: ['已过期', 'pill danger'],
+};
+
+function StatusPill({ status }: { status: string }) {
+  const [label, cls] = STATUS_PILLS[status] ?? [status, 'pill muted'];
+  return <span className={cls}>{label}</span>;
+}
 
 export function WaitlistPage() {
   const [status, setStatus] = useState('');
+  const [keyword, setKeyword] = useState('');
+  const [page, setPage] = useState(1);
   const [data, setData] = useState<{ items: WaitlistRow[]; total: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // 响应序号防护：快速输入/翻页触发多次请求时，旧响应晚到不再覆盖新结果
+  const loadSeq = useRef(0);
   const load = useCallback(() => {
-    const params: Record<string, string> = { page: '1', pageSize: '50' };
+    const seq = ++loadSeq.current;
+    const params: Record<string, string> = { page: String(page), pageSize: String(PAGE_SIZE) };
     if (status) params.status = status;
+    if (keyword.trim()) params.q = keyword.trim();
     adminApi
       .waitlist(params)
-      .then(setData)
-      .catch((e: Error) => setError(e.message));
-  }, [status]);
+      .then((d) => {
+        if (seq === loadSeq.current) setData(d);
+      })
+      .catch((e: Error) => {
+        if (seq === loadSeq.current) setError(e.message);
+      });
+  }, [status, keyword, page]);
 
   useEffect(load, [load]);
 
@@ -46,9 +72,28 @@ export function WaitlistPage() {
 
   return (
     <section className="page">
-      <h2>运营邀请</h2>
+      <div className="page-head">
+        <div>
+          <h2>运营邀请</h2>
+          <p className="page-desc">等待名单报名、邀请发放与兑换进度</p>
+        </div>
+      </div>
       <div className="toolbar">
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
+        <input
+          placeholder="搜索邮箱"
+          value={keyword}
+          onChange={(e) => {
+            setKeyword(e.target.value);
+            setPage(1); // 筛选变化回到第 1 页
+          }}
+        />
+        <select
+          value={status}
+          onChange={(e) => {
+            setStatus(e.target.value);
+            setPage(1);
+          }}
+        >
           <option value="">全部状态</option>
           <option value="pending">待邀请</option>
           <option value="invited">已邀请</option>
@@ -66,38 +111,46 @@ export function WaitlistPage() {
           {notice}
         </p>
       )}
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>邮箱</th>
-            <th>状态</th>
-            <th>报名时间</th>
-            <th>邀请时间</th>
-            <th>兑换时间</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {data?.items.map((row) => (
-            <tr key={row.id}>
-              <td>{row.email}</td>
-              <td>{row.status}</td>
-              <td>{row.createdAt.slice(0, 10)}</td>
-              <td>{row.invitedAt ? row.invitedAt.slice(0, 10) : '—'}</td>
-              <td>{row.claimedAt ? row.claimedAt.slice(0, 10) : '—'}</td>
-              <td>
-                {row.status === 'pending' && (
-                  <button onClick={() => void invite(row)}>发放邀请</button>
-                )}
-                {row.status === 'invited' && (
-                  <button onClick={() => void expire(row)}>标记过期</button>
-                )}
-              </td>
+      {!error && !data && <p className="muted">加载中…</p>}
+      <div className="table-panel">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>邮箱</th>
+              <th>状态</th>
+              <th>报名时间</th>
+              <th>邀请时间</th>
+              <th>邀请到期</th>
+              <th>兑换时间</th>
+              <th />
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="muted">共 {data?.total ?? 0} 条（单页最多 50）</p>
+          </thead>
+          <tbody>
+            {data?.items.map((row) => (
+              <tr key={row.id}>
+                <td>{row.email}</td>
+                <td>
+                  <StatusPill status={row.status} />
+                </td>
+                <td>{row.createdAt.slice(0, 10)}</td>
+                <td>{row.invitedAt ? row.invitedAt.slice(0, 10) : '—'}</td>
+                <td>{row.inviteExpiresAt ? row.inviteExpiresAt.slice(0, 10) : '—'}</td>
+                <td>{row.claimedAt ? row.claimedAt.slice(0, 10) : '—'}</td>
+                <td>
+                  {row.status === 'pending' && (
+                    <button onClick={() => void invite(row)}>发放邀请</button>
+                  )}
+                  {row.status === 'invited' && (
+                    <button onClick={() => void expire(row)}>标记过期</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {data && data.items.length === 0 && <p className="muted">暂无数据</p>}
+      <Pagination page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onChange={setPage} />
     </section>
   );
 }

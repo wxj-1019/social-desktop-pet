@@ -35,4 +35,23 @@ describe('WaitlistPage', () => {
 
     expect(screen.getByRole('status').textContent).toContain('ABCD1234');
   });
+
+  it('searches by email and resets to page 1', async () => {
+    const api = await import('../api.js').then((m) => m.adminApi);
+    const waitlist = vi
+      .spyOn(api, 'waitlist')
+      .mockResolvedValue({ total: 0, page: 1, pageSize: 50, items: [] });
+
+    await act(async () => {
+      render(<WaitlistPage />);
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText('搜索邮箱'), {
+        target: { value: 'a@b' },
+      });
+    });
+
+    const lastCall = waitlist.mock.calls.at(-1)?.[0] as Record<string, string>;
+    expect(lastCall).toMatchObject({ page: '1', q: 'a@b' });
+  });
 });
