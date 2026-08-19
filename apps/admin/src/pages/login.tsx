@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { adminApi, setAccessToken, AdminApiError } from '../api.js';
 
@@ -7,10 +7,18 @@ export function LoginPage({ onAuthed }: { onAuthed(): void }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // 限流倒计时（秒）：触发 rate_limit 后禁用按钮并逐秒递减
+  const [lockSeconds, setLockSeconds] = useState(0);
+
+  useEffect(() => {
+    if (lockSeconds <= 0) return;
+    const id = setTimeout(() => setLockSeconds((s) => s - 1), 1000);
+    return () => clearTimeout(id);
+  }, [lockSeconds]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (busy) return;
+    if (busy || lockSeconds > 0) return;
     setBusy(true);
     setError(null);
     try {
@@ -19,7 +27,9 @@ export function LoginPage({ onAuthed }: { onAuthed(): void }) {
       onAuthed();
     } catch (err) {
       if (err instanceof AdminApiError && err.code === 'rate_limit') {
-        setError('尝试过于频繁，请稍后再试');
+        const retry = err.retryAfterSec ?? 30;
+        setLockSeconds(retry);
+        setError(`尝试过于频繁，请 ${retry} 秒后再试`);
       } else if (err instanceof AdminApiError && err.code === 'admin_disabled') {
         setError('管理员账号已停用');
       } else {
@@ -29,6 +39,8 @@ export function LoginPage({ onAuthed }: { onAuthed(): void }) {
       setBusy(false);
     }
   };
+
+  const locked = lockSeconds > 0;
 
   return (
     <main className="login-page">
@@ -45,6 +57,7 @@ export function LoginPage({ onAuthed }: { onAuthed(): void }) {
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="username"
             required
+            disabled={locked}
           />
         </label>
         <label>
@@ -55,6 +68,7 @@ export function LoginPage({ onAuthed }: { onAuthed(): void }) {
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
             required
+            disabled={locked}
           />
         </label>
         {error && (
@@ -62,8 +76,8 @@ export function LoginPage({ onAuthed }: { onAuthed(): void }) {
             {error}
           </p>
         )}
-        <button type="submit" disabled={busy}>
-          {busy ? '登录中…' : '登录'}
+        <button type="submit" disabled={busy || locked}>
+          {locked ? `请 ${lockSeconds} 秒后再试` : busy ? '登录中…' : '登录'}
         </button>
       </form>
     </main>

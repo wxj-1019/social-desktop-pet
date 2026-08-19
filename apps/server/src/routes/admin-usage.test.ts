@@ -85,6 +85,41 @@ describe('admin usage routes', () => {
     expect(body.items[0]!.model).toBe('glm-4-flash');
   });
 
+  it('filters daily usage by model and returns models list', async () => {
+    const { app, pool } = buildRouter([
+      {
+        fragment: 'group by usage_date',
+        rows: [{ usage_date: '2026-08-18', requests: 6, tokens: 900, fails: 0, limit_hits: 1 }],
+      },
+      {
+        fragment: 'sum(request_count)',
+        rows: [{ requests: 6, tokens: 900, fails: 0, limit_hits: 1 }],
+      },
+      {
+        fragment: 'select distinct model',
+        rows: [{ model: 'glm-4-flash' }, { model: 'doubao-seedream' }],
+      },
+    ]);
+    const token = await JWT.signAdmin('a1');
+    const res = await app.request('/usage?from=2026-08-01&to=2026-08-18&model=glm-4-flash', {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: Array<{ requests: number }> };
+    expect(body.items[0]!.requests).toBe(6);
+    const queries = pool.query.mock.calls.map((c) => String(c[0]));
+    expect(queries.some((sql) => sql.includes('model = $3'))).toBe(true);
+
+    const modelsRes = await app.request('/usage/models?from=2026-08-01&to=2026-08-18', {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(modelsRes.status).toBe(200);
+    expect(((await modelsRes.json()) as { models: string[] }).models).toEqual([
+      'glm-4-flash',
+      'doubao-seedream',
+    ]);
+  });
+
   it('rejects a date range longer than 31 days', async () => {
     const { app } = buildRouter([]);
     const token = await JWT.signAdmin('a1');

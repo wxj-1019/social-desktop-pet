@@ -51,6 +51,8 @@ describe('WaitlistPage', () => {
       fireEvent.change(screen.getByPlaceholderText('搜索邮箱'), {
         target: { value: 'a@b' },
       });
+      // 搜索防抖 300ms：等防抖窗口过去后才触发带关键词的请求
+      await new Promise((r) => setTimeout(r, 350));
     });
 
     const lastCall = waitlist.mock.calls.at(-1)?.[0] as Record<string, string>;

@@ -260,7 +260,15 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
          (select count(*) from auth.users
            where created_at >= now() - interval '7 days')::int as signups_7d,
          (select count(*) from auth.users where account_status = 'suspended')::int as suspended_users,
-         (select count(*) from waitlist where status = 'pending')::int as pending_invites`,
+         (select count(*) from waitlist where status = 'pending')::int as pending_invites,
+         (select coalesce(sum(fail_count), 0) from chat_usage
+           where usage_date = current_date)::int as chat_fails_today,
+         (select coalesce(sum(limit_hits), 0) from chat_usage
+           where usage_date = current_date)::int as limit_hits_today,
+         (select coalesce(sum(fail_count), 0) from chat_usage
+           where usage_date >= current_date - 6)::int as chat_fails_7d,
+         (select coalesce(sum(limit_hits), 0) from chat_usage
+           where usage_date >= current_date - 6)::int as limit_hits_7d`,
     );
     const r = rows[0] as {
       total_users: number;
@@ -271,6 +279,10 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
       signups_7d: number;
       suspended_users: number;
       pending_invites: number;
+      chat_fails_today: number;
+      limit_hits_today: number;
+      chat_fails_7d: number;
+      limit_hits_7d: number;
     };
     return c.json({
       totalUsers: r.total_users,
@@ -281,6 +293,10 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
       signups7d: r.signups_7d,
       suspendedUsers: r.suspended_users,
       pendingInvites: r.pending_invites,
+      chatFailsToday: r.chat_fails_today,
+      limitHitsToday: r.limit_hits_today,
+      chatFails7d: r.chat_fails_7d,
+      limitHits7d: r.limit_hits_7d,
     });
   });
 

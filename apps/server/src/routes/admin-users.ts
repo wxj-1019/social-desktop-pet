@@ -69,6 +69,14 @@ export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: 
   const app = new Hono<{ Variables: AdminVariables }>();
   const auth = requireAdminAuth(deps.jwt, deps.adminUsers);
 
+  // 排序白名单（ORDER BY 片段直接拼接；只允许预定义键，杜绝注入）
+  const SORTS: Record<string, string> = {
+    created_desc: 'u.created_at desc',
+    created_asc: 'u.created_at asc',
+    last_seen_desc: 'last_seen_at desc nulls last',
+    device_desc: 'device_count desc',
+  };
+
   app.get('/users', auth, async (c) => {
     const q = c.req.query();
     const page = Number.isFinite(Number(q.page)) ? Math.max(1, Math.trunc(Number(q.page))) : 1;
@@ -77,6 +85,7 @@ export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: 
       : 20;
     const keyword = (q.q ?? '').trim();
     const status = q.status ?? '';
+    const orderBy = SORTS[q.sort ?? ''] ?? SORTS.created_desc;
     const countParams = [keyword, status];
     const count = await deps.pool.query(
       `select count(*)::int as total
@@ -100,7 +109,7 @@ export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: 
               or p.nickname ilike '%' || $1 || '%'
               or u.id::text = $1)
          and ($2 = '' or u.account_status = $2)
-       order by u.created_at desc
+       order by ${orderBy}
        limit $3 offset $4`,
       listParams,
     );

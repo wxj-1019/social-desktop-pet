@@ -1,9 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { adminApi, type WaitlistRow } from '../api.js';
+import { downloadCsv } from '../csv.js';
 import { Pagination } from '../pagination.js';
 
 const PAGE_SIZE = 50;
+
+/** 搜索防抖：输入停止 300ms 后才触发查询 */
+function useDebounced(value: string, delay = 300): string {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
 
 /** waitlist 状态 → 中文徽章（视觉语义：pending 待定灰 / invited 强调 / joined 成功 / expired 危险） */
 const STATUS_PILLS: Record<string, [string, string]> = {
@@ -34,10 +45,13 @@ function MailPill({ status }: { status: string }) {
 export function WaitlistPage() {
   const [status, setStatus] = useState('');
   const [keyword, setKeyword] = useState('');
+  const debouncedKeyword = useDebounced(keyword);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<{ items: WaitlistRow[]; total: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 行级 busy：防止快速双击重复发放/过期
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   // 响应序号防护：快速输入/翻页触发多次请求时，旧响应晚到不再覆盖新结果
   const loadSeq = useRef(0);
@@ -45,7 +59,7 @@ export function WaitlistPage() {
     const seq = ++loadSeq.current;
     const params: Record<string, string> = { page: String(page), pageSize: String(PAGE_SIZE) };
     if (status) params.status = status;
-    if (keyword.trim()) params.q = keyword.trim();
+    if (debouncedKeyword.trim()) params.q = debouncedKeyword.trim();
     adminApi
       .waitlist(params)
       .then((d) => {
@@ -54,11 +68,13 @@ export function WaitlistPage() {
       .catch((e: Error) => {
         if (seq === loadSeq.current) setError(e.message);
       });
-  }, [status, keyword, page]);
+  }, [status, debouncedKeyword, page]);
 
   useEffect(load, [load]);
 
   const invite = async (row: WaitlistRow) => {
+    if (busyId) return;
+    setBusyId(row.id);
     setError(null);
     setNotice(null);
     try {
@@ -67,11 +83,15 @@ export function WaitlistPage() {
       load();
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setBusyId(null);
     }
   };
 
   const expire = async (row: WaitlistRow) => {
+    if (busyId) return;
     if (!window.confirm(`确认将 ${row.email} 的邀请标记为过期？`)) return;
+    setBusyId(row.id);
     setError(null);
     setNotice(null);
     try {
@@ -80,7 +100,26 @@ export function WaitlistPage() {
       load();
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setBusyId(null);
     }
+  };
+
+  const exportCsv = () => {
+    const rows = data?.items ?? [];
+    downloadCsv(
+      `waitlist-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['邮箱', '状态', '邮件', '报名时间', '邀请时间', '邀请到期', '兑换时间'],
+      rows.map((r) => [
+        r.email,
+        STATUS_PILLS[r.status]?.[0] ?? r.status,
+        MAIL_PILLS[r.inviteMailStatus]?.[0] ?? '未发送',
+        r.createdAt.slice(0, 10),
+        r.invitedAt ? r.invitedAt.slice(0, 10) : '',
+        r.inviteExpiresAt ? r.inviteExpiresAt.slice(0, 10) : '',
+        r.claimedAt ? r.claimedAt.slice(0, 10) : '',
+      ]),
+    );
   };
 
   return (
@@ -90,6 +129,9 @@ export function WaitlistPage() {
           <h2>运营邀请</h2>
           <p className="page-desc">等待名单报名、邀请发放与兑换进度</p>
         </div>
+        <button onClick={exportCsv} disabled={!data || data.items.length === 0}>
+          导出 CSV
+        </button>
       </div>
       <div className="toolbar">
         <input
@@ -106,6 +148,7 @@ export function WaitlistPage() {
             setStatus(e.target.value);
             setPage(1);
           }}
+          aria-label="状态筛选"
         >
           <option value="">全部状态</option>
           <option value="pending">待邀请</option>
@@ -140,29 +183,42 @@ export function WaitlistPage() {
             </tr>
           </thead>
           <tbody>
-            {data?.items.map((row) => (
-              <tr key={row.id}>
-                <td>{row.email}</td>
-                <td>
-                  <StatusPill status={row.status} />
-                </td>
-                <td>
-                  {row.status === 'invited' ? <MailPill status={row.inviteMailStatus} /> : '—'}
-                </td>
-                <td>{row.createdAt.slice(0, 10)}</td>
-                <td>{row.invitedAt ? row.invitedAt.slice(0, 10) : '—'}</td>
-                <td>{row.inviteExpiresAt ? row.inviteExpiresAt.slice(0, 10) : '—'}</td>
-                <td>{row.claimedAt ? row.claimedAt.slice(0, 10) : '—'}</td>
-                <td>
-                  {row.status === 'pending' && (
-                    <button onClick={() => void invite(row)}>发放邀请</button>
-                  )}
-                  {row.status === 'invited' && (
-                    <button onClick={() => void expire(row)}>标记过期</button>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {data?.items.map((row) => {
+              const rowBusy = busyId === row.id;
+              return (
+                <tr key={row.id}>
+                  <td className="cell-strong">{row.email}</td>
+                  <td>
+                    <StatusPill status={row.status} />
+                  </td>
+                  <td>
+                    {row.status === 'invited' ? <MailPill status={row.inviteMailStatus} /> : '—'}
+                  </td>
+                  <td>{row.createdAt.slice(0, 10)}</td>
+                  <td>{row.invitedAt ? row.invitedAt.slice(0, 10) : '—'}</td>
+                  <td>{row.inviteExpiresAt ? row.inviteExpiresAt.slice(0, 10) : '—'}</td>
+                  <td>{row.claimedAt ? row.claimedAt.slice(0, 10) : '—'}</td>
+                  <td>
+                    {row.status === 'pending' && (
+                      <button
+                        onClick={() => void invite(row)}
+                        disabled={rowBusy || busyId !== null}
+                      >
+                        {rowBusy ? '发放中…' : '发放邀请'}
+                      </button>
+                    )}
+                    {row.status === 'invited' && (
+                      <button
+                        onClick={() => void expire(row)}
+                        disabled={rowBusy || busyId !== null}
+                      >
+                        {rowBusy ? '处理中…' : '标记过期'}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

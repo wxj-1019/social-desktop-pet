@@ -77,6 +77,36 @@ describe('admin users routes', () => {
     expect(body.items[0]!.deviceCount).toBe(2);
   });
 
+  it('applies whitelisted sort param to the list query', async () => {
+    const { app, queries } = buildRouter([
+      { fragment: 'count(*)::int as total', rows: [{ total: 0 }] },
+      { fragment: 'from auth.users u', rows: [] },
+    ]);
+    const token = await JWT.signAdmin('a1');
+    const res = await app.request('/users?sort=last_seen_desc', {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    // count 查询与列表查询都含 from auth.users u，用分页片段定位列表查询
+    const listQuery = queries.find((q) => q.sql.includes('limit $3 offset $4'));
+    expect(listQuery?.sql).toContain('order by last_seen_at desc nulls last');
+  });
+
+  it('falls back to default sort for unknown sort values', async () => {
+    const { app, queries } = buildRouter([
+      { fragment: 'count(*)::int as total', rows: [{ total: 0 }] },
+      { fragment: 'from auth.users u', rows: [] },
+    ]);
+    const token = await JWT.signAdmin('a1');
+    const res = await app.request('/users?sort=drop%20table', {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const listQuery = queries.find((q) => q.sql.includes('limit $3 offset $4'));
+    expect(listQuery?.sql).toContain('order by u.created_at desc');
+    expect(listQuery?.sql).not.toContain('drop');
+  });
+
   it('requires admin token (user token rejected)', async () => {
     const { app } = buildRouter([]);
     const userToken = await JWT.sign({ sub: 'u1', deviceId: 'dev-1' });

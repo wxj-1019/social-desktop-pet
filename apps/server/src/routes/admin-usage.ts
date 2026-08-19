@@ -54,10 +54,31 @@ export function createAdminUsageRouter(deps: AdminUsageDeps): Hono<{ Variables: 
     return { from: fromDate, to: toDate };
   }
 
+  // 模型过滤值直接作为绑定参数（不拼接 SQL），空串 = 不过滤
+  function modelFilter(model: string | undefined): string {
+    return (model ?? '').trim().slice(0, 200);
+  }
+
+  /** 区间内实际用到的模型列表（运营筛选下拉的数据源；空区间返回空表） */
+  app.get('/usage/models', auth, async (c) => {
+    const q = c.req.query();
+    const range = parseRange(q.from, q.to);
+    if (!range) return c.json({ error: 'invalid_input' }, 422);
+    const { rows } = await deps.pool.query(
+      `select distinct model from chat_usage
+       where usage_date between $1::date and $2::date
+         and model is not null and model <> ''
+       order by model`,
+      [range.from, range.to],
+    );
+    return c.json({ models: rows.map((r) => r.model as string) });
+  });
+
   app.get('/usage', auth, async (c) => {
     const q = c.req.query();
     const range = parseRange(q.from, q.to);
     if (!range) return c.json({ error: 'invalid_input' }, 422);
+    const model = modelFilter(q.model);
 
     const { rows } = await deps.pool.query(
       `select usage_date,
@@ -67,17 +88,19 @@ export function createAdminUsageRouter(deps: AdminUsageDeps): Hono<{ Variables: 
               sum(limit_hits)::int as limit_hits
        from chat_usage
        where usage_date between $1::date and $2::date
+         and ($3 = '' or model = $3)
        group by usage_date
        order by usage_date desc`,
-      [range.from, range.to],
+      [range.from, range.to, model],
     );
     const summary = await deps.pool.query(
       `select coalesce(sum(request_count), 0)::int as requests,
               coalesce(sum(token_estimate), 0)::int as tokens,
               coalesce(sum(fail_count), 0)::int as fails,
               coalesce(sum(limit_hits), 0)::int as limit_hits
-       from chat_usage where usage_date between $1::date and $2::date`,
-      [range.from, range.to],
+       from chat_usage where usage_date between $1::date and $2::date
+         and ($3 = '' or model = $3)`,
+      [range.from, range.to, model],
     );
     const s = (summary.rows[0] ?? {}) as {
       requests?: number;

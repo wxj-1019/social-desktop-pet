@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { adminApi, type AuditRow } from '../api.js';
+import { downloadCsv } from '../csv.js';
 import { Pagination } from '../pagination.js';
 
 const PAGE_SIZE = 100;
@@ -33,14 +34,27 @@ const RESOURCE_TYPES = [
   'bond_memory',
 ];
 
+/** 敏感访问类动作（审计页高亮提示运营关注） */
+const SENSITIVE_ACTIONS = new Set(['sensitive.grant', 'sensitive.read']);
+
 export function AuditPage() {
   const [rows, setRows] = useState<{ items: AuditRow[]; total: number } | null>(null);
   const [page, setPage] = useState(1);
   const [action, setAction] = useState('');
   const [resourceType, setResourceType] = useState('');
+  const [adminId, setAdminId] = useState('');
+  const [admins, setAdmins] = useState<Array<{ id: string; email: string }>>([]);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  // 管理员筛选下拉的数据源（取当前管理员列表；失败静默降级为无筛选）
+  useEffect(() => {
+    adminApi
+      .admins()
+      .then((r) => setAdmins(r.items.map((a) => ({ id: a.id, email: a.email }))))
+      .catch(() => undefined);
+  }, []);
 
   // 响应序号防护：筛选/翻页触发多次请求时，旧响应晚到不再覆盖新结果
   const loadSeq = useRef(0);
@@ -49,6 +63,7 @@ export function AuditPage() {
     const params: Record<string, string> = { page: String(page), pageSize: String(PAGE_SIZE) };
     if (action) params.action = action;
     if (resourceType) params.resourceType = resourceType;
+    if (adminId) params.adminId = adminId;
     if (from) params.from = from;
     if (to) params.to = to;
     adminApi
@@ -59,7 +74,7 @@ export function AuditPage() {
       .catch((e: Error) => {
         if (seq === loadSeq.current) setError(e.message);
       });
-  }, [page, action, resourceType, from, to]);
+  }, [page, action, resourceType, adminId, from, to]);
 
   useEffect(load, [load]);
 
@@ -70,6 +85,21 @@ export function AuditPage() {
       setPage(1);
     };
 
+  const exportCsv = () => {
+    const current = rows?.items ?? [];
+    downloadCsv(
+      `audit-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['时间', '操作', '资源', '原因', 'IP'],
+      current.map((r) => [
+        r.createdAt.slice(0, 19).replace('T', ' '),
+        ACTION_LABELS[r.action] ?? r.action,
+        `${r.resourceType}${r.resourceId ? ` / ${r.resourceId}` : ''}`,
+        r.reason ?? '',
+        r.ip ?? '',
+      ]),
+    );
+  };
+
   return (
     <section className="page">
       <div className="page-head">
@@ -77,6 +107,9 @@ export function AuditPage() {
           <h2>审计日志</h2>
           <p className="page-desc">管理员全部操作与敏感数据访问的追加式留痕</p>
         </div>
+        <button onClick={exportCsv} disabled={!rows || rows.items.length === 0}>
+          导出 CSV
+        </button>
       </div>
       <div className="toolbar">
         <select
@@ -100,6 +133,18 @@ export function AuditPage() {
           {RESOURCE_TYPES.map((r) => (
             <option key={r} value={r}>
               {r}
+            </option>
+          ))}
+        </select>
+        <select
+          value={adminId}
+          onChange={(e) => resetPage(setAdminId)(e.target.value)}
+          aria-label="管理员筛选"
+        >
+          <option value="">全部管理员</option>
+          {admins.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.email}
             </option>
           ))}
         </select>
@@ -144,7 +189,9 @@ export function AuditPage() {
               <tr key={r.id}>
                 <td className="mono">{r.createdAt.slice(0, 19).replace('T', ' ')}</td>
                 <td>
-                  <span className="pill muted">{ACTION_LABELS[r.action] ?? r.action}</span>
+                  <span className={SENSITIVE_ACTIONS.has(r.action) ? 'pill warn' : 'pill muted'}>
+                    {ACTION_LABELS[r.action] ?? r.action}
+                  </span>
                 </td>
                 <td>
                   {r.resourceType}

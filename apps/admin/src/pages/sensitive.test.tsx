@@ -18,7 +18,11 @@ async function loadSummaries() {
     fireEvent.click(screen.getByRole('button', { name: '加载脱敏摘要' }));
   });
   const api = await import('../api.js');
-  expect(api.adminApi.chatSummary).toHaveBeenCalledWith('u1');
+  // 未填日期筛选时传入空 from/to（api.ts 内部会省略空参数）
+  expect(api.adminApi.chatSummary).toHaveBeenCalledWith('u1', {
+    from: undefined,
+    to: undefined,
+  });
 }
 
 describe('SensitivePage', () => {

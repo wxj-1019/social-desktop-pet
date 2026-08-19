@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { adminApi } from '../api.js';
 
@@ -19,6 +19,15 @@ interface MemorySummaryRow {
   summary: string;
 }
 
+/** 原文表格单元格格式化：ISO 时间 → 可读、对象 → JSON、空值 → 占位 */
+function formatCellValue(v: unknown): string {
+  if (v === null || v === undefined) return '—';
+  if (typeof v === 'object') return JSON.stringify(v);
+  const s = String(v);
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) return s.slice(0, 19).replace('T', ' ');
+  return s;
+}
+
 /**
  * 敏感数据页 —— 两段式工作流（设计 §6 聊天与记忆）：
  * 1. 默认只加载服务端脱敏摘要（PII 掩码 + 截断），用于定位记录；
@@ -29,6 +38,8 @@ export function SensitivePage() {
   // ---- 阶段一：脱敏摘要 ----
   const [userId, setUserId] = useState('');
   const [resourceType, setResourceType] = useState<ResourceType>('chat');
+  const [summaryFrom, setSummaryFrom] = useState('');
+  const [summaryTo, setSummaryTo] = useState('');
   const [chatRows, setChatRows] = useState<ChatSummaryRow[] | null>(null);
   const [memoryRows, setMemoryRows] = useState<MemorySummaryRow[] | null>(null);
   const [loadingSummaries, setLoadingSummaries] = useState(false);
@@ -49,7 +60,16 @@ export function SensitivePage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const grantFormRef = useRef<HTMLFormElement>(null);
+
   const summariesLoaded = chatRows !== null || memoryRows !== null;
+
+  // bond_memory 无脱敏摘要端点：选中时把视线引导到下方授权表单
+  useEffect(() => {
+    if (resourceType === 'bond_memory') {
+      grantFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [resourceType]);
 
   const loadSummaries = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,7 +81,10 @@ export function SensitivePage() {
     setLoadingSummaries(true);
     try {
       if (resourceType === 'chat') {
-        const result = await adminApi.chatSummary(userId);
+        const result = await adminApi.chatSummary(userId, {
+          from: summaryFrom || undefined,
+          to: summaryTo || undefined,
+        });
         setChatRows(result.items);
       } else if (resourceType === 'private_memory') {
         const result = await adminApi.memoriesSummary(userId);
@@ -120,6 +143,11 @@ export function SensitivePage() {
     return () => clearInterval(id);
   }, [grant, tick]);
 
+  // 服务端签发 5 分钟一次性授权（与后端 TTL 一致）
+  const GRANT_TTL_SEC = 300;
+  const grantPct =
+    remainSec === null ? 100 : Math.max(0, Math.min(100, (remainSec / GRANT_TTL_SEC) * 100));
+
   return (
     <section className="page">
       <div className="page-head">
@@ -148,6 +176,24 @@ export function SensitivePage() {
             <option value="bond_memory">羁绊记忆</option>
           </select>
         </label>
+        <label>
+          起始日期（可选）
+          <input
+            type="date"
+            value={summaryFrom}
+            onChange={(e) => setSummaryFrom(e.target.value)}
+            aria-label="摘要起始日期"
+          />
+        </label>
+        <label>
+          截止日期（可选）
+          <input
+            type="date"
+            value={summaryTo}
+            onChange={(e) => setSummaryTo(e.target.value)}
+            aria-label="摘要截止日期"
+          />
+        </label>
         <button type="submit" disabled={loadingSummaries}>
           {loadingSummaries ? '加载中…' : '加载脱敏摘要'}
         </button>
@@ -165,7 +211,19 @@ export function SensitivePage() {
       )}
 
       {resourceType === 'bond_memory' && (
-        <p className="muted">羁绊记忆不提供脱敏摘要；如需查看请直接申请一次性授权。</p>
+        <p className="page-notice">
+          羁绊记忆不提供脱敏摘要；已滚动到下方授权表单，直接申请一次性授权即可。
+        </p>
+      )}
+
+      {/* 摘要加载骨架屏（替代"看似冻结"的空白区） */}
+      {loadingSummaries && (
+        <div className="table-skeleton" aria-hidden="true">
+          <div className="table-skeleton-row" />
+          <div className="table-skeleton-row" />
+          <div className="table-skeleton-row" />
+          <div className="table-skeleton-row" />
+        </div>
       )}
 
       {chatRows && (
@@ -225,10 +283,15 @@ export function SensitivePage() {
       )}
 
       <h3>查看原文（一次性授权）</h3>
-      <form className="grant-form" onSubmit={(e) => void requestGrant(e)}>
+      <form className="grant-form" onSubmit={(e) => void requestGrant(e)} ref={grantFormRef}>
         <label>
           查看理由（≥5 字，写入审计）
-          <textarea value={reason} onChange={(e) => setReason(e.target.value)} required />
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            minLength={5}
+            required
+          />
         </label>
         <label>
           起始日期（含当天，必填；授权范围）
@@ -258,8 +321,18 @@ export function SensitivePage() {
       </form>
 
       {grant && (
-        <p className="muted" role="status">
-          授权有效至 {grant.expiresAt}（剩余 {remainSec ?? '—'} 秒），正在读取…
+        <div className="grant-timer" role="status">
+          <div className="grant-timer-track">
+            <div className="grant-timer-fill" style={{ width: `${grantPct}%` }} />
+          </div>
+          <p>
+            授权有效至 {grant.expiresAt}（剩余 {remainSec ?? '—'} 秒），正在读取…
+          </p>
+        </div>
+      )}
+      {grant && remainSec === 0 && (
+        <p className="page-error" role="alert">
+          授权已过期，请重新申请。
         </p>
       )}
       {content && (
@@ -276,7 +349,9 @@ export function SensitivePage() {
               {content.map((row, i) => (
                 <tr key={i}>
                   {Object.values(row).map((v, j) => (
-                    <td key={j}>{String(v)}</td>
+                    <td key={j} className="cell-word">
+                      {formatCellValue(v)}
+                    </td>
                   ))}
                 </tr>
               ))}

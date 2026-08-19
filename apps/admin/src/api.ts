@@ -33,6 +33,8 @@ export class AdminApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
+    /** 429 限流响应的等待秒数（若服务端返回） */
+    readonly retryAfterSec?: number,
   ) {
     super(code);
   }
@@ -78,8 +80,11 @@ async function raw<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     throw new AdminUnauthorized();
   }
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new AdminApiError(res.status, body.error ?? `http_${res.status}`);
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      retryAfterSec?: number;
+    };
+    throw new AdminApiError(res.status, body.error ?? `http_${res.status}`, body.retryAfterSec);
   }
   return res.json() as Promise<T>;
 }
@@ -169,6 +174,10 @@ export const adminApi = {
       signups7d: number;
       suspendedUsers: number;
       pendingInvites: number;
+      chatFailsToday: number;
+      limitHitsToday: number;
+      chatFails7d: number;
+      limitHits7d: number;
     }>('/overview');
   },
   overviewTrend() {
@@ -218,11 +227,18 @@ export const adminApi = {
   revokeDevice(deviceId: string) {
     return raw<{ ok: true }>(`/devices/${deviceId}/revoke`, { method: 'POST', body: {} });
   },
-  usage(from: string, to: string) {
+  usage(from: string, to: string, model = '') {
+    const qs = new URLSearchParams({ from, to });
+    if (model) qs.set('model', model);
     return raw<{
       summary: { requests: number; tokens: number; fails: number; limitHits: number };
       items: UsageRow[];
-    }>(`/usage?from=${from}&to=${to}`);
+    }>(`/usage?${qs}`);
+  },
+
+  /** 区间内实际使用过的模型列表（用量页模型筛选下拉的数据源） */
+  usageModels(from: string, to: string) {
+    return raw<{ models: string[] }>(`/usage/models?from=${from}&to=${to}`);
   },
   usageForUser(userId: string, from: string, to: string) {
     return raw<{ items: UsageRow[] }>(`/usage/users/${userId}?from=${from}&to=${to}`);
@@ -248,12 +264,17 @@ export const adminApi = {
       `/audit-log?${qs}`,
     );
   },
-  chatSummary(userId: string) {
+  chatSummary(userId: string, params?: { from?: string; to?: string }) {
+    const qs = new URLSearchParams({ page: '1', pageSize: '50' });
+    if (params?.from) qs.set('from', params.from);
+    if (params?.to) qs.set('to', params.to);
     return raw<{
       items: Array<{ messageId: string; role: string; createdAt: string; summary: string }>;
-    }>(`/users/${userId}/chat-summary?page=1&pageSize=50`);
+    }>(`/users/${userId}/chat-summary?${qs}`);
   },
-  memoriesSummary(userId: string) {
+  memoriesSummary(userId: string, params?: { status?: string }) {
+    const qs = new URLSearchParams({ page: '1', pageSize: '50' });
+    if (params?.status) qs.set('status', params.status);
     return raw<{
       items: Array<{
         memoryId: string;
@@ -262,7 +283,7 @@ export const adminApi = {
         createdAt: string;
         summary: string;
       }>;
-    }>(`/users/${userId}/memories-summary?page=1&pageSize=50`);
+    }>(`/users/${userId}/memories-summary?${qs}`);
   },
   createSensitiveAccess(body: {
     targetUserId: string;

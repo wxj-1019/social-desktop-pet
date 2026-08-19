@@ -7,9 +7,32 @@ import {
   type AdminUserSummary,
   type UsageRow,
 } from '../api.js';
+import { downloadCsv } from '../csv.js';
 import { Pagination } from '../pagination.js';
 
 const PAGE_SIZE = 50;
+
+/** 相对时间展示：1 分钟内"刚刚"，24 小时内"N 小时前"，更早显示日期 */
+function fmtRelative(iso: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const diff = Date.now() - d.getTime();
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  return iso.slice(0, 10);
+}
+
+/** 搜索防抖：输入停止 300ms 后才触发查询 */
+function useDebounced(value: string, delay = 300): string {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
 
 interface ChatSummaryRow {
   messageId: string;
@@ -26,11 +49,23 @@ interface MemorySummaryRow {
   summary: string;
 }
 
+const SORT_OPTIONS: Array<{ key: string; label: string }> = [
+  { key: 'created_desc', label: '注册时间（新→旧）' },
+  { key: 'created_asc', label: '注册时间（旧→新）' },
+  { key: 'last_seen_desc', label: '最后在线（近→远）' },
+  { key: 'device_desc', label: '设备数（多→少）' },
+];
+
 export function UsersPage() {
   const [keyword, setKeyword] = useState('');
+  const debouncedKeyword = useDebounced(keyword);
   const [status, setStatus] = useState('');
+  const [sort, setSort] = useState('created_desc');
   const [page, setPage] = useState(1);
   const [data, setData] = useState<{ items: AdminUserSummary[]; total: number } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [selected, setSelected] = useState<AdminUserDetail | null>(null);
   const [devices, setDevices] = useState<AdminDevice[]>([]);
   const [usage, setUsage] = useState<UsageRow[] | null>(null);
@@ -45,8 +80,9 @@ export function UsersPage() {
   const load = useCallback(() => {
     const seq = ++loadSeq.current;
     const params: Record<string, string> = { page: String(page), pageSize: String(PAGE_SIZE) };
-    if (keyword.trim()) params.q = keyword.trim();
+    if (debouncedKeyword.trim()) params.q = debouncedKeyword.trim();
     if (status) params.status = status;
+    if (sort) params.sort = sort;
     adminApi
       .users(params)
       .then((d) => {
@@ -55,12 +91,32 @@ export function UsersPage() {
       .catch((e: Error) => {
         if (seq === loadSeq.current) setError(e.message);
       });
-  }, [keyword, status, page]);
+  }, [debouncedKeyword, status, sort, page]);
 
   useEffect(load, [load]);
 
+  const closeDetail = useCallback(() => {
+    setDetailOpen(false);
+    setSelected(null);
+    setUsage(null);
+    setChatSummaries(null);
+    setMemorySummaries(null);
+  }, []);
+
+  // Esc 关闭详情抽屉
+  useEffect(() => {
+    if (!detailOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeDetail();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [detailOpen, closeDetail]);
+
   const openDetail = async (userId: string) => {
     setError(null);
+    setDetailOpen(true);
+    setDetailLoading(true);
     const weekAgo = new Date(Date.now() - 6 * 86_400_000).toISOString().slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);
     // 用量/摘要失败不阻塞详情打开（降级为空列表）
@@ -76,13 +132,7 @@ export function UsersPage() {
     setUsage(usageRes.items);
     setChatSummaries(chats.items);
     setMemorySummaries(mems.items);
-  };
-
-  const closeDetail = () => {
-    setSelected(null);
-    setUsage(null);
-    setChatSummaries(null);
-    setMemorySummaries(null);
+    setDetailLoading(false);
   };
 
   const act = async (fn: () => Promise<unknown>, okMessage: string) => {
@@ -119,6 +169,81 @@ export function UsersPage() {
     void act(() => adminApi.restoreUser(selected.userId), '账号已恢复');
   };
 
+  /* ---- 批量操作 ---- */
+
+  const toggleSelect = (userId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const pageIds = (data?.items ?? []).map((u) => u.userId);
+      const allSelected = pageIds.every((id) => prev.has(id));
+      const next = new Set(prev);
+      for (const id of pageIds) {
+        if (allSelected) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const batchSuspend = () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    const reason = window.prompt(`批量暂停 ${ids.length} 个账号。暂停原因（必填，将写入审计）：`);
+    if (reason === null) return;
+    if (!reason.trim()) {
+      setError('暂停必须填写原因');
+      return;
+    }
+    setSelectedIds(new Set());
+    void act(async () => {
+      const results = await Promise.allSettled(
+        ids.map((id) => adminApi.suspendUser(id, reason.trim())),
+      );
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed > 0) throw new Error(`批量暂停：${ids.length - failed} 成功，${failed} 失败`);
+    }, `已批量暂停 ${ids.length} 个账号`);
+  };
+
+  const batchRestore = () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    if (!window.confirm(`确认恢复选中的 ${ids.length} 个账号？已撤销的设备不会被恢复。`)) return;
+    setSelectedIds(new Set());
+    void act(async () => {
+      const results = await Promise.allSettled(ids.map((id) => adminApi.restoreUser(id)));
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed > 0) throw new Error(`批量恢复：${ids.length - failed} 成功，${failed} 失败`);
+    }, `已恢复 ${ids.length} 个账号`);
+  };
+
+  const pageIds = (data?.items ?? []).map((u) => u.userId);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+
+  const exportCsv = () => {
+    const rows = data?.items ?? [];
+    downloadCsv(
+      `users-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['邮箱', '昵称', '状态', '设备数', '在线', '注册时间', '最后在线'],
+      rows.map((u) => [
+        u.email,
+        u.nickname ?? '',
+        u.accountStatus,
+        u.deviceCount,
+        u.online ? '在线' : '',
+        u.createdAt.slice(0, 10),
+        u.lastSeenAt ? fmtRelative(u.lastSeenAt) : '',
+      ]),
+    );
+  };
+
   return (
     <section className="page">
       <div className="page-head">
@@ -126,6 +251,9 @@ export function UsersPage() {
           <h2>用户管理</h2>
           <p className="page-desc">搜索与管理注册用户、设备与账号状态</p>
         </div>
+        <button onClick={exportCsv} disabled={!data || data.items.length === 0}>
+          导出 CSV
+        </button>
       </div>
       <div className="toolbar">
         <input
@@ -142,10 +270,25 @@ export function UsersPage() {
             setStatus(e.target.value);
             setPage(1);
           }}
+          aria-label="状态筛选"
         >
           <option value="">全部状态</option>
           <option value="active">正常</option>
           <option value="suspended">已暂停</option>
+        </select>
+        <select
+          value={sort}
+          onChange={(e) => {
+            setSort(e.target.value);
+            setPage(1);
+          }}
+          aria-label="排序"
+        >
+          {SORT_OPTIONS.map((o) => (
+            <option key={o.key} value={o.key}>
+              {o.label}
+            </option>
+          ))}
         </select>
       </div>
       {error && (
@@ -158,24 +301,55 @@ export function UsersPage() {
           {notice}
         </p>
       )}
+      {selectedIds.size > 0 && (
+        <div className="batch-bar">
+          <span className="batch-count">已选 {selectedIds.size} 个用户</span>
+          <button onClick={batchSuspend} disabled={busy}>
+            批量暂停
+          </button>
+          <button onClick={batchRestore} disabled={busy}>
+            批量恢复
+          </button>
+          <button onClick={() => setSelectedIds(new Set())} disabled={busy}>
+            取消选择
+          </button>
+        </div>
+      )}
       {!error && !data && <p className="muted">加载中…</p>}
       <div className="table-panel">
         <table className="data-table">
           <thead>
             <tr>
+              <th className="col-check">
+                <input
+                  type="checkbox"
+                  aria-label="全选当前页"
+                  checked={allPageSelected}
+                  onChange={toggleSelectAll}
+                />
+              </th>
               <th>邮箱</th>
               <th>昵称</th>
               <th>状态</th>
               <th>设备数</th>
               <th>在线</th>
               <th>注册时间</th>
+              <th>最后在线</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {data?.items.map((u) => (
-              <tr key={u.userId}>
-                <td>{u.email}</td>
+              <tr key={u.userId} className={selectedIds.has(u.userId) ? 'row-selected' : undefined}>
+                <td className="col-check">
+                  <input
+                    type="checkbox"
+                    aria-label={`选择 ${u.email}`}
+                    checked={selectedIds.has(u.userId)}
+                    onChange={() => toggleSelect(u.userId)}
+                  />
+                </td>
+                <td className="cell-strong">{u.email}</td>
                 <td>{u.nickname ?? '—'}</td>
                 <td>
                   <span className={u.accountStatus === 'active' ? 'pill ok' : 'pill danger'}>
@@ -185,6 +359,7 @@ export function UsersPage() {
                 <td>{u.deviceCount}</td>
                 <td>{u.online ? <span className="pill ok">在线</span> : '—'}</td>
                 <td>{u.createdAt.slice(0, 10)}</td>
+                <td className="mono">{fmtRelative(u.lastSeenAt)}</td>
                 <td>
                   <button
                     onClick={() =>
@@ -202,162 +377,248 @@ export function UsersPage() {
       {data && data.items.length === 0 && <p className="muted">暂无数据</p>}
       <Pagination page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onChange={setPage} />
 
-      {selected && (
+      {detailOpen && (
         <>
           <div className="drawer-overlay" onClick={closeDetail} aria-hidden="true" />
           <div className="drawer" role="dialog" aria-label="用户详情">
-            <div className="drawer-head">
-              <h3>{selected.email}</h3>
-              <button onClick={closeDetail}>关闭</button>
+            {/* Hero 头部：头像 + 邮箱 + 状态 + 设备数 */}
+            <div className="drawer-hero">
+              <div className="drawer-hero-avatar">
+                {selected ? selected.email.slice(0, 1).toUpperCase() : '…'}
+              </div>
+              <div className="drawer-hero-info">
+                <span className="drawer-hero-email">{selected?.email ?? '加载中…'}</span>
+                {selected && (
+                  <span className={selected.accountStatus === 'active' ? 'pill ok' : 'pill danger'}>
+                    {selected.accountStatus === 'active' ? '正常' : '已暂停'}
+                  </span>
+                )}
+                {selected && <span className="pill muted">{devices.length} 台设备</span>}
+              </div>
+              <button className="drawer-close" onClick={closeDetail} title="关闭" aria-label="关闭">
+                ✕
+              </button>
             </div>
-            <dl className="detail-list">
-              <dt>userId</dt>
-              <dd>{selected.userId}</dd>
-              <dt>账号状态</dt>
-              <dd>
-                <span className={selected.accountStatus === 'active' ? 'pill ok' : 'pill danger'}>
-                  {selected.accountStatus === 'active' ? '正常' : '已暂停'}
-                </span>
-              </dd>
-              {selected.suspendedReason && (
-                <>
-                  <dt>暂停原因</dt>
-                  <dd>{selected.suspendedReason}</dd>
-                </>
+
+            <div className="drawer-content">
+              {/* 基本信息（加载中显示骨架） */}
+              <dl className="detail-list">
+                {!selected ? (
+                  <>
+                    <div className="skeleton-line" />
+                    <div className="skeleton-line" />
+                    <div className="skeleton-line" />
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <dt>userId</dt>
+                      <dd>{selected.userId}</dd>
+                    </div>
+                    {selected.suspendedReason && (
+                      <div>
+                        <dt>暂停原因</dt>
+                        <dd>{selected.suspendedReason}</dd>
+                      </div>
+                    )}
+                    <div>
+                      <dt>7 天聊天请求</dt>
+                      <dd>{selected.chatRequests7d.toLocaleString('zh-CN')}</dd>
+                    </div>
+                    <div>
+                      <dt>最后在线</dt>
+                      <dd>{fmtRelative(selected.lastSeenAt)}</dd>
+                    </div>
+                    <div>
+                      <dt>宠物 / 好友 / 记忆</dt>
+                      <dd>
+                        {selected.petCount} / {selected.friendCount} / {selected.memoryCount}
+                      </dd>
+                    </div>
+                  </>
+                )}
+              </dl>
+
+              {selected && (
+                <div className="drawer-actions">
+                  {selected.accountStatus === 'active' ? (
+                    <button className="danger" onClick={suspend}>
+                      暂停账号
+                    </button>
+                  ) : (
+                    <button onClick={restore}>恢复账号</button>
+                  )}
+                </div>
               )}
-              <dt>7 天聊天请求</dt>
-              <dd>{selected.chatRequests7d}</dd>
-              <dt>最后在线</dt>
-              <dd>{selected.lastSeenAt ? selected.lastSeenAt : '—'}</dd>
-              <dt>宠物 / 好友 / 记忆</dt>
-              <dd>
-                {selected.petCount} / {selected.friendCount} / {selected.memoryCount}
-              </dd>
-            </dl>
-            <div className="drawer-actions">
-              {selected.accountStatus === 'active' ? (
-                <button className="danger" onClick={suspend}>
-                  暂停账号
-                </button>
-              ) : (
-                <button onClick={restore}>恢复账号</button>
-              )}
-            </div>
-            <h4>设备</h4>
-            <div className="table-panel">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>平台</th>
-                    <th>版本</th>
-                    <th>最后在线</th>
-                    <th>状态</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {devices.map((d) => (
-                    <tr key={d.deviceId}>
-                      <td>{d.platform}</td>
-                      <td>{d.appVersion ?? '—'}</td>
-                      <td>{d.lastSeenAt}</td>
-                      <td>
-                        {d.revokedAt ? (
-                          <span className="pill muted">已撤销</span>
-                        ) : (
-                          <span className="pill ok">正常</span>
-                        )}
-                      </td>
-                      <td>
-                        {!d.revokedAt && (
-                          <button
-                            className="danger"
-                            onClick={() => {
-                              if (window.confirm('确认撤销该设备？其会话将立即失效。')) {
-                                void act(() => adminApi.revokeDevice(d.deviceId), '设备已撤销');
-                              }
-                            }}
-                          >
-                            撤销
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
 
-            <h4>近 7 天用量</h4>
-            <div className="table-panel">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>日期</th>
-                    <th>请求数</th>
-                    <th>token 估算</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(usage ?? []).map((r) => (
-                    <tr key={r.usageDate}>
-                      <td>{r.usageDate}</td>
-                      <td>{r.requests}</td>
-                      <td>{r.tokens}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {usage && usage.length === 0 && <p className="muted">暂无用量数据</p>}
+              {/* 设备 */}
+              <div className="section-card">
+                <h4>设备</h4>
+                {detailLoading ? (
+                  <div className="table-skeleton" aria-hidden="true">
+                    <div className="table-skeleton-row" />
+                    <div className="table-skeleton-row" />
+                  </div>
+                ) : (
+                  <div className="table-panel">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>平台</th>
+                          <th>版本</th>
+                          <th>最后在线</th>
+                          <th>状态</th>
+                          <th />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {devices.map((d) => (
+                          <tr key={d.deviceId}>
+                            <td>{d.platform}</td>
+                            <td>{d.appVersion ?? '—'}</td>
+                            <td>{fmtRelative(d.lastSeenAt)}</td>
+                            <td>
+                              {d.revokedAt ? (
+                                <span className="pill muted">已撤销</span>
+                              ) : (
+                                <span className="pill ok">正常</span>
+                              )}
+                            </td>
+                            <td>
+                              {!d.revokedAt && (
+                                <button
+                                  className="danger"
+                                  onClick={() => {
+                                    if (window.confirm('确认撤销该设备？其会话将立即失效。')) {
+                                      void act(
+                                        () => adminApi.revokeDevice(d.deviceId),
+                                        '设备已撤销',
+                                      );
+                                    }
+                                  }}
+                                >
+                                  撤销
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
 
-            <h4>最近聊天（脱敏摘要）</h4>
-            <div className="table-panel">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>时间</th>
-                    <th>角色</th>
-                    <th>摘要（脱敏）</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(chatSummaries ?? []).map((r) => (
-                    <tr key={r.messageId}>
-                      <td>{r.createdAt.slice(0, 19).replace('T', ' ')}</td>
-                      <td>{r.role}</td>
-                      <td>{r.summary}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {chatSummaries && chatSummaries.length === 0 && <p className="muted">暂无聊天记录</p>}
+              {/* 近 7 天用量 */}
+              <div className="section-card">
+                <h4>近 7 天用量</h4>
+                {detailLoading ? (
+                  <div className="table-skeleton" aria-hidden="true">
+                    <div className="table-skeleton-row" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="table-panel">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>日期</th>
+                            <th>请求数</th>
+                            <th>token 估算</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(usage ?? []).map((r) => (
+                            <tr key={r.usageDate}>
+                              <td>{r.usageDate}</td>
+                              <td>{r.requests.toLocaleString('zh-CN')}</td>
+                              <td>{r.tokens.toLocaleString('zh-CN')}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {usage && usage.length === 0 && <p className="muted">暂无用量数据</p>}
+                  </>
+                )}
+              </div>
 
-            <h4>记忆摘要（脱敏）</h4>
-            <div className="table-panel">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>时间</th>
-                    <th>分类</th>
-                    <th>敏感度</th>
-                    <th>摘要（脱敏）</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(memorySummaries ?? []).map((r) => (
-                    <tr key={r.memoryId}>
-                      <td>{r.createdAt.slice(0, 19).replace('T', ' ')}</td>
-                      <td>{r.category}</td>
-                      <td>{r.sensitivity}</td>
-                      <td>{r.summary}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {/* 聊天摘要 */}
+              <div className="section-card">
+                <h4>最近聊天（脱敏摘要）</h4>
+                {detailLoading ? (
+                  <div className="table-skeleton" aria-hidden="true">
+                    <div className="table-skeleton-row" />
+                    <div className="table-skeleton-row" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="table-panel">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>时间</th>
+                            <th>角色</th>
+                            <th>摘要（脱敏）</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(chatSummaries ?? []).map((r) => (
+                            <tr key={r.messageId}>
+                              <td>{r.createdAt.slice(0, 19).replace('T', ' ')}</td>
+                              <td>{r.role}</td>
+                              <td>{r.summary}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {chatSummaries && chatSummaries.length === 0 && (
+                      <p className="muted">暂无聊天记录</p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* 记忆摘要 */}
+              <div className="section-card">
+                <h4>记忆摘要（脱敏）</h4>
+                {detailLoading ? (
+                  <div className="table-skeleton" aria-hidden="true">
+                    <div className="table-skeleton-row" />
+                    <div className="table-skeleton-row" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="table-panel">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>时间</th>
+                            <th>分类</th>
+                            <th>敏感度</th>
+                            <th>摘要（脱敏）</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(memorySummaries ?? []).map((r) => (
+                            <tr key={r.memoryId}>
+                              <td>{r.createdAt.slice(0, 19).replace('T', ' ')}</td>
+                              <td>{r.category}</td>
+                              <td>{r.sensitivity}</td>
+                              <td>{r.summary}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {memorySummaries && memorySummaries.length === 0 && (
+                      <p className="muted">暂无记忆</p>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-            {memorySummaries && memorySummaries.length === 0 && <p className="muted">暂无记忆</p>}
           </div>
         </>
       )}

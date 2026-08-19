@@ -86,6 +86,8 @@ describe('UsersPage', () => {
       fireEvent.change(screen.getByPlaceholderText('搜索邮箱 / 昵称 / userId'), {
         target: { value: 'fresh' },
       });
+      // 搜索防抖 300ms：等防抖窗口过去后才触发第二次请求
+      await new Promise((r) => setTimeout(r, 350));
     });
     // 新结果已渲染
     expect(screen.getByText('fresh@b.c')).toBeTruthy();
@@ -186,9 +188,9 @@ describe('UsersPage', () => {
     expect(usageForUser).toHaveBeenCalledWith('u1', expect.any(String), expect.any(String));
     expect(chatSummary).toHaveBeenCalledWith('u1');
     expect(memoriesSummary).toHaveBeenCalledWith('u1');
-    // 抽屉渲染三个新数据区
+    // 抽屉渲染三个新数据区（2026-08-18 会同时出现在用量日期与"最后在线"相对时间）
     expect(screen.getByText('近 7 天用量')).toBeTruthy();
-    expect(screen.getByText('2026-08-18')).toBeTruthy();
+    expect(screen.getAllByText('2026-08-18').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('最近聊天（脱敏摘要）')).toBeTruthy();
     expect(screen.getByText('今天心情…')).toBeTruthy();
     expect(screen.getByText('记忆摘要（脱敏）')).toBeTruthy();

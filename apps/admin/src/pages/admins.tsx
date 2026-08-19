@@ -10,6 +10,19 @@ interface AdminRow {
   createdAt: string;
 }
 
+/** 密码强度评分（0-4）：长度 ≥12 + 大小写 + 数字 + 特殊字符 */
+function passwordStrength(pw: string): number {
+  if (!pw) return 0;
+  let score = 0;
+  if (pw.length >= 12) score += 1;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score += 1;
+  if (/\d/.test(pw)) score += 1;
+  if (/[^A-Za-z0-9]/.test(pw)) score += 1;
+  return score;
+}
+
+const STRENGTH_LABELS = ['', '较弱', '一般', '较强', '很强'];
+
 /**
  * 管理员页 —— 账号生命周期（停用/启用）与自助改密。
  * 停用即撤会话（服务端同事务）；自锁保护由服务端兜底（不能停用自己/最后一个 active）。
@@ -69,6 +82,8 @@ export function AdminsPage() {
       setBusy(false);
     }
   };
+
+  const strength = passwordStrength(next);
 
   const toggle = async (row: AdminRow) => {
     if (busy) return;
@@ -144,6 +159,17 @@ export function AdminsPage() {
             autoComplete="new-password"
             required
           />
+          {next && (
+            <span className="pw-strength">
+              <span className="pw-strength-track">
+                <span
+                  className={`pw-strength-fill level-${strength}`}
+                  style={{ width: `${(strength / 4) * 100}%` }}
+                />
+              </span>
+              <span className="pw-strength-label">{STRENGTH_LABELS[strength]}</span>
+            </span>
+          )}
         </label>
         <label>
           确认新密码
