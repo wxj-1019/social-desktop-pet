@@ -65,43 +65,47 @@ const starIsleManifest = CharacterManifestSchema.parse({
   renderer: 'svg',
   release: 'bundled',
   canvas: CANVAS,
-  // viewBox 320×380 → 240×260（xMidYMax meet：scale=260/380≈0.684，x 偏移≈10.5）；
-  // 外耳尖达 viewBox y≈32（→画布≈22），叠加 3 档弹跳 −13 viewBox 单位（≈8.9px）
-  // → 顶缘取 12；底缘主体椭圆 cy=284（→画布≈236）
-  visualBounds: { x: 14, y: 12, width: 208, height: 224 },
-  // 命中区来自 star-isle-visual.tsx 透明 hit rect 映射后取整：
-  // body(86,194,108,97)→(69,132,74,67)；head(72,96,136,124)→(60,66,93,85)；
-  // tail(22,100,64,160)→(26,68,44,110)。head/tail 为 legacy 兼容 ID（§6.1）
+  // 坐标换算（两步复合）：① viewBox 320×380 → 240×260（xMidYMax meet：
+  // scale=260/380≈0.6842，x 偏移≈10.53，y 偏移 0）；② star-isle__frame 构图框
+  // transform="translate(-2 22) scale(1.2)"（star-isle-visual.tsx:98，仅 full variant）。
+  // 复合：canvas_x ≈ 0.821·src_x + 9.16，canvas_y ≈ 0.821·src_y + 15.05。
+  // 可见包络：顶缘含外耳尖（src y≈32→画布≈41）叠加 3 档弹跳（−13 src 单位
+  // ≈10.7px）→ 30；底缘脚底 src y≈297→画布≈259（构图框设计为贴窗底）；
+  // 柔和光晕的渐变透明尾可越出画布自然裁切，不计入可见内容（协议 §5.3）。
+  visualBounds: { x: 15, y: 30, width: 218, height: 230 },
+  // 命中区来自 star-isle-visual.tsx 透明 hit rect 经上述复合映射取整：
+  // body(86,194,108,97)→(80,174,89,80)；head(72,96,136,124)→(68,94,112,102)；
+  // tail(22,100,64,160)→(27,97,53,131)。head/tail 为 legacy 兼容 ID（§6.1）
   interaction: {
     enabled: true,
     zones: [
       {
         id: 'primary',
         shape: 'rect',
-        x: 69,
-        y: 132,
-        width: 74,
-        height: 67,
+        x: 80,
+        y: 174,
+        width: 89,
+        height: 80,
         priority: 0,
         label: '抚摸星屿',
       },
       {
         id: 'head',
         shape: 'rect',
-        x: 60,
-        y: 66,
-        width: 93,
-        height: 85,
+        x: 68,
+        y: 94,
+        width: 112,
+        height: 102,
         priority: 1,
         label: '摸摸头',
       },
       {
         id: 'tail',
         shape: 'rect',
-        x: 26,
-        y: 68,
-        width: 44,
-        height: 110,
+        x: 27,
+        y: 97,
+        width: 53,
+        height: 131,
         priority: 2,
         label: '玩尾巴',
       },

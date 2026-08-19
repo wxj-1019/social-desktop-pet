@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { CharacterInteractionZoneSchema, CharacterManifestSchema, PetIdSchema } from './index.js';
+import {
+  CharacterInteractionZoneSchema,
+  CharacterManifestSchema,
+  PetExpressionSchema,
+  PetIdSchema,
+  PetMotionSchema,
+} from './index.js';
 
 /** 规范画布（§3.1）：240×260，缩放 0.5–2.0 */
 const CANVAS = {
@@ -223,6 +229,18 @@ describe('CharacterManifestSchema（形象协议 §4）', () => {
     const badHash = buildValidManifest();
     badHash.assets.files = [{ path: 'a.png', sha256: 'xyz' }];
     expect(CharacterManifestSchema.safeParse(badHash).success).toBe(false);
+  });
+
+  it('coreMotions/expressions 键集与共享枚举锁定（防漂移）', () => {
+    // CharacterManifestSchema 是 z.object().strict().superRefine(...) → ZodEffects，
+    // 无 .shape；strict 对象的 parse 输出键集 === schema 硬编码键集，故用探针比对
+    const { capabilities } = CharacterManifestSchema.parse(buildValidManifest());
+    expect(Object.keys(capabilities.coreMotions).sort()).toEqual(
+      [...PetMotionSchema.options].sort(),
+    );
+    expect(Object.keys(capabilities.expressions).sort()).toEqual(
+      [...PetExpressionSchema.options].sort(),
+    );
   });
 });
 
