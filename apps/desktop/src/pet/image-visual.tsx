@@ -8,7 +8,8 @@
  * - 可选 `_imageForceFrame` 临时覆盖：用于眨眼（切到 blink 单帧）
  * - 可选 `_imageWaking` 标记：标记唤醒过渡中，挂伸懒腰 CSS 动画（配合 happy 帧）
  * - facing=left 时整体 scaleX(-1)
- * - 保留 data-hit="body" 命中区，PetExperience 的指针交互继续工作
+ * - 保留 data-hit="body" 属性作为样式钩子与测试锚点；命中判定自阶段 C 起走
+ *   manifest 几何区域（PetExperience 不再读取本属性）
  *
  * 资产经 Vite import 引入（dev server / prod asar 都走 CSP 'self' 源）。
  */

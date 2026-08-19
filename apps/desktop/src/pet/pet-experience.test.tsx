@@ -440,6 +440,19 @@ describe('PetExperience（星屿直连交互面）', () => {
     firePointer(head!, 'up', { screenX: 100, screenY: 100 });
     expect(pet.petRuntime.interaction).not.toHaveBeenCalled();
   });
+
+  it('interaction.enabled=false 的角色不响应点击互动（协议 §6.3）', () => {
+    const disabled = {
+      ...getCharacterManifest('star-isle'),
+      interaction: { enabled: false, zones: [] },
+    };
+    render(<PetExperience manifest={disabled} />);
+    installCanvasRect();
+    const canvas = document.querySelector('.pet-canvas')!;
+    firePointer(canvas, 'down', { screenX: 124, screenY: 214 });
+    firePointer(canvas, 'up', { screenX: 124, screenY: 214 });
+    expect(pet.petRuntime.interaction).not.toHaveBeenCalled();
+  });
 });
 
 describe('isRadialMenuElement（环形菜单点击不被拖拽手势吞掉）', () => {

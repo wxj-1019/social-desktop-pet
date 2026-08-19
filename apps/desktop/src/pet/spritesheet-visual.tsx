@@ -4,7 +4,8 @@
  * 与 StarIsleVisual（SVG）并列，消费同一份 StarIsleVisualState：
  * - motion 驱动 rAF 帧循环（项目中首个 JS 帧动画循环）
  * - reducedMotion=true 时停在首帧（与 SVG 的 data-reduced-motion 语义一致）
- * - 保留 data-hit="body" 命中区，使 PetExperience 的指针交互（触摸/拖动）继续工作
+ * - 保留 data-hit="body" 属性作为样式钩子与测试锚点；命中判定自阶段 C 起走
+ *   manifest 几何区域（PetExperience 不再读取本属性）
  * - speaking 会切到 talk 动画，idle 时保留静态表情帧
  *
  * 渲染方案（视口裁剪）：
@@ -86,7 +87,7 @@ export function SpritesheetVisual({ state }: SpritesheetVisualProps) {
   const offset = frameOffsetForSpec(animation.spec, frame);
 
   return (
-    // 外层：撑满 pet-experience 容器，data-hit 命中区 + 状态属性
+    // 外层：撑满 pet-experience 容器，data-hit 样式钩子与测试锚点 + 状态属性
     <div
       className="spritesheet-pet"
       role="img"

@@ -138,15 +138,21 @@ export function PetExperience({
     if (!runtime) return;
     const sample = screenSample(e);
     if (!sample) return;
-    // manifest 几何命中（阶段 C）：client 坐标换算回 240×260 逻辑画布；
-    // 画布 rect 无效（宽高为 0，如布局未就绪）→ zone=null，
-    // 不回退 DOM data-hit（单一真相源，协议 §6）
+    // manifest 几何命中（阶段 C）：client 坐标换算回 manifest 画布逻辑坐标
+    // （zones 按 manifest.canvas 声明，§5.1 当前恒等于 240×260）；
+    // 画布 rect 无效（宽高为 0，如布局未就绪）或 interaction.enabled=false
+    // → zone=null，不回退 DOM data-hit（单一真相源，协议 §6/§6.3）
     const canvasRect = canvasRef.current?.getBoundingClientRect();
     let zone: string | null = null;
-    if (canvasRect && canvasRect.width > 0 && canvasRect.height > 0) {
+    if (
+      manifest.interaction.enabled &&
+      canvasRect &&
+      canvasRect.width > 0 &&
+      canvasRect.height > 0
+    ) {
       zone = hitTestZone(manifest.interaction.zones, {
-        x: ((e.clientX - canvasRect.left) * PET_CANVAS_BASE.width) / canvasRect.width,
-        y: ((e.clientY - canvasRect.top) * PET_CANVAS_BASE.height) / canvasRect.height,
+        x: ((e.clientX - canvasRect.left) * manifest.canvas.width) / canvasRect.width,
+        y: ((e.clientY - canvasRect.top) * manifest.canvas.height) / canvasRect.height,
       });
     }
     const bubbleHit = Boolean((e.target as Element | null)?.closest?.('.pet-speech'));

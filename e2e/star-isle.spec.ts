@@ -73,7 +73,7 @@ test('交互：摸头触发 touch 动作；双击身体打开聊天面板', asyn
   await expect(isle).toHaveAttribute('data-motion', 'idle', { timeout: 15_000 });
 
   // 命中区使用组内透明 rect（有盒模型，可点击；不依赖 viewBox 与窗口的换算）
-  // 摸头（data-hit=head）→ head_touch → 动作 touch（force：头部呼吸动画中 rect 有 ±2px 位移）
+  // 摸头（点击 head 命中区锚点 data-hit=head，几何判定见 manifest zones）→ head_touch → 动作 touch（force：头部呼吸动画中 rect 有 ±2px 位移）
   await isle.locator('[data-hit="head"] [data-hit-rect]').click({ force: true });
   await expect(isle).toHaveAttribute('data-motion', 'touch', { timeout: 5_000 });
 
