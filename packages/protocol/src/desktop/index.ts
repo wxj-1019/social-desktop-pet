@@ -26,6 +26,7 @@ export const PetMotionSchema = z.enum([
   'wave',
   'touch',
   'talk',
+  'dragged',
 ]);
 export type PetMotion = z.infer<typeof PetMotionSchema>;
 
@@ -38,7 +39,7 @@ export const PetFacingSchema = z.enum(['left', 'right']);
 export type PetFacing = z.infer<typeof PetFacingSchema>;
 
 /** 可选角色 id（皮肤枚举）—— 新增角色在此扩展 */
-export const PetIdSchema = z.enum(['star-isle', 'codenono']);
+export const PetIdSchema = z.enum(['star-isle', 'codenono', 'cream-kitten']);
 export type PetId = z.infer<typeof PetIdSchema>;
 
 /** 桌宠环形菜单 UI 风格：SAO 左侧链式弧 / 经典环状 */

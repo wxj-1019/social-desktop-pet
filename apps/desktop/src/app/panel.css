@@ -2129,3 +2129,12 @@
     opacity: 1;
   }
 }
+
+.character-thumb--cream-kitten {
+  background-image: url('../assets/cream-kitten/idle.png');
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: #fff5ec;
+  border: 1px solid rgba(200, 150, 90, 0.25);
+}

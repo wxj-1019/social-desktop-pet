@@ -10,6 +10,9 @@
  *   double_click（打开聊天面板）
  * - contextmenu → 切换 SAO 左侧环形菜单 + preventDefault
  *
+ * 睡眠唤醒：单击时若 visualState.motion==='sleep'，直接调用 renderer.playMotion('touch')，
+ * 触发 image renderer 的 comingFromSleep 分支：伸懒腰 500ms 过渡 → 目标动作。
+ *
  * StarIsleVisual 渲染抛错时由 PetVisualBoundary 降级为 PetFallback（同样可交互）。
  * window.pet 缺失（非 Electron）时所有指针处理静默跳过。
  */
@@ -63,7 +66,7 @@ export function PetExperience({
   rendererFactory,
   petName,
 }: PetExperienceProps) {
-  const { snapshot, profile, visualState, bubbleText } = usePetRuntime(
+  const { snapshot, profile, visualState, bubbleText, renderer } = usePetRuntime(
     rendererFactory ? { rendererFactory, petName } : { petName },
   );
 
@@ -74,6 +77,9 @@ export function PetExperience({
   }>({ start: null, hit: null, dragging: false });
   const lastClickAtRef = useRef<number | null>(null);
   const schedulerRef = useRef<ReturnType<typeof createDragMoveScheduler> | null>(null);
+  /** 连续点击计数：2秒内点击>=3次触发"生气" */
+  const rapidClickCountRef = useRef<number>(0);
+  const rapidClickResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   const screenSample = (e: {
@@ -94,8 +100,7 @@ export function PetExperience({
       runtime.dragEnd();
       schedulerRef.current?.cancel();
       setIsDragging(false);
-      // 落地回常态：拖动时给了惊讶（shake_head），松手后经 chatEvent done 回 idle
-      //（actionIntent 取 idle → 直接回基础动作，不播多余点头）
+      void renderer.playMotion('idle');
       window.pet?.petRuntime?.chatEvent({
         phase: 'done',
         source: 'local_chat',
@@ -106,12 +111,7 @@ export function PetExperience({
   };
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    // 手势/点击只认主键（左键）：右键交给 SAO 菜单（contextmenu），
-    // 快速双击右键不得被分类为 double_click 弹出面板
     if (e.button !== 0) return;
-    // SAO 菜单覆盖层内的交互交给按钮自己：这里若继续走手势并
-    // setPointerCapture，Chromium 会把后续 click 全部重定向到根容器，
-    // 菜单按钮的 onClick 永远不触发（jsdom 无捕获实现，单测发现不了）
     if ((e.target as Element | null)?.closest?.('.sao-radial-overlay')) return;
     const runtime = window.pet?.petRuntime;
     if (!runtime) return;
@@ -121,8 +121,6 @@ export function PetExperience({
       ?.closest?.('[data-hit]')
       ?.getAttribute('data-hit') as HitPart | null;
     gestureRef.current = { start: sample, hit, dragging: false };
-    // 指针捕获：光标甩出窗口后 pointermove/up 仍会回到本元素，
-    // 避免松手丢失导致拖动卡死（jsdom 不支持时静默降级）
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -135,7 +133,6 @@ export function PetExperience({
     if (!runtime) return;
     const gesture = gestureRef.current;
     if (!gesture?.start) return;
-    // 自愈：拖动中按钮已松开（pointerup 因故丢失）→ 立即结束拖动
     if (gesture.dragging && e.buttons === 0) {
       endActiveDrag();
       return;
@@ -147,11 +144,12 @@ export function PetExperience({
       if (distance >= 6) {
         gesture.dragging = true;
         setIsDragging(true);
-        // 拖动时先给惊讶表情（摇头）——用户看到"被拎起来了"；
-        // 随后 dragStart 的 walk（persistent）会覆盖该瞬时动作
-        runtime.interaction({ kind: 'tail_touch' });
-        // Main 必须从真实按下点记录窗口偏移；随后立即补发越过阈值的当前点，
-        // 否则首段 6px+ 位移会被吃掉，短拖拽也无法产生方向反馈。
+        const deltaY = sample.y - gesture.start.y;
+        if (deltaY < 0) {
+          void renderer.playMotion('dragged');
+        } else {
+          runtime.interaction({ kind: 'tail_touch' });
+        }
         runtime.dragStart({ x: gesture.start.x, y: gesture.start.y });
         runtime.dragMove({ x: sample.x, y: sample.y });
         if (!schedulerRef.current) {
@@ -167,7 +165,6 @@ export function PetExperience({
   };
 
   const handlePointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
-    // 只处理主键抬起：左键拖拽中松开其它按钮不得提前终止手势
     if (e.button !== 0) return;
     const runtime = window.pet?.petRuntime;
     if (!runtime) return;
@@ -185,7 +182,33 @@ export function PetExperience({
       if (kind === 'double_click') {
         window.pet?.panel?.open({ view: 'chat' });
       } else if (kind === 'click' && gesture.hit) {
-        runtime.interaction({ kind: HIT_INTERACTION[gesture.hit] });
+        // 睡眠中单击先唤醒：走 playMotion('touch')，让 image renderer 的
+        // comingFromSleep 分支播 500ms 伸懒腰过渡，再切到 touch（点击反馈）。
+        if (visualState.motion === 'sleep') {
+          void renderer.playMotion('touch');
+        } else {
+          // 连续3次点击（2秒窗口）触发生气
+          if (rapidClickResetTimerRef.current !== null) {
+            clearTimeout(rapidClickResetTimerRef.current);
+          }
+          rapidClickCountRef.current += 1;
+          rapidClickResetTimerRef.current = setTimeout(() => {
+            rapidClickCountRef.current = 0;
+            rapidClickResetTimerRef.current = null;
+          }, 2000);
+
+          if (rapidClickCountRef.current >= 3) {
+            rapidClickCountRef.current = 0;
+            if (rapidClickResetTimerRef.current !== null) {
+              clearTimeout(rapidClickResetTimerRef.current);
+              rapidClickResetTimerRef.current = null;
+            }
+            // intensity=3 表示"生气"——image-pet-renderer 会识别并加 _imageAngry 标记
+            void renderer.playMotion('sad', 3);
+          } else {
+            runtime.interaction({ kind: HIT_INTERACTION[gesture.hit] });
+          }
+        }
       }
       lastClickAtRef.current = sample.at;
       gestureRef.current = { start: null, hit: null, dragging: false };
@@ -208,7 +231,6 @@ export function PetExperience({
 
   const [saoOpen, setSaoOpen] = useState(false);
 
-  /** 切换环形菜单 UI 风格（写档案 → onChanged 广播驱动重渲染；立即关闭菜单） */
   const switchMenuStyle = (style: 'sao' | 'classic') => {
     void window.pet?.petProfile?.get().then((profile) => {
       if (profile.menuStyle === style) return;
@@ -218,7 +240,6 @@ export function PetExperience({
   };
 
   const handleContextMenu = (e: ReactMouseEvent<HTMLDivElement>) => {
-    // 右键只切换 SAO 左侧环形菜单（原生菜单经其"控制 → 系统托盘"入口触达）
     e.preventDefault();
     setSaoOpen((prev) => !prev);
   };

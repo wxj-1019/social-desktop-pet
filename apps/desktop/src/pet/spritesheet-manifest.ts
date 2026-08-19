@@ -57,6 +57,7 @@ export const CODENONO_MOTION_MAP: Readonly<Record<PetMotion, SpriteMotionSpec>> 
   talk: { row: 8, frames: 6, fps: 10 },
   sit: { row: 6, frames: 6, fps: 6 },
   sleep: { row: 7, frames: 6, fps: 2 },
+  dragged: { row: 4, frames: 5, fps: 12 },
 };
 
 /** walk 的左右奔跑行独立存在，不能用错误行或镜像替代。 */

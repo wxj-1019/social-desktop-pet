@@ -19,6 +19,7 @@ export const MOTIONS = [
   'wave',
   'touch',
   'talk',
+  'dragged',
 ] as const satisfies readonly PetMotion[];
 
 /** 与 model-manifest.json 的 expressions 清单对应 */
@@ -82,6 +83,7 @@ export const MOTION_PRIORITY: Record<PetMotion, number> = {
   surprised: 4,
   touch: 4,
   sleep: 5,
+  dragged: 4,
 };
 
 /** 判断新动作是否应打断当前动作（7.2 防抖动） */

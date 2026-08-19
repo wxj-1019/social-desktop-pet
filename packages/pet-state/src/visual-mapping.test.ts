@@ -13,9 +13,21 @@ import {
 } from './visual-mapping.js';
 
 describe('visual-mapping (7.1 → 7.2 跨进程视觉映射)', () => {
-  it('MOTIONS covers the 10 manifest motions', () => {
+  it('MOTIONS covers the 11 manifest motions', () => {
     expect([...MOTIONS].sort()).toEqual(
-      ['happy', 'idle', 'sad', 'sit', 'sleep', 'surprised', 'talk', 'touch', 'walk', 'wave'].sort(),
+      [
+        'dragged',
+        'happy',
+        'idle',
+        'sad',
+        'sit',
+        'sleep',
+        'surprised',
+        'talk',
+        'touch',
+        'walk',
+        'wave',
+      ].sort(),
     );
   });
 

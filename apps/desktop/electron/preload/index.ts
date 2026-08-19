@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Preload —— 8.3 只暴露最小、版本化的 API。
  * contextBridge 隔离，不把 require/Node 能力暴露给渲染进程。
  * Task 7：新增 petRuntime / panel / petProfile 命名空间，类型全部来自 @pet/protocol；
@@ -14,6 +14,7 @@ import type {
   PetChatEvent,
   PetDragPoint,
   PetInteraction,
+  PetId,
   PetProfile,
   PetRuntimeSnapshot,
   PetSocialEvent,
@@ -124,8 +125,8 @@ const api = {
       };
     },
     /** 切换角色皮肤（保存 petId + 重载桌宠窗；返回切换后的 petId） */
-    setCharacter: (petId: 'star-isle' | 'codenono') =>
-      ipcRenderer.invoke('pet:set-character', petId) as Promise<'star-isle' | 'codenono'>,
+    setCharacter: (petId: PetId) =>
+      ipcRenderer.invoke('pet:set-character', petId) as Promise<PetId>,
   },
   /** 本地 BYOK 模型（OpenAI 兼容）：密钥只存 Main，视图不含密钥 */
   localLlm: {

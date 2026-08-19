@@ -2,7 +2,7 @@
  * 角色注册表 —— 把 petId（@pet/protocol PetIdSchema）绑定到具体渲染配置。
  *
  * 每个角色登记：
- * - id：协议枚举值（star-isle / codenono）
+ * - id：协议枚举值（star-isle / codenono / cream-kitten）
  * - displayName：面板卡片显示名
  * - description：一句话介绍
  * - VisualComponent：渲染组件（消费 StarIsleVisualState）
@@ -15,6 +15,8 @@
 import type { PetId } from '@pet/protocol';
 import type { ComponentType } from 'react';
 
+import { createImagePetRenderer } from './image-pet-renderer.js';
+import { ImageVisual } from './image-visual.js';
 import type { PetRenderer, StarIsleVisualState } from './pet-renderer.js';
 import { createSpritesheetPetRenderer } from './spritesheet-pet-renderer.js';
 import { SpritesheetVisual } from './spritesheet-visual.js';
@@ -50,6 +52,14 @@ export const CHARACTERS: readonly CharacterConfig[] = [
     description: 'spritesheet 帧动画角色，编程伙伴气质。',
     VisualComponent: SpritesheetVisual,
     rendererFactory: createSpritesheetPetRenderer,
+  },
+  {
+    id: 'cream-kitten',
+    petName: '奶盖',
+    displayName: '奶盖',
+    description: '伪3D 卡通奶油小猫，立体光影，慵懒陪伴。',
+    VisualComponent: ImageVisual,
+    rendererFactory: createImagePetRenderer,
   },
 ];
 
