@@ -2,6 +2,9 @@
 // registry 导入 image-visual（模块级 new Image() 预载奶盖帧），node 环境无 Image → 必须 jsdom
 import { describe, expect, it } from 'vitest';
 
+import { PetIdSchema } from '@pet/protocol';
+
+import { CHARACTER_MANIFESTS } from './character-manifests.js';
 import { CHARACTERS, getCharacterConfig, listCharacters } from './character-registry.js';
 
 describe('character-registry', () => {
@@ -39,5 +42,37 @@ describe('character-registry', () => {
     const r2 = code.rendererFactory(() => {});
     r2.dispose();
     expect(r1).not.toBe(r2);
+  });
+});
+
+describe('registry ↔ manifest ↔ PetId 一致性（形象协议 §11）', () => {
+  it('registry 与 manifest 恰好覆盖同一组角色', () => {
+    const registryIds = listCharacters()
+      .map((c) => c.id)
+      .sort();
+    const manifestIds = Object.keys(CHARACTER_MANIFESTS).sort();
+    expect(registryIds).toEqual(manifestIds);
+  });
+
+  it('每个角色 id 都是合法 PetId（新增角色必须先扩协议枚举）', () => {
+    for (const id of Object.keys(CHARACTER_MANIFESTS)) {
+      expect(PetIdSchema.options).toContain(id);
+    }
+  });
+
+  it('registry 卡片文案与 manifest 同源一致（displayName/description/petName）', () => {
+    for (const c of CHARACTERS) {
+      const manifest = CHARACTER_MANIFESTS[c.id];
+      expect(manifest).toBeDefined();
+      expect(c.displayName).toBe(manifest!.displayName);
+      expect(c.description).toBe(manifest!.description);
+      expect(c.petName).toBe(manifest!.petName);
+    }
+  });
+
+  it('manifest release 级别满足迁移定位（§12）：星屿 bundled，其余 dev-only', () => {
+    expect(CHARACTER_MANIFESTS['star-isle']!.release).toBe('bundled');
+    expect(CHARACTER_MANIFESTS['codenono']!.release).toBe('dev-only');
+    expect(CHARACTER_MANIFESTS['cream-kitten']!.release).toBe('dev-only');
   });
 });
