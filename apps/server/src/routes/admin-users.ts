@@ -11,9 +11,29 @@ import type pg from 'pg';
 import type { JwtService } from '../auth/jwt.js';
 import type { PgAdminUserStore } from '../db/admin-stores.js';
 import { rlsClaimsJson } from '../db/pool.js';
+import { writeAdminAuditOn } from '../lib/admin-audit.js';
+import { AuthRateLimiter, clientIpOf } from '../lib/auth-rate-limit.js';
+import { isValidUuid } from '../lib/validate.js';
 
 import type { AdminVariables } from './admin.js';
 import { requireAdminAuth } from './admin.js';
+
+/** 高风险用户写操作限流（suspend/restore/revoke；设计 §7 高风险写按 IP 限流） */
+const userActionLimiter = new AuthRateLimiter();
+
+/** 高风险写操作入口：IP 滑动窗口超限 → 429 */
+function checkUserActionLimit(c: { req: { header(name: string): string | undefined } }): {
+  allowed: boolean;
+  retryAfterSec: number;
+} {
+  return userActionLimiter.check(`user-action-ip:${clientIpOf(c)}`);
+}
+
+/** path param 必须是合法 UUID，否则 PG uuid 绑定抛 22P02 → 500；非法 → 422 */
+function requireUuidParam(c: { req: { param(key: string): string } }, key: string): string | null {
+  const value = c.req.param(key);
+  return isValidUuid(value) ? value : null;
+}
 
 /** 以目标用户身份运行查询（RLS 兼容：set local request.jwt.claims） */
 export async function withUserClaims<T>(
@@ -43,15 +63,6 @@ export interface AdminUsersDeps {
   jwt: JwtService;
   adminUsers: PgAdminUserStore;
   realtime: { kickUser(userId: string): void };
-  writeAudit(entry: {
-    adminId: string;
-    action: string;
-    resourceType: string;
-    resourceId?: string | null;
-    reason?: string | null;
-    ip?: string | null;
-    metadata?: Record<string, unknown>;
-  }): Promise<void>;
 }
 
 export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: AdminVariables }> {
@@ -111,7 +122,8 @@ export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: 
   });
 
   app.get('/users/:userId', auth, async (c) => {
-    const userId = c.req.param('userId');
+    const userId = requireUuidParam(c, 'userId');
+    if (!userId) return c.json({ error: 'invalid_input' }, 422);
     const { rows } = await deps.pool.query(
       `select u.id as user_id, u.email, p.nickname, u.account_status, u.suspended_at,
               u.suspended_reason, u.created_at,
@@ -151,10 +163,16 @@ export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: 
   });
 
   app.post('/users/:userId/suspend', auth, async (c) => {
+    const limit = checkUserActionLimit(c);
+    if (!limit.allowed) {
+      return c.json({ error: 'rate_limit', retryAfterSec: limit.retryAfterSec }, 429);
+    }
     const adminId = c.get('adminId');
-    const userId = c.req.param('userId');
-    const body = (await c.req.json().catch(() => ({}))) as { reason?: string };
-    const reason = (body.reason ?? '').trim();
+    const userId = requireUuidParam(c, 'userId');
+    if (!userId) return c.json({ error: 'invalid_input' }, 422);
+    const body = (await c.req.json().catch(() => ({}))) as { reason?: unknown };
+    // 非字符串 reason（如数字）直接 422，而非 .trim() 抛 TypeError → 500
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
     if (reason.length < 1 || reason.length > 500) {
       return c.json({ error: 'invalid_input' }, 422);
     }
@@ -182,6 +200,20 @@ export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: 
         'update devices set revoked_at = now() where user_id = $1 and revoked_at is null',
         [userId],
       );
+      // 撤销双保险锚点必须同步清空：requireAuth 以 active_display_device_id 判设备
+      // 是否被停用，不清则已登录会话仍被放行（暂停只挡新登录不挡存量会话）
+      await client.query('update profiles set active_display_device_id = null where user_id = $1', [
+        userId,
+      ]);
+      // 审计与动作同事务提交：审计 insert 失败 → 回滚动作（动作必有审计轨迹）
+      await writeAdminAuditOn(client, {
+        adminId,
+        action: 'user.suspend',
+        resourceType: 'user',
+        resourceId: userId,
+        reason,
+        ip: clientIpOf(c),
+      });
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -190,39 +222,51 @@ export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: 
       client.release();
     }
     deps.realtime.kickUser(userId);
-    await deps.writeAudit({
-      adminId,
-      action: 'user.suspend',
-      resourceType: 'user',
-      resourceId: userId,
-      reason,
-      ip: c.req.header('x-forwarded-for'),
-    });
     return c.json({ ok: true });
   });
 
   app.post('/users/:userId/restore', auth, async (c) => {
+    const limit = checkUserActionLimit(c);
+    if (!limit.allowed) {
+      return c.json({ error: 'rate_limit', retryAfterSec: limit.retryAfterSec }, 429);
+    }
     const adminId = c.get('adminId');
-    const userId = c.req.param('userId');
-    const updated = await deps.pool.query(
-      `update auth.users set account_status = 'active', suspended_at = null, suspended_reason = null
-       where id = $1 and account_status = 'suspended'
-       returning id`,
-      [userId],
-    );
-    if ((updated.rowCount ?? 0) === 0) return c.json({ error: 'not_suspended' }, 409);
-    await deps.writeAudit({
-      adminId,
-      action: 'user.restore',
-      resourceType: 'user',
-      resourceId: userId,
-      ip: c.req.header('x-forwarded-for'),
-    });
+    const userId = requireUuidParam(c, 'userId');
+    if (!userId) return c.json({ error: 'invalid_input' }, 422);
+    // 动作与审计同事务（与 suspend 同语义）：审计 insert 失败 → 回滚动作
+    const client = await deps.pool.connect();
+    try {
+      await client.query('begin');
+      const updated = await client.query(
+        `update auth.users set account_status = 'active', suspended_at = null, suspended_reason = null
+         where id = $1 and account_status = 'suspended'
+         returning id`,
+        [userId],
+      );
+      if ((updated.rowCount ?? 0) === 0) {
+        await client.query('rollback');
+        return c.json({ error: 'not_suspended' }, 409);
+      }
+      await writeAdminAuditOn(client, {
+        adminId,
+        action: 'user.restore',
+        resourceType: 'user',
+        resourceId: userId,
+        ip: clientIpOf(c),
+      });
+      await client.query('commit');
+    } catch (e) {
+      await client.query('rollback');
+      throw e;
+    } finally {
+      client.release();
+    }
     return c.json({ ok: true });
   });
 
   app.get('/users/:userId/devices', auth, async (c) => {
-    const userId = c.req.param('userId');
+    const userId = requireUuidParam(c, 'userId');
+    if (!userId) return c.json({ error: 'invalid_input' }, 422);
     const { rows } = await withUserClaims(deps.pool, userId, (client) =>
       client.query(
         `select device_id, platform, app_version, last_seen_at, revoked_at
@@ -242,8 +286,13 @@ export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: 
   });
 
   app.post('/devices/:deviceId/revoke', auth, async (c) => {
+    const limit = checkUserActionLimit(c);
+    if (!limit.allowed) {
+      return c.json({ error: 'rate_limit', retryAfterSec: limit.retryAfterSec }, 429);
+    }
     const adminId = c.get('adminId');
-    const deviceId = c.req.param('deviceId');
+    const deviceId = requireUuidParam(c, 'deviceId');
+    if (!deviceId) return c.json({ error: 'invalid_input' }, 422);
     // 先以 owner 豁免路径取设备归属（存在且未撤销），再以目标用户 claims 执行撤销
     const { rows } = await deps.pool.query(
       'select user_id from devices where device_id = $1 and revoked_at is null',
@@ -252,6 +301,7 @@ export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: 
     const r = rows[0];
     if (!r) return c.json({ error: 'not_found' }, 404);
     const userId = String(r.user_id);
+    // 撤销与审计同一事务：审计失败 → 撤销回滚（动作必有审计轨迹）
     await withUserClaims(deps.pool, userId, async (client) => {
       await client.query(
         'update devices set revoked_at = now() where device_id = $1 and revoked_at is null',
@@ -261,14 +311,14 @@ export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: 
         'update refresh_sessions set revoked_at = now() where device_id = $1 and revoked_at is null',
         [deviceId],
       );
-    });
-    await deps.writeAudit({
-      adminId,
-      action: 'device.revoke',
-      resourceType: 'device',
-      resourceId: deviceId,
-      reason: userId,
-      ip: c.req.header('x-forwarded-for'),
+      await writeAdminAuditOn(client, {
+        adminId,
+        action: 'device.revoke',
+        resourceType: 'device',
+        resourceId: deviceId,
+        reason: userId,
+        ip: clientIpOf(c),
+      });
     });
     return c.json({ ok: true });
   });

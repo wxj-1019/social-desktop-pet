@@ -5,9 +5,10 @@
  * - 每张卡：展开"来源"看原文、内联"修改"（10.5 纠正链）、"删除"（置失效不物理删除）
  * - 顶部"待确认"区复用 MemoryConfirmCard（D-3 存量确认队列）
  */
-import type { MemoryConfirmation, MemoryListItem } from '@pet/protocol';
 import { Brain, ChevronDown, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+
+import type { MemoryConfirmation, MemoryListItem } from '@pet/protocol';
 
 import { api } from '../lib/api/client.js';
 

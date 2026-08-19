@@ -8,6 +8,9 @@
  *    越权 surface 调用一律拒绝
  * 4. main→renderer 推送辅助 broadcastPetSnapshot / sendPetVisual（Task 10 接线）
  */
+import { ipcMain, screen } from 'electron';
+import type { BrowserWindow } from 'electron';
+
 import {
   BooleanSettingSchema,
   LocalLlmChatRequestSchema,
@@ -31,8 +34,6 @@ import type {
   PetRuntimeSnapshot,
   PetVisualCommand,
 } from '@pet/protocol';
-import { ipcMain, screen } from 'electron';
-import type { BrowserWindow } from 'electron';
 
 import type { DisplayLike } from '../display-controller.js';
 import type { PetDragController } from '../pet-drag-controller.js';
@@ -87,6 +88,11 @@ export interface PetIpcDependencies {
   hidePet: () => void;
   /** 显示桌宠单一入口（窗口 show + 解除穿透 + 运行时恢复；托盘同源） */
   showPet: () => void;
+  /** 开机自启（8.2 留存指标）：查询/开关，仅面板窗可调用 */
+  autoLaunch: {
+    get: () => boolean;
+    set: (enabled: boolean) => void;
+  };
   /** 本地 BYOK 模型（OpenAI 兼容）：配置视图 / 保存 / 聊天 */
   localLlm: {
     view: () => LocalLlmConfigView;
@@ -193,6 +199,12 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
   // ---- 基础通道 ----
   registerInvoke(deps, 'app:version', ['pet', 'panel'], () => deps.appVersion);
   registerInvoke(deps, 'app:getApiBase', ['pet', 'panel'], () => apiBaseUrl());
+  // 8.2 开机自启（留存指标）：仅设置页（panel）读写
+  registerInvoke(deps, 'app:get-auto-launch', 'panel', () => deps.autoLaunch.get());
+  registerOn(deps, 'app:set-auto-launch', 'panel', (_win, payload) => {
+    const { enabled } = parseIpcPayload(BooleanSettingSchema, payload);
+    deps.autoLaunch.set(enabled);
+  });
 
   registerOn(deps, 'window:setIgnoreMouseEvents', 'pet', (win, payload) => {
     const { enabled } = parseIpcPayload(BooleanSettingSchema, payload);
@@ -233,6 +245,11 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
   registerOn(deps, 'pet:set-dnd', ['pet', 'panel'], (_win, payload) => {
     const { enabled } = parseIpcPayload(BooleanSettingSchema, payload);
     deps.setDnd(enabled);
+  });
+  // 在线状态：面板实时连接状态上报（断线时运行时给"网络不在，我先陪你"气泡）
+  registerOn(deps, 'pet:set-online', 'panel', (_win, payload) => {
+    const { enabled } = parseIpcPayload(BooleanSettingSchema, payload);
+    runtime.setOnline(enabled);
   });
   // 穿透：同上，设置页需要反射与切换（关闭穿透即恢复交互）
   registerOn(deps, 'pet:set-pass-through', ['pet', 'panel'], (_win, payload) => {

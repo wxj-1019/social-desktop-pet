@@ -184,7 +184,14 @@ export async function main(): Promise<void> {
   });
 
   // ---- 自建 Realtime（9.2/9.4）----
-  const realtime = new RealtimeServer(jwt);
+  // 暂停校验：管理后台 suspend 后已登录连接立即拒绝（重连也挡），与 requireAuth 同语义
+  const realtime = new RealtimeServer(jwt, undefined, undefined, async (userId) => {
+    const { rows } = await pool.query(
+      `select 1 from auth.users where id = $1 and account_status = 'suspended'`,
+      [userId],
+    );
+    return (rows.length ?? 0) > 0;
+  });
 
   // ---- 模型客户端（10.1；密钥只存服务端环境变量 8.3；未配置则 chat 降级骨架）----
   const llmConfig = llmConfigFromEnv();
@@ -236,7 +243,16 @@ export async function main(): Promise<void> {
   });
 
   const port = Number(process.env['PORT'] ?? 8787);
-  const server = serve({ fetch: app.fetch, port });
+  // 监听地址约束（部署边界）：默认只绑回环，杜绝误配直暴公网；
+  // 容器/反代异机场景需显式 PET_BIND_HOST=0.0.0.0（:: 同理），绑定全网卡时高声警告
+  const bindHost = process.env['PET_BIND_HOST'] ?? '127.0.0.1';
+  if (bindHost === '0.0.0.0' || bindHost === '::') {
+    console.warn(
+      '[server] 警告：PET_BIND_HOST 绑定全部网卡——仅限容器/反代同机场景，' +
+        '务必由防火墙或反向代理限制来源（管理后台 /admin 与业务 API 将对外可达）',
+    );
+  }
+  const server = serve({ fetch: app.fetch, port, hostname: bindHost });
 
   realtime.attach(server);
 
@@ -249,7 +265,7 @@ export async function main(): Promise<void> {
   runSweep();
   setInterval(runSweep, 24 * 60 * 60 * 1000).unref();
 
-  console.info(`[server] listening on :${port} (ws: /realtime)`);
+  console.info(`[server] listening on ${bindHost}:${port} (ws: /realtime)`);
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {

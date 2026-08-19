@@ -1,5 +1,6 @@
-import type { PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import type { PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
 
 import { PetRuntimeController } from './pet-runtime-controller.js';
 
@@ -16,6 +17,37 @@ function makeRuntime(visuals: PetVisualCommand[], snapshots: PetRuntimeSnapshot[
 }
 
 describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
+  it('emits the cold-start landing bubble exactly once, and not while DND', () => {
+    vi.useFakeTimers();
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const visuals: PetVisualCommand[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+
+    runtime.start();
+    const landing = visuals.filter((c) => c.type === 'bubble' && c.text?.includes('我在这儿'));
+    expect(landing).toHaveLength(1);
+    expect(visuals.some((c) => c.type === 'motion' && c.motion === 'happy')).toBe(true);
+
+    // 重复 start（幂等保护）不重复发默认气泡
+    runtime.start();
+    expect(visuals.filter((c) => c.type === 'bubble' && c.text?.includes('我在这儿'))).toHaveLength(
+      1,
+    );
+    runtime.stop();
+
+    // 勿扰启动：不发默认气泡（气泡由 isBubbleAllowed 抑制）
+    const dndVisuals: PetVisualCommand[] = [];
+    const dndSnapshots: PetRuntimeSnapshot[] = [];
+    const dndRuntime = makeRuntime(dndVisuals, dndSnapshots);
+    dndRuntime.setDnd(true);
+    dndRuntime.start();
+    // 勿扰提示气泡允许存在；落岛默认气泡必须被抑制
+    expect(
+      dndVisuals.filter((c) => c.type === 'bubble' && c.text?.includes('我在这儿')),
+    ).toHaveLength(0);
+    dndRuntime.stop();
+  });
+
   it('boots to IDLE, broadcasts happy stretch, then degrades to SITTING after the activity window', () => {
     vi.useFakeTimers();
     const snapshots: PetRuntimeSnapshot[] = [];
@@ -93,6 +125,29 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     const cloud = runtime.requestAction({ intent: 'wave', source: 'cloud_ai' });
     expect(cloud).toEqual({ approved: false, intent: 'wave', reason: 'offline' });
     expect(visuals.filter((c) => c.type === 'motion' && c.motion === 'wave')).toHaveLength(0);
+
+    runtime.stop();
+  });
+
+  it('emits an offline bubble once per 60s cooldown window (P2 断线降级人格化)', () => {
+    vi.useFakeTimers();
+    const visuals: PetVisualCommand[] = [];
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+
+    runtime.setOnline(false);
+    expect(visuals).toContainEqual({ type: 'bubble', text: '网络不在，我先陪你～' });
+
+    // 冷却期内反复断线：不重复刷气泡
+    runtime.setOnline(true);
+    runtime.setOnline(false);
+    expect(visuals.filter((c) => c.type === 'bubble')).toHaveLength(1);
+
+    // 冷却过期后再次断线：允许再次提示
+    vi.advanceTimersByTime(61_000);
+    runtime.setOnline(true);
+    runtime.setOnline(false);
+    expect(visuals.filter((c) => c.type === 'bubble')).toHaveLength(2);
 
     runtime.stop();
   });

@@ -45,6 +45,9 @@ const WANDER_DURATION_MAX_MS = 5_000;
 /** 活动窗口：距最近一次用户/系统活动超过该时长后停止溜达，让空闲降级（SITTING）可达 */
 const WANDER_STOP_IDLE_MS = 150_000;
 
+/** 冷启动默认气泡文案（落岛开场：一次性，帮助用户定位桌宠） */
+const STARTUP_BUBBLE_TEXT = '我在这儿。今天也一起待着吧。';
+
 /** 瞬时动作播放时长；结束后按届时的状态回到基础动作。 */
 const ACTION_DURATION_MS: Readonly<Record<ActionIntent, number>> = {
   idle: 0,
@@ -58,6 +61,9 @@ const ACTION_DURATION_MS: Readonly<Record<ActionIntent, number>> = {
   cheer: 1_200,
   comfort: 1_500,
 };
+
+/** 断线气泡冷却：60s 内反复断线不重复提示，避免网络抖动刷屏（P2 断线降级人格化） */
+const OFFLINE_BUBBLE_COOLDOWN_MS = 60_000;
 
 /** 点心名称映射（送礼气泡显示文案；未知 id 回退"点心"） */
 export function snackLabel(snackId: string): string {
@@ -114,8 +120,12 @@ export class PetRuntimeController {
   private passThrough = false;
   private started = false;
   private stopped = false;
+  /** 冷启动默认气泡只发一次（落岛开场）；勿扰/隐藏时不发 */
+  private startupBubbleSent = false;
   /** 最近一次用户/系统活动时刻（活动窗口起点；溜达仅在窗口内挂起） */
   private lastActivityAt = 0;
+  /** 上次断线气泡时刻（60s 冷却，防抖动刷屏） */
+  private lastOfflineBubbleAt = 0;
 
   constructor(options: PetRuntimeOptions) {
     this.options = options;
@@ -134,6 +144,11 @@ export class PetRuntimeController {
     this.enterModeState('boot');
     this.emitSnapshot();
     this.emitVisual({ type: 'motion', motion: 'happy', intensity: 1 }); // 伸懒腰开场（7.2）
+    // 落岛开场默认气泡：每次冷启动一次（非勿扰/非隐藏时），帮用户定位桌宠
+    if (!this.startupBubbleSent && this.isBubbleAllowed()) {
+      this.startupBubbleSent = true;
+      this.emitVisual({ type: 'bubble', text: STARTUP_BUBBLE_TEXT });
+    }
     this.armBootTimeout();
     this.ensureTickTimer();
   }
@@ -166,6 +181,12 @@ export class PetRuntimeController {
     if (this.online === online) return;
     this.online = online;
     if (this.stopped) return;
+    // 断线降级人格化（P2）：一次性气泡"网络不在，我先陪你"；60s 冷却防抖动刷屏。
+    // 恢复在线不播音，静默回到正常状态即可。
+    if (!online && this.nowMs() - this.lastOfflineBubbleAt > OFFLINE_BUBBLE_COOLDOWN_MS) {
+      this.lastOfflineBubbleAt = this.nowMs();
+      this.emitVisual({ type: 'bubble', text: '网络不在，我先陪你～' });
+    }
     this.reconcileMode(true);
   }
 

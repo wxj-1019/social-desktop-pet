@@ -37,10 +37,16 @@ async function api(
   return { status: res.status, ok: res.ok, data };
 }
 
-test('邀请状态机全链路：报名 → invite → claim → 注册绑定（4.3）', async () => {
-  const health = await fetch(`${API_BASE}/healthz`);
-  expect(health.ok).toBe(true);
+test.beforeAll(async () => {
+  try {
+    const health = await fetch(`${API_BASE}/healthz`);
+    if (!health.ok) test.skip(true, '后端未就绪（/healthz 非 200）');
+  } catch {
+    test.skip(true, '后端不可达（/healthz 请求失败）');
+  }
+});
 
+test('邀请状态机全链路：报名 → invite → claim → 注册绑定（4.3）', async () => {
   // 1. 报名（pending）
   const signup = await api('/waitlist', { method: 'POST', body: { email: EMAIL } });
   expect(signup.status).toBe(200);

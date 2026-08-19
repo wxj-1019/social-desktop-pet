@@ -85,4 +85,15 @@ describe('admin audit', () => {
     expect(selectSql).toContain('limit $4');
     expect(selectSql).toContain('offset $5');
   });
+
+  it('queryAdminAudit truncates fractional page/pageSize（1.5 不进 LIMIT 导致 PG 500）', async () => {
+    const pool = fakePool([]);
+    const result = await queryAdminAudit(pool as never, { page: 2.7, pageSize: 1.5 });
+    expect(result.page).toBe(2);
+    expect(result.pageSize).toBe(1);
+    // 非法（NaN）回默认
+    const fallback = await queryAdminAudit(pool as never, { page: Number('abc') });
+    expect(fallback.page).toBe(1);
+    expect(fallback.pageSize).toBe(20);
+  });
 });

@@ -19,9 +19,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      - uses: pnpm/action-setup@v4 # 版本统一以 package.json 的 packageManager 为准（pnpm@9.12.0）
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -29,12 +27,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm lint
-      # 根 references 含全部 packages + apps/server（D-13）；apps/desktop 需单独检查（审查发现 #1）
+      # 根 references 含全部 packages + apps/server（D-13）；apps/desktop/landing/admin 需单独检查（审查发现 #1 + admin 门禁）
       - run: pnpm typecheck
       - run: pnpm --filter @pet/desktop typecheck
       - run: pnpm --filter @pet/landing typecheck
+      - run: pnpm --filter @pet/admin typecheck
       # D-13 部署产物门禁：server build 必须真实产出 dist/（tsconfig.build.json，noEmit:false）
       - run: pnpm --filter @pet/server build
+      - run: pnpm --filter @pet/admin build
       - run: pnpm test
 
   # 补 2：Electron e2e 冒烟（Linux 需 xvfb + Electron 系统依赖）
@@ -43,16 +43,16 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      - uses: pnpm/action-setup@v4 # 版本统一以 package.json 的 packageManager 为准（pnpm@9.12.0）
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Electron 在 Ubuntu 的运行时依赖
-      - run: sudo apt-get update && sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2
+      # Electron 在 Ubuntu 的运行时依赖（ubuntu-latest = 24.04，libasound2 已改名 libasound2t64）
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libpango-1.0-0 libcairo2
+      # 干净克隆无 packages/*/dist：app 构建前先构建共享包（否则 @pet/* 入口解析失败）
+      - run: pnpm -r --filter=./packages/* build
       - run: pnpm --filter @pet/desktop build
       - run: xvfb-run -a npx playwright test --config e2e/playwright.config.ts
 
@@ -62,13 +62,70 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      - uses: pnpm/action-setup@v4 # 版本统一以 package.json 的 packageManager 为准（pnpm@9.12.0）
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --filter=./packages/* build
       - run: pnpm --filter @pet/desktop build
       - run: pnpm exec playwright test --config e2e/playwright.config.ts star-isle.spec.ts
+
+  e2e-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      # pgvector 镜像（迁移 0001 需 vector 扩展；postgres:16 官方镜像没有，迁移会失败）
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: pet
+          POSTGRES_DB: pet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # 版本统一以 package.json 的 packageManager 为准（pnpm@9.12.0）
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --filter=./packages/* build
+      - run: pnpm --filter @pet/server build
+      - run: pnpm --filter @pet/admin build
+      # 管理后台 GUI e2e 用真实浏览器（API 级 spec 不需要，但 admin-ui 需要 Chromium）
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Start server with e2e env
+        run: |
+          cd apps/server
+          DATABASE_URL=postgres://postgres:pet@localhost:5432/pet \
+          JWT_SECRET=ci-e2e-secret-at-least-32-bytes-long \
+          PET_DEV_RESET=true \
+          PET_DEV_OTP_CODE_IN_RESPONSE=true \
+          WAITLIST_ADMIN_TOKEN=e2e-waitlist-admin \
+          PORT=8787 \
+          node dist/index.js &
+          npx -y wait-on http://127.0.0.1:8787/healthz -t 30000
+      # 管理员账号必须在服务启动（迁移已应用）之后创建；admin:create 幂等，已存在时退出码 1 忽略
+      - name: Provision e2e admin account
+        run: cd apps/server && DATABASE_URL=postgres://postgres:pet@localhost:5432/pet ADMIN_PASSWORD=E2eAdmin@123456 pnpm exec tsx scripts/admin-create.ts e2e-admin@pet.dev || true
+      # 管理后台构建产物预览（/admin 同源代理到 8787），供 GUI e2e 真实打开
+      - name: Start admin preview
+        run: |
+          cd apps/admin
+          npx vite preview --host 127.0.0.1 --port 5175 &
+          npx -y wait-on http://127.0.0.1:5175 -t 30000
+      # 本 job 只跑需要真实后端的 HTTP/GUI spec；Electron 全链路 spec（需 xvfb+桌面端构建）
+      # 由 e2e job 覆盖（其后端相关断言在无后端时优雅跳过）
+      - run: pnpm exec playwright test --config e2e/playwright.config.ts
+          otp.spec.ts
+          waitlist.spec.ts
+          admin.spec.ts
+          admin-ui.spec.ts

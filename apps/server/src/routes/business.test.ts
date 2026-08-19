@@ -28,25 +28,45 @@ async function authedRequest(app: Hono<{ Variables: BusinessVariables }>, device
   });
 }
 
-describe('requireAuth 设备撤销双保险（9.8）', () => {
+describe('requireAuth 设备撤销双保险 + 暂停校验（9.8 / 管理后台）', () => {
   it('active_display_device_id 匹配当前设备 → 放行', async () => {
-    const pool = { query: vi.fn(async () => ({ rows: [{ active_display_device_id: 'dev-1' }] })) };
+    const pool = {
+      query: vi.fn(async () => ({
+        rows: [{ active_display_device_id: 'dev-1', account_status: 'active' }],
+      })),
+    };
     const res = await authedRequest(await makeApp(pool), 'dev-1');
     expect(res.status).toBe(200);
-    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('active_display_device_id'), [
-      'u1',
-    ]);
+    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('account_status'), ['u1']);
   });
 
   it('active_display_device_id 不匹配（旧设备被停用）→ 403 device_revoked', async () => {
-    const pool = { query: vi.fn(async () => ({ rows: [{ active_display_device_id: 'dev-2' }] })) };
+    const pool = {
+      query: vi.fn(async () => ({
+        rows: [{ active_display_device_id: 'dev-2', account_status: 'active' }],
+      })),
+    };
     const res = await authedRequest(await makeApp(pool), 'dev-1');
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: 'device_revoked' });
   });
 
+  it('账号被暂停（suspended）→ 403 account_suspended（不等 access token 过期）', async () => {
+    const pool = {
+      query: vi.fn(async () => ({
+        rows: [{ active_display_device_id: 'dev-1', account_status: 'suspended' }],
+      })),
+    };
+    const res = await authedRequest(await makeApp(pool), 'dev-1');
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'account_suspended' });
+  });
+
   it('无 profile 行 / null（未激活）→ 放行（不再恒 403）', async () => {
-    const variants = [{ rows: [] }, { rows: [{ active_display_device_id: null }] }];
+    const variants = [
+      { rows: [] },
+      { rows: [{ active_display_device_id: null, account_status: 'active' }] },
+    ];
     for (const rows of variants) {
       const pool = { query: vi.fn(async () => rows) };
       const res = await authedRequest(await makeApp(pool), 'dev-1');

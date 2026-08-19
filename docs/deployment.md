@@ -6,7 +6,7 @@
 
 - **2C4G 即可**（400 并发实测 RSS≈84MB，见 poc-window-capabilities.md），预算 $5–15/月
 - 建议就近部署（目标用户地区）；带宽 1–5Mbps 起步（月流量 ~19.3GB 占比 <2%）
-- Postgres 16 + Node 20 同机部署（单实例设计，9.1）
+- Postgres 16 + Node 22 同机部署（单实例设计，9.1）
 
 ## 二、后端部署（systemd）
 
@@ -14,6 +14,9 @@
 # 1. 代码与构建（在构建机或服务器上）
 pnpm install
 pnpm --filter @pet/server build          # → dist/
+
+# 注意监听边界：默认只绑 127.0.0.1（Caddy 反代同机即可）；
+# 容器/反代异机需显式 PET_BIND_HOST=0.0.0.0 并配好防火墙/来源限制（见 .env.example）
 
 # 2. 服务器布局
 sudo mkdir -p /opt/pet/server /etc/pet /var/backups/pet
@@ -106,6 +109,7 @@ node tools/build-update-manifest.mjs "apps/desktop/release/AI Pet Setup 1.1.0.ex
 
 - [ ] VPS 购买 + systemd 部署 + healthz 通过
 - [ ] Caddy/HTTPS + 客户端 PET_API_BASE 指向域名 + CSP 收紧
+- [ ] 管理后台部署与账号初始化（`pnpm --filter @pet/server admin:create <email>`；安全基线与运维流程见 [admin-deploy.md](admin-deploy.md)：生产强制 `ADMIN_COOKIE_SECURE`、`PET_TRUST_PROXY`、管理员停用即撤会话）
 - [ ] 备份 timer 生效 + 一次恢复演练
 - [ ] AI_MODEL_API_KEY 配置（GLM-4-Flash 免费档）或确认骨架降级可接受
 - [ ] 安装包 EV 签名（V-11 门禁）或确认封测接受 SmartScreen 警告

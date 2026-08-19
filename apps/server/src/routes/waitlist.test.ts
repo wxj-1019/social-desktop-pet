@@ -2,7 +2,7 @@
  * /waitlist 报名路由测试 —— 201/409/400/429 + 邮箱校验。
  */
 import { Hono } from 'hono';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   checkWaitlistRateLimit,
@@ -12,6 +12,15 @@ import {
   resetWaitlistRateLimitForTest,
   WaitlistService,
 } from './waitlist.js';
+
+// 路由 IP 提取走 clientIpOf：仅可信代理模式（PET_TRUST_PROXY）下读 XFF。
+// 本文件的限流用例以 XFF 模拟不同来源 IP，故全局开启可信代理模式。
+beforeAll(() => {
+  vi.stubEnv('PET_TRUST_PROXY', 'true');
+});
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 // 6.4 flaky 治理：假定时器必须兜底恢复（中途断言失败不再泄漏到后续用例）
 afterEach(() => {
@@ -238,6 +247,142 @@ describe('邀请状态机（4.3：pending → invited → joined/expired）', ()
         reason: 'already_joined',
       });
     });
+
+    it('并发兑换竞态：预检通过但条件 UPDATE 0 行 → already_joined（一次性语义不可击穿）', async () => {
+      const pool = makeScriptedPool([
+        () => ({ rows: [INVITED_ROW] }), // 预检通过（码正确、未过期）
+        () => ({ rows: [], rowCount: 0 }), // 另一并发请求已消费：update 0 行
+      ]);
+      const service = new WaitlistService(pool as never);
+      expect(await service.claim('a@b.com', 'ABCD2345')).toEqual({
+        ok: false,
+        reason: 'already_joined',
+      });
+    });
+  });
+
+  describe('WaitlistService.invite 审计钩子（admin 运营路径）', () => {
+    it('注入 auditOnInvite 时：邀请落库与审计同事务（begin → update → audit → commit）', async () => {
+      const calls: string[] = [];
+      const client = {
+        query: vi.fn(async (sql: string) => {
+          calls.push(sql);
+          return sql.includes("status = 'invited'")
+            ? { rowCount: 1, rows: [] }
+            : { rows: [], rowCount: 0 };
+        }),
+        release: vi.fn(),
+      };
+      const pool = {
+        connect: vi.fn(async () => client),
+        // 0016：邀请后无邮件供应商 → markInviteMail('skipped') 走 pool.query
+        query: vi.fn(async (_sql: string, _params?: unknown[]) => ({
+          rows: [],
+          rowCount: 0,
+        })),
+      };
+      const service = new WaitlistService(pool as never);
+
+      const result = await service.invite(['a@b.com'], {
+        auditOnInvite: async (exec, email) => {
+          await exec.query('insert into admin_audit_log values ($1)', [email]);
+        },
+      });
+
+      expect(result.invited).toHaveLength(1);
+      expect(result.skipped).toEqual([]);
+      // 全部语句走同一事务 client，顺序为 begin → update(invited) → audit → commit
+      expect(calls[0]).toBe('begin');
+      expect(calls.at(-1)).toBe('commit');
+      expect(calls.some((s) => s.includes("status = 'invited'"))).toBe(true);
+      expect(calls.some((s) => s.includes('admin_audit_log'))).toBe(true);
+      expect(client.release).toHaveBeenCalled();
+      // 邮件状态回写为 skipped（无供应商）
+      const mark = pool.query.mock.calls.find(([sql]) =>
+        String(sql).includes('invite_mail_status'),
+      ) as [string, unknown[]] | undefined;
+      expect(mark).toBeDefined();
+      expect(mark![1]).toEqual(['a@b.com', 'skipped']);
+    });
+
+    it('审计钩子抛错 → 整体回滚，邀请不生效', async () => {
+      const calls: string[] = [];
+      const client = {
+        query: vi.fn(async (sql: string) => {
+          calls.push(sql);
+          return sql.includes("status = 'invited'")
+            ? { rowCount: 1, rows: [] }
+            : { rows: [], rowCount: 0 };
+        }),
+        release: vi.fn(),
+      };
+      const pool = { connect: vi.fn(async () => client) };
+      const service = new WaitlistService(pool as never);
+
+      await expect(
+        service.invite(['a@b.com'], {
+          auditOnInvite: async () => {
+            throw new Error('audit down');
+          },
+        }),
+      ).rejects.toThrow('audit down');
+      expect(calls).toContain('rollback');
+      expect(calls).not.toContain('commit');
+    });
+  });
+
+  describe('WaitlistService.invite 邮件状态追踪（0016）', () => {
+    function makeMailPool() {
+      // 邀请 UPDATE 以 invite_code_hash 为特征（"set status" 被多行 SQL 拆开不可匹配）
+      const query = vi.fn(async (sql: string) =>
+        sql.includes('invite_code_hash') ? { rowCount: 1, rows: [] } : { rows: [], rowCount: 0 },
+      );
+      return { pool: { query }, query };
+    }
+
+    it('邮件发送成功 → 回写 sent', async () => {
+      const { pool, query } = makeMailPool();
+      const mail = { send: vi.fn(async () => undefined) };
+      const service = new WaitlistService(pool as never, mail as never);
+
+      const result = await service.invite(['a@b.com']);
+      expect(result.invited).toHaveLength(1);
+      await vi.waitFor(() => {
+        const mark = query.mock.calls.find(([sql]) =>
+          String(sql).includes('invite_mail_status = $2'),
+        ) as [string, unknown[]] | undefined;
+        expect(mark).toBeDefined();
+        expect(mark![1]).toEqual(['a@b.com', 'sent']);
+      });
+    });
+
+    it('邮件发送失败 → 回写 failed（邀请不回滚）', async () => {
+      const { pool, query } = makeMailPool();
+      const mail = { send: vi.fn(async () => Promise.reject(new Error('smtp down'))) };
+      const service = new WaitlistService(pool as never, mail as never);
+
+      const result = await service.invite(['a@b.com']);
+      expect(result.invited).toHaveLength(1); // 邮件失败不回滚邀请（可人工跟进）
+      await vi.waitFor(() => {
+        const mark = query.mock.calls.find(([sql]) =>
+          String(sql).includes('invite_mail_status = $2'),
+        ) as [string, unknown[]] | undefined;
+        expect(mark).toBeDefined();
+        expect(mark![1]).toEqual(['a@b.com', 'failed']);
+      });
+    });
+
+    it('无邮件供应商 → 回写 skipped', async () => {
+      const { pool, query } = makeMailPool();
+      const service = new WaitlistService(pool as never);
+
+      await service.invite(['a@b.com']);
+      const mark = query.mock.calls.find(([sql]) =>
+        String(sql).includes('invite_mail_status = $2'),
+      ) as [string, unknown[]] | undefined;
+      expect(mark).toBeDefined();
+      expect(mark![1]).toEqual(['a@b.com', 'skipped']);
+    });
   });
 
   describe('WaitlistService.bindJoinedUser（注册绑定）', () => {
@@ -290,6 +435,22 @@ describe('邀请状态机（4.3：pending → invited → joined/expired）', ()
       const body = (await ok.json()) as { invited: Array<{ email: string; code: string }> };
       expect(body.invited[0]?.email).toBe('a@b.com');
       expect(body.invited[0]?.code).toMatch(/^[A-Z2-9]{8}$/);
+    });
+
+    it('/waitlist/invite：生产环境一律 404（即便配置了 token；兼容端点不进生产）', async () => {
+      vi.stubEnv('NODE_ENV', 'production');
+      try {
+        const app = new Hono();
+        registerWaitlistRoutes(app, { pool: makePool(1) as never, adminToken: 'op-secret' });
+        const res = await app.request('/waitlist/invite', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: 'Bearer op-secret' },
+          body: JSON.stringify({ emails: ['a@b.com'] }),
+        });
+        expect(res.status).toBe(404);
+      } finally {
+        vi.stubEnv('NODE_ENV', 'test');
+      }
     });
 
     it('/waitlist/claim：成功 200；错误码 401；格式 400', async () => {

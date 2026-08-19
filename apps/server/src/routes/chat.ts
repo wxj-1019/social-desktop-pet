@@ -10,7 +10,11 @@
  * 客户端解析器见 apps/desktop/src/lib/api/sse.ts（fetch + ReadableStream，
  * 不用 EventSource——后者无法带 Authorization header）。
  */
-import { buildChatFlow, initialChatFlowState } from '@pet/ai-graph';
+import { type Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
+import { streamSSE } from 'hono/streaming';
+import type pg from 'pg';
+
 import type {
   GraphEvent,
   LlmClient,
@@ -18,11 +22,8 @@ import type {
   MemoryRetrievalStore,
   OutputModerator,
 } from '@pet/ai-graph';
+import { buildChatFlow, initialChatFlowState } from '@pet/ai-graph';
 import { DEFAULT_FEATURE_FLAGS, LIMITS } from '@pet/config';
-import { type Hono } from 'hono';
-import type { MiddlewareHandler } from 'hono';
-import { streamSSE } from 'hono/streaming';
-import type pg from 'pg';
 
 import type { JwtService } from '../auth/jwt.js';
 import { runMemoryExtract } from '../lib/run-memory-extract.js';
@@ -130,20 +131,22 @@ async function checkAndRecordDailyUsage(
   userId: string,
   message: string,
   outputChars: number,
+  model = '',
 ): Promise<'ok' | 'daily_limit' | 'token_budget_exceeded'> {
   const client = await pool.connect();
   try {
     await client.query('begin');
     const tokenEstimate = Math.ceil((message.length + outputChars) / 4);
     const { rows } = await client.query(
-      `insert into chat_usage (user_id, usage_date, request_count, token_estimate)
-       values ($1, current_date, 1, $2)
+      `insert into chat_usage (user_id, usage_date, request_count, token_estimate, model)
+       values ($1, current_date, 1, $2, $3)
        on conflict (user_id, usage_date)
        do update set
          request_count = chat_usage.request_count + 1,
-         token_estimate = chat_usage.token_estimate + excluded.token_estimate
+         token_estimate = chat_usage.token_estimate + excluded.token_estimate,
+         model = excluded.model
        returning request_count, token_estimate`,
-      [userId, tokenEstimate],
+      [userId, tokenEstimate, model],
     );
     await client.query('commit');
     const requestCount = Number(rows[0]?.request_count ?? 1);
@@ -157,6 +160,21 @@ async function checkAndRecordDailyUsage(
   } finally {
     client.release();
   }
+}
+
+/** 12.7 观测：事后事件计数（limit_hits=命中 429 预算拒绝；fail_count=图执行抛错）。
+ *  行已由 checkAndRecordDailyUsage 保证存在；fire-and-forget 由调用方决定 */
+async function recordUsageEvent(
+  pool: pg.Pool,
+  userId: string,
+  kind: 'limit_hit' | 'fail',
+): Promise<void> {
+  const column = kind === 'limit_hit' ? 'limit_hits' : 'fail_count';
+  await pool.query(
+    `update chat_usage set ${column} = ${column} + 1
+     where user_id = $1 and usage_date = current_date`,
+    [userId],
+  );
 }
 
 export function registerChatRoutes(
@@ -196,8 +214,10 @@ export function registerChatRoutes(
       return c.json({ error: 'concurrency_limit' }, 429);
     }
     // 12.7 每日预算（chat_usage 记账；请求数或 token 预算任一超限拒绝）
-    const usage = await checkAndRecordDailyUsage(deps.pool, userId, message, 0);
+    const usage = await checkAndRecordDailyUsage(deps.pool, userId, message, 0, deps.llm?.model);
     if (usage === 'daily_limit' || usage === 'token_budget_exceeded') {
+      // 12.7 观测：命中预算拒绝计入 limit_hits（request_count 已含本请求，成功数可拆分）
+      void recordUsageEvent(deps.pool, userId, 'limit_hit').catch(() => undefined);
       leaveConcurrency(deviceId);
       return c.json({ error: usage }, 429);
     }
@@ -261,6 +281,8 @@ export function registerChatRoutes(
           });
         }
       } catch (e) {
+        // 12.7 观测：图执行抛错计入 fail_count（fire-and-forget，不影响 error 帧下发）
+        void recordUsageEvent(deps.pool, userId, 'fail').catch(() => undefined);
         await stream.writeSSE({
           event: 'error',
           data: JSON.stringify({ error: (e as Error).message }),

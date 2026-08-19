@@ -9,8 +9,9 @@
  * 资产经 Vite import 引入（dev server / prod asar 都走 CSP 'self' 源），
  * 与 SVG 星屿共用 StarIsleVisualState，无需扩展渲染状态契约。
  */
-import type { PetExpression, PetFacing, PetMotion } from '@pet/protocol';
 import { z } from 'zod';
+
+import type { PetExpression, PetFacing, PetMotion } from '@pet/protocol';
 
 /** spritesheet 整图尺寸（像素）—— 与 validation.json 一致 */
 export const SPRITESHEET_SIZE = { width: 1536, height: 1872 } as const;

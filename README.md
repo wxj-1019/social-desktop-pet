@@ -42,7 +42,7 @@
 
 ## <img src="assets/icons/comet.svg" width="24" alt=""> 启航（快速开始）
 
-前置：Node ≥ 20.11、pnpm ≥ 9；Postgres 16+ 可选（本地聊天可离线）。
+前置：Node ≥ 22、pnpm ≥ 9；Postgres 16+ 可选（本地聊天可离线）。
 
 ```bash
 # ① 安装依赖
@@ -72,6 +72,7 @@ ai-social-desktop-pet/
 ├── apps/
 │   ├── desktop/     Electron 桌面端（透明窗 + React + 原创 SVG 角色）
 │   ├── server/      自建后端（Hono HTTP + WebSocket + 自建 Auth + migrations）
+│   ├── admin/       运营管理后台（用户/设备/用量/邀请/敏感数据/审计/管理员）
 │   └── landing/     Landing 页（waitlist 报名 / 邀请码兑换）
 ├── packages/
 │   ├── protocol/    单一真相源：共享类型 + zod schema（三端复用）
@@ -79,8 +80,8 @@ ai-social-desktop-pet/
 │   ├── ai-graph/    状态图运行时 + chat-flow / memory-extract 图
 │   ├── pet-state/   桌宠状态机（纯逻辑，可单测）
 │   └── ui/          共享 React 组件
-├── e2e/             Playwright 端到端（11 个 spec）
-├── docs/            设计稿、状态快照、部署指南
+├── e2e/             Playwright 端到端（含管理后台 API 级 + 浏览器级 spec）
+├── docs/            设计稿、状态快照、部署指南（管理后台见 docs/admin-deploy.md）
 └── tooling/         tsconfig / eslint 共享配置
 ```
 

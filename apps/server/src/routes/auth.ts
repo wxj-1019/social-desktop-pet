@@ -5,8 +5,9 @@
  * POST /auth/otp/request → 邮件 6 位验证码（sha256 落库，60s 冷却）；
  * POST /auth/otp/login → 校验通过直接登录（同 password login 会话语义）。
  */
-import { SessionLoginPayloadSchema } from '@pet/protocol';
 import { Hono } from 'hono';
+
+import { SessionLoginPayloadSchema } from '@pet/protocol';
 
 import type { JwtService } from '../auth/jwt.js';
 import type { OtpService } from '../auth/otp.js';

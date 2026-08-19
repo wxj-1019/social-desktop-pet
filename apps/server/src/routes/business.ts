@@ -2,15 +2,16 @@
  * 业务路由 —— 挂载 invite/gift/visit/sync 真实实现（9.3–9.6/6.3）+ chat（10.1 SSE）。
  * 统一结构：鉴权 → 校验 → 事务 → Inbox → WS 通知（9.4 可靠写入流程）。
  */
+import { Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
+import type pg from 'pg';
+
 import type {
   LlmClient,
   MemoryExtractStore,
   MemoryRetrievalStore,
   OutputModerator,
 } from '@pet/ai-graph';
-import { Hono } from 'hono';
-import type { MiddlewareHandler } from 'hono';
-import type pg from 'pg';
 
 import type { JwtService } from '../auth/jwt.js';
 import type { RealtimeServer } from '../realtime/ws.js';
@@ -45,7 +46,8 @@ export interface BusinessVariables {
 
 /** 鉴权中间件：Bearer access token → 注入 userId/deviceId；
  *  传入 pool 时同时做 9.8 撤销双保险（active_display_device_id 应用层校验，
- *  旧设备被停用后拒绝全部云端功能；null/undefined 放行，有值不匹配 → 403）。 */
+ *  旧设备被停用后拒绝全部云端功能；null/undefined 放行，有值不匹配 → 403）
+ *  与账号暂停校验（管理后台 suspend 后已登录会话立即失效，不等 access token 过期）。 */
 export function requireAuth(
   jwt: JwtService,
   pool?: pg.Pool,
@@ -56,13 +58,19 @@ export function requireAuth(
     if (!token) return c.json({ error: 'unauthorized' }, 401);
     try {
       const payload = await jwt.verify(token);
-      // 9.8 撤销双保险（应用层校验；与 RLS 策略 auth.uid 兜底互补）
+      // 9.8 撤销双保险 + 暂停校验（应用层校验；与 RLS 策略 auth.uid 兜底互补）
       if (pool) {
         const { rows } = await pool.query(
-          'select active_display_device_id from profiles where user_id = $1',
+          `select p.active_display_device_id, u.account_status
+           from profiles p join auth.users u on u.id = p.user_id
+           where p.user_id = $1`,
           [payload.sub],
         );
-        const activeDevice = rows[0]?.active_display_device_id;
+        const row = rows[0];
+        if (row?.account_status === 'suspended') {
+          return c.json({ error: 'account_suspended' }, 403);
+        }
+        const activeDevice = row?.active_display_device_id;
         if (
           activeDevice !== undefined &&
           activeDevice !== null &&

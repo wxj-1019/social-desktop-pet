@@ -11,6 +11,9 @@
  * 全部事务内 set_config('request.jwt.claims')（应用层校验 owner + RLS 兜底），
  * 写操作同步记 memory_audit_log（11.2）。
  */
+import { type Hono } from 'hono';
+import type pg from 'pg';
+
 import type { MemoryExtractStore } from '@pet/ai-graph';
 import { LIMITS } from '@pet/config';
 import {
@@ -18,8 +21,6 @@ import {
   MemoryListItemSchema,
   SavedMemoryBriefSchema,
 } from '@pet/protocol';
-import { type Hono } from 'hono';
-import type pg from 'pg';
 
 import type { JwtService } from '../auth/jwt.js';
 import { rlsClaimsJson } from '../db/pool.js';

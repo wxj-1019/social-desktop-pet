@@ -5,9 +5,10 @@
  * 仅存在于用户本机 userData）；对外 view() 不回传密钥，只暴露 hasApiKey。
  * apiKey 传空表示"保留已保存的密钥"（仅更新 baseUrl/model/enabled）。
  */
-import type { LocalLlmConfig, LocalLlmConfigView } from '@pet/protocol';
 import { safeStorage } from 'electron';
 import { z } from 'zod';
+
+import type { LocalLlmConfig, LocalLlmConfigView } from '@pet/protocol';
 
 import { AtomicJsonStore } from './atomic-json-store.js';
 

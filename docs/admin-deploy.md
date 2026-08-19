@@ -36,8 +36,11 @@ pnpm --filter @pet/admin build
 ## 安全基线
 
 - 后端只监听内网/回环地址，或反向代理层限制来源网段（`allow` 指令）
-- HTTPS 下设置 `ADMIN_COOKIE_SECURE=true`（cookie Secure 标志）
+- 生产（`NODE_ENV=production`）**强制** `ADMIN_COOKIE_SECURE=true`：缺失时服务拒绝启动（fail-closed，防长周期 refresh cookie 走明文 HTTP）
+- 反向代理后如需按真实客户端 IP 限流/审计：设置 `PET_TRUST_PROXY=true`，并确保反代**覆盖**（而非透传）`X-Forwarded-For`；未设置时服务端一律使用 TCP 对端地址（默认更安全，不可被伪造头绕过）
+- 旧的静态 token 批量邀请端点 `POST /waitlist/invite`（`WAITLIST_ADMIN_TOKEN`）**生产环境一律 404**——它绕过管理员会话/审计/限流且批量返回明文兑换码，仅保留给本地/e2e 补发；生产运营邀请统一走后台 `/admin/waitlist/:id/invite`
 - 管理员密码 ≥12 位，存储为 argon2id 哈希（密钥只存环境变量）
+- 管理员被停用后：后台 API 立即 403，refresh 端点拒绝续期并撤销该管理员全部会话
 - 公网部署前需：HTTPS + 来源限制 + 二次验证（后续迭代）
 
 ## 审计

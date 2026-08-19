@@ -6,6 +6,8 @@
  * - findSimilar：embedding 列就绪前用 精确匹配 + 子串 + FTS(ts_rank) 加权排序（去重裁决用）
  * - recallMemories：10.7 hybrid 召回（权限过滤 → FTS 臂 + 向量臂），打分在 ai-graph 纯函数完成
  */
+import type pg from 'pg';
+
 import type {
   AuditEntry,
   ConfirmationDraft,
@@ -17,7 +19,6 @@ import type {
   RetrievedMemory,
   SimilarMemory,
 } from '@pet/ai-graph';
-import type pg from 'pg';
 
 import { rlsClaimsJson } from '../db/pool.js';
 

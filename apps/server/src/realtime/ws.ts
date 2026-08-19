@@ -30,6 +30,8 @@ export class RealtimeServer {
     private readonly events: RealtimeEvents = {},
     /** 心跳间隔；测试可注入更小值或直接调 heartbeatTick() */
     private readonly heartbeatIntervalMs = 30_000,
+    /** 账号暂停校验（管理后台 suspend 后已认证连接立即拒绝，不等 access token 过期） */
+    private readonly checkUserSuspended?: (userId: string) => Promise<boolean>,
   ) {}
 
   /** 附加到 HTTP 服务器（@hono/node-server 的 server 实例） */
@@ -96,6 +98,12 @@ export class RealtimeServer {
         return;
       }
       const payload = await this.jwt.verify(msg.token);
+      // 账号暂停：管理后台 suspend 后已登录连接立即断开（kickUser 断开现有连接，
+      // 此处挡住被踢后重连；与 requireAuth 的 account_status 校验同语义）
+      if (this.checkUserSuspended && (await this.checkUserSuspended(payload.sub))) {
+        ws.close(4403, 'suspended');
+        return;
+      }
       this.register(payload.sub, ws);
       // 鉴权通过后：心跳保活（客户端 ping → pong；V-10 压测依赖）
       ws.on('message', (heartbeat) => {

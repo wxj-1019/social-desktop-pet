@@ -16,9 +16,9 @@
  * StarIsleVisual 渲染抛错时由 PetVisualBoundary 降级为 PetFallback（同样可交互）。
  * window.pet 缺失（非 Electron）时所有指针处理静默跳过。
  */
-import type { PetInteraction } from '@pet/protocol';
 import {
   Component,
+  useEffect,
   useRef,
   useState,
   type ComponentType,
@@ -26,6 +26,8 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
+
+import type { PetInteraction, PetRuntimeSnapshot } from '@pet/protocol';
 
 import { ClassicMenu } from './classic-menu.js';
 import { PetBubble } from './pet-bubble.js';
@@ -74,7 +76,9 @@ export function PetExperience({
     start: PointerSample | null;
     hit: HitPart | null;
     dragging: boolean;
-  }>({ start: null, hit: null, dragging: false });
+    /** 按下点在说话气泡上（抬起时点击气泡 → 直达聊天面板，缩短聊天路径） */
+    bubbleHit: boolean;
+  }>({ start: null, hit: null, dragging: false, bubbleHit: false });
   const lastClickAtRef = useRef<number | null>(null);
   const schedulerRef = useRef<ReturnType<typeof createDragMoveScheduler> | null>(null);
   /** 连续点击计数：2秒内点击>=3次触发"生气" */
@@ -107,7 +111,7 @@ export function PetExperience({
         output: { dialogue: '', emotion: 'warm', actionIntent: 'idle', intensity: 1 },
       });
     }
-    gestureRef.current = { start: null, hit: null, dragging: false };
+    gestureRef.current = { start: null, hit: null, dragging: false, bubbleHit: false };
   };
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -120,7 +124,10 @@ export function PetExperience({
     const hit = (e.target as Element | null)
       ?.closest?.('[data-hit]')
       ?.getAttribute('data-hit') as HitPart | null;
-    gestureRef.current = { start: sample, hit, dragging: false };
+    const bubbleHit = Boolean((e.target as Element | null)?.closest?.('.pet-speech'));
+    gestureRef.current = { start: sample, hit, dragging: false, bubbleHit };
+    // 指针捕获：光标甩出窗口后 pointermove/up 仍会回到本元素，
+    // 避免松手丢失导致拖动卡死（jsdom 不支持时静默降级）
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -181,6 +188,9 @@ export function PetExperience({
       });
       if (kind === 'double_click') {
         window.pet?.panel?.open({ view: 'chat' });
+      } else if (kind === 'click' && gesture.bubbleHit) {
+        // 点击气泡 → 直达聊天面板（比"双击身体"更短的聊天入口）
+        window.pet?.panel?.open({ view: 'chat' });
       } else if (kind === 'click' && gesture.hit) {
         // 睡眠中单击先唤醒：走 playMotion('touch')，让 image renderer 的
         // comingFromSleep 分支播 500ms 伸懒腰过渡，再切到 touch（点击反馈）。
@@ -211,7 +221,7 @@ export function PetExperience({
         }
       }
       lastClickAtRef.current = sample.at;
-      gestureRef.current = { start: null, hit: null, dragging: false };
+      gestureRef.current = { start: null, hit: null, dragging: false, bubbleHit: false };
     }
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
@@ -230,6 +240,15 @@ export function PetExperience({
   };
 
   const [saoOpen, setSaoOpen] = useState(false);
+  /** 落岛开场：首次快照为 STARTING 时显示脚下底座，约 2.6s 后自动退出（帮用户定位桌宠） */
+  const [landingVisible, setLandingVisible] = useState(false);
+
+  // 穿透开启后整窗点击都会穿过窗口：留在屏幕上的环形菜单无法被点击关闭
+  //（SAO/设置页/托盘任一入口切换穿透都会经运行时快照收敛到这里）→ 立即收起菜单。
+  const passThrough = snapshot?.passThrough ?? false;
+  useEffect(() => {
+    if (passThrough) setSaoOpen(false);
+  }, [passThrough]);
 
   const switchMenuStyle = (style: 'sao' | 'classic') => {
     void window.pet?.petProfile?.get().then((profile) => {
@@ -244,10 +263,29 @@ export function PetExperience({
     setSaoOpen((prev) => !prev);
   };
 
+  // 落岛开场时长：底座展示窗口（入场 250ms + 停留 + 退场 600ms ≈ 2.6s）
+  const LANDING_BASE_MS = 2_600;
+  useEffect(() => {
+    if (!landingVisible) return;
+    const timer = setTimeout(() => setLandingVisible(false), LANDING_BASE_MS);
+    return () => clearTimeout(timer);
+  }, [landingVisible]);
+  // 首次快照为 STARTING（冷启动）→ 展示落岛底座；非冷启动（恢复/角色切换）不展示
+  const prevStateRef = useRef<PetRuntimeSnapshot['state'] | null>(null);
+  useEffect(() => {
+    const state = snapshot?.state ?? null;
+    if (state === 'STARTING' && prevStateRef.current === null && !landingVisible) {
+      setLandingVisible(true);
+    }
+    prevStateRef.current = state;
+  }, [snapshot, landingVisible]);
+
   return (
     <div
       className={isDragging ? 'pet-experience pet-dragging' : 'pet-experience'}
       data-testid="pet-experience"
+      data-state={snapshot?.state ?? null}
+      data-landing={landingVisible ? 'true' : null}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -258,6 +296,7 @@ export function PetExperience({
         <VisualComponent state={visualState} />
       </PetVisualBoundary>
       {profile?.bubbleEnabled ? <PetBubble text={bubbleText} /> : null}
+      {landingVisible ? <div className="pet-landing-base" aria-hidden="true" /> : null}
       {(profile?.menuStyle ?? 'sao') === 'classic' ? (
         <ClassicMenu
           isOpen={saoOpen}

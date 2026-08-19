@@ -1,0 +1,6 @@
+# dsh-routing-suite strategy override -> inspect-first
+# Apply via: dsh --profile web --patch ./profile.inspect-first.patch.yml
+# (or merge into the profile's cordis.patch.yml for persistence)
+- id: dsh-routing-suite
+  config:
+    strategy: inspect-first

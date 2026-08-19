@@ -53,6 +53,8 @@ export function buildCsp(apiBase: string): string {
 export const IPC_ALLOWLIST = [
   'app:version',
   'app:getApiBase',
+  'app:get-auto-launch', // 8.2 开机自启查询（设置页）
+  'app:set-auto-launch', // 8.2 开机自启开关（设置页）
   'session:init',
   'session:login',
   'session:register',
@@ -75,6 +77,7 @@ export const IPC_ALLOWLIST = [
   'pet:drag-move',
   'pet:drag-end',
   'pet:set-dnd', // 勿扰开关
+  'pet:set-online', // 在线状态上报（面板 WS 连接状态 → 运行时 OFFLINE/ONLINE）
   'pet:set-size', // 桌宠大小调节（设置页滑块）
   'pet:get-size', // 桌宠大小查询（设置页初始值）
   'pet:set-pass-through', // 整窗穿透

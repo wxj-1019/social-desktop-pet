@@ -33,7 +33,10 @@ export function LoginPage({ onAuthed }: { onAuthed(): void }) {
   return (
     <main className="login-page">
       <form className="login-card" onSubmit={submit}>
-        <h1>星屿运营后台</h1>
+        <div className="login-brand">
+          <h1>星屿运营后台</h1>
+          <p className="brand-sub">桌面宠物运营控制台 · 仅限授权管理员</p>
+        </div>
         <label>
           邮箱
           <input

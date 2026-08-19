@@ -18,6 +18,7 @@ import { createHash, randomInt } from 'node:crypto';
 import type { Hono } from 'hono';
 import type pg from 'pg';
 
+import { clientIpOf } from '../lib/auth-rate-limit.js';
 import type { MailProvider } from '../lib/mail.js';
 import { safeEqualHex } from '../lib/safe-equal.js';
 
@@ -80,8 +81,18 @@ export class WaitlistService {
    * 发放邀请：pending → invited（生成兑换码 + 邀请邮件 + 过期时间）。
    * 已非 pending 的邮箱跳过（不重复发码）。邮件失败仅日志，状态推进不受影响
    * （邮件供应商接入后由运营重跑补发）。
+   * 注入 hooks.auditOnInvite 时（admin 运营路径），状态推进与审计写入在同一事务：
+   * 审计失败 → 邀请回滚，动作必有审计轨迹。
    */
-  async invite(emails: string[]): Promise<InviteResult> {
+  async invite(
+    emails: string[],
+    hooks?: {
+      auditOnInvite?: (
+        exec: { query(text: string, params?: unknown[]): Promise<unknown> },
+        email: string,
+      ) => Promise<void>;
+    },
+  ): Promise<InviteResult> {
     const ttl = this.options.inviteTtlMs ?? DEFAULT_INVITE_TTL_MS;
     const invited: InviteResult['invited'] = [];
     const skipped: string[] = [];
@@ -92,22 +103,56 @@ export class WaitlistService {
         continue;
       }
       const code = generateInviteCode();
-      const { rowCount } = await this.pool.query(
-        `update waitlist set
-           status = 'invited',
-           invite_code_hash = $2,
-           invited_at = now(),
-           invite_expires_at = now() + make_interval(secs => $3)
-         where email = $1 and status = 'pending'
-         returning email`,
-        [email, hashInviteCode(code), Math.ceil(ttl / 1000)],
-      );
-      if (rowCount === 0) {
-        skipped.push(email);
-        continue;
+      if (hooks?.auditOnInvite) {
+        // 事务路径：状态推进 + 审计同生共死
+        const client = await this.pool.connect();
+        try {
+          await client.query('begin');
+          const { rowCount } = await client.query(
+            `update waitlist set
+               status = 'invited',
+               invite_code_hash = $2,
+               invited_at = now(),
+               invite_expires_at = now() + make_interval(secs => $3),
+               invite_mail_status = 'pending',
+               invite_mail_at = null
+             where email = $1 and status = 'pending'
+             returning email`,
+            [email, hashInviteCode(code), Math.ceil(ttl / 1000)],
+          );
+          if (rowCount === 0) {
+            await client.query('commit');
+            skipped.push(email);
+            continue;
+          }
+          await hooks.auditOnInvite(client, email);
+          await client.query('commit');
+        } catch (e) {
+          await client.query('rollback');
+          throw e;
+        } finally {
+          client.release();
+        }
+      } else {
+        const { rowCount } = await this.pool.query(
+          `update waitlist set
+             status = 'invited',
+             invite_code_hash = $2,
+             invited_at = now(),
+             invite_expires_at = now() + make_interval(secs => $3),
+             invite_mail_status = 'pending',
+             invite_mail_at = null
+           where email = $1 and status = 'pending'
+           returning email`,
+          [email, hashInviteCode(code), Math.ceil(ttl / 1000)],
+        );
+        if (rowCount === 0) {
+          skipped.push(email);
+          continue;
+        }
       }
       invited.push({ email, code });
-      // 邀请邮件：兑换码明文只进邮件；失败仅日志（状态已推进，可补发）
+      // 邀请邮件：兑换码明文只进邮件；发送结果回写 waitlist（0016）供运营追踪补发
       if (this.mail) {
         const claimUrl = this.options.claimUrlBase
           ? `${this.options.claimUrlBase}?code=${code}&email=${encodeURIComponent(email)}`
@@ -120,10 +165,29 @@ export class WaitlistService {
               `<p>兑换码：<strong>${code}</strong>（30 天内有效）</p>` +
               (claimUrl ? `<p>前往兑换：<a href="${claimUrl}">${claimUrl}</a></p>` : ''),
           )
-          .catch((e) => console.warn('[waitlist] 邀请邮件发送失败：', (e as Error).message));
+          .then(() => this.markInviteMail(email, 'sent'))
+          .catch((e) => {
+            console.warn('[waitlist] 邀请邮件发送失败：', (e as Error).message);
+            void this.markInviteMail(email, 'failed').catch(() => undefined);
+          });
+      } else {
+        // 无邮件供应商（本地开发）：显式标记 skipped，后台能看到"未配置"而非永远 pending
+        await this.markInviteMail(email, 'skipped');
       }
     }
     return { invited, skipped };
+  }
+
+  /** 0016：邀请邮件结果回写（仅作用于最新一次 invited 状态的行） */
+  private async markInviteMail(
+    email: string,
+    status: 'sent' | 'failed' | 'skipped',
+  ): Promise<void> {
+    await this.pool.query(
+      `update waitlist set invite_mail_status = $2, invite_mail_at = now()
+       where email = $1 and status = 'invited'`,
+      [email, status],
+    );
   }
 
   /** 公开兑换：invited → joined（校验码 + 邮箱匹配；惰性过期判定） */
@@ -154,11 +218,15 @@ export class WaitlistService {
     if (!safeEqualHex(String(row.invite_code_hash ?? ''), hashInviteCode(code))) {
       return { ok: false, reason: 'invalid_code' };
     }
-    await this.pool.query(
+    // 条件 UPDATE + rowCount 检查：并发兑换同一码时只有一个请求能推进状态，
+    // 输家（0 行）按已兑换处理——一次性邀请语义不可被竞态击穿
+    const { rowCount } = await this.pool.query(
       `update waitlist set status = 'joined', claimed_at = now()
-       where email = $1 and status = 'invited'`,
+       where email = $1 and status = 'invited'
+       returning email`,
       [email.toLowerCase()],
     );
+    if (rowCount === 0) return { ok: false, reason: 'already_joined' };
     return { ok: true };
   }
 
@@ -224,7 +292,7 @@ export function registerWaitlistRoutes(app: Hono, deps: WaitlistDeps): void {
   });
 
   app.post('/waitlist', async (c) => {
-    const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local';
+    const ip = clientIpOf(c);
     const { email } = (await c.req.json().catch(() => ({}))) as { email?: string };
     if (typeof email !== 'string' || email.length === 0 || email.length > EMAIL_MAX_LENGTH) {
       return c.json({ error: 'email 非法' }, 400);
@@ -267,7 +335,10 @@ export function registerWaitlistRoutes(app: Hono, deps: WaitlistDeps): void {
   });
 
   // 运营端点：发放邀请（pending → invited）。未配置 adminToken → 404 不暴露。
+  // 生产一律 404：该端点是本地/e2e 批量补发的兼容路径，绕过管理员会话/审计/限流
+  // （明文兑换码批量返回），不允许出现在生产——运营邀请统一走 /admin/waitlist/:id/invite。
   app.post('/waitlist/invite', async (c) => {
+    if (process.env['NODE_ENV'] === 'production') return c.json({ error: 'not_found' }, 404);
     if (!deps.adminToken) return c.json({ error: 'not_found' }, 404);
     if (c.req.header('authorization') !== `Bearer ${deps.adminToken}`) {
       return c.json({ error: 'unauthorized' }, 401);
@@ -293,7 +364,7 @@ export function registerWaitlistRoutes(app: Hono, deps: WaitlistDeps): void {
 
   // 公开兑换：invited → joined（码校验 + 邮箱匹配；每 IP 限流防爆破）
   app.post('/waitlist/claim', async (c) => {
-    const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local';
+    const ip = clientIpOf(c);
     const { email, code } = (await c.req.json().catch(() => ({}))) as {
       email?: string;
       code?: string;

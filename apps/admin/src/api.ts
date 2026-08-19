@@ -44,6 +44,13 @@ export class AdminUnauthorized extends Error {
   }
 }
 
+/** 全局会话失效回调：refresh 失败（会话过期/被停用）时通知 App 返回登录页 */
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+  unauthorizedHandler = fn;
+}
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -64,8 +71,10 @@ async function raw<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     const refreshed = await refreshOnce();
     if (refreshed) {
       setAccessToken(refreshed.accessToken);
+      // 401 = 服务端鉴权中间件已拒绝、动作未执行，重试一次安全（不会重复执行写操作）
       return raw<T>(path, { ...opts, skipRefresh: true });
     }
+    unauthorizedHandler?.();
     throw new AdminUnauthorized();
   }
   if (!res.ok) {
@@ -107,6 +116,9 @@ export interface UsageRow {
   usageDate: string;
   requests: number;
   tokens: number;
+  fails: number;
+  limitHits: number;
+  model?: string | null;
 }
 
 export interface WaitlistRow {
@@ -117,6 +129,8 @@ export interface WaitlistRow {
   invitedAt: string | null;
   inviteExpiresAt: string | null;
   claimedAt: string | null;
+  inviteMailStatus: string;
+  inviteMailAt: string | null;
 }
 
 export interface AuditRow {
@@ -149,9 +163,39 @@ export const adminApi = {
     return raw<{
       totalUsers: number;
       onlineDevices: number;
+      totalDevices: number;
       chatRequestsToday: number;
+      chatRequests7d: number;
+      signups7d: number;
+      suspendedUsers: number;
       pendingInvites: number;
     }>('/overview');
+  },
+  overviewTrend() {
+    return raw<{ items: Array<{ hour: string; messages: number }> }>('/overview/trend');
+  },
+  admins() {
+    return raw<{
+      items: Array<{
+        id: string;
+        email: string;
+        status: 'active' | 'disabled';
+        lastLoginAt: string | null;
+        createdAt: string;
+      }>;
+    }>('/admins');
+  },
+  disableAdmin(id: string) {
+    return raw<{ ok: true }>(`/admins/${id}/disable`, { method: 'POST', body: {} });
+  },
+  enableAdmin(id: string) {
+    return raw<{ ok: true }>(`/admins/${id}/enable`, { method: 'POST', body: {} });
+  },
+  changePassword(currentPassword: string, newPassword: string) {
+    return raw<{ ok: true }>('/auth/change-password', {
+      method: 'POST',
+      body: { currentPassword, newPassword },
+    });
   },
   users(params: Record<string, string>) {
     const qs = new URLSearchParams(params).toString();
@@ -175,9 +219,10 @@ export const adminApi = {
     return raw<{ ok: true }>(`/devices/${deviceId}/revoke`, { method: 'POST', body: {} });
   },
   usage(from: string, to: string) {
-    return raw<{ summary: { requests: number; tokens: number }; items: UsageRow[] }>(
-      `/usage?from=${from}&to=${to}`,
-    );
+    return raw<{
+      summary: { requests: number; tokens: number; fails: number; limitHits: number };
+      items: UsageRow[];
+    }>(`/usage?from=${from}&to=${to}`);
   },
   usageForUser(userId: string, from: string, to: string) {
     return raw<{ items: UsageRow[] }>(`/usage/users/${userId}?from=${from}&to=${to}`);

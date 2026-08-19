@@ -32,6 +32,8 @@ export function llmConfigFromEnv(env: NodeJS.ProcessEnv = process.env): LlmConfi
 /** OpenAI 兼容客户端 */
 export function createOpenAiCompatibleClient(config: LlmConfig): LlmClient {
   return {
+    /** 当前模型名（chat_usage 记账维度；测试桩可不带） */
+    model: config.model,
     async streamChat(messages: LlmMessage[], onToken: (token: string) => void): Promise<string> {
       const t0 = Date.now();
       // 模型调用超时兜底（供应商偶发挂起时不能让对话永远卡住；超时 → error 事件 → 客户端恢复）

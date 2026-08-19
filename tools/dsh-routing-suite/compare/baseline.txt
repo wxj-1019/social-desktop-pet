@@ -1,0 +1,76 @@
+﻿Read-only review complete — no files were modified. I read `memory-store.ts` (target), `pool.ts` (claims helper), migrations 0000/0001/0002/0011 (RLS + indexes), `memory-retrieval.ts` (caller/RRF), `memory-store.test.ts` (tests), `chat-flow-state.ts` (scenario→purpose), and `memory-extract.ts` (write-path types).
+
+# Review: `recallMemories` (apps/server/src/lib/memory-store.ts:73-144)
+
+## What's correct (so it's not repeated below)
+- All user input is parameterized (`$1`–`$6`); `filter`/`cols` are constants — no SQL injection.
+- Placeholder layout is actually correct in both arms (I double-checked the suspected `$4` collision: the shared `filter` only references `$1,$2,$3,$6`; `$4` is the query in the FTS arm and the embedding `::vector` in the vector arm; `$5` is the limit in both). The tests assert `vecParams[3]=embedding`, `vecParams[4]=20`, which matches.
+- `set_config(..., true)` is transaction-local → no cross-request claim leakage on pooled connections (a real risk avoided).
+- Partial indexes (`memory_status='active'`) match the query predicates; `<=>` matches the `vector_cosine_ops` HNSW index.
+- `RECALL_ARM_LIMIT=20` headroom for RRF top-k 6 is sensible.
+
+I did not run the test suite (read-only constraint); note the existing tests use a scripted fake client that never executes SQL, so none of the findings below would be caught by them.
+
+---
+
+## 1) Potential bugs
+
+**B1 — Important: embedding-provider failure kills the whole recall (no FTS-only degradation).** `memory-store.ts:47-51` / `:114`.
+`queryEmbedding()` has no try/catch, unlike `embedValue()` (:54-64) and `persistMemory()` (:186-194) in the same file. A transient provider error (network, 5xx, rate limit) propagates out of `recallMemories` → `catch` → rollback → rethrow → the chat-flow retrieval node fails and the user's chat errors out, even though the FTS results were already fetched and the documented behavior is "provider 不可用 → 降级 FTS-only". This becomes a live failure mode the moment `EMBEDDING_API_KEY` is configured (currently the P2 item per status doc). Fix: wrap `queryEmbedding` in try/catch and skip the vector arm on failure, mirroring `embedValue`.
+
+**B2 — Important: external HTTP (embedding) runs inside an open transaction, holding a pooled connection.** `memory-store.ts:77-81` (begin/set_config) → `:114` (embed HTTP) → `:133` (commit).
+With pool max = 20 (`pool.ts:18`) and embedding latency of 100–500ms, N concurrent chats hold connections idle during HTTP → pool exhaustion stalls all DB work. This is exactly the anti-pattern `persistMemory` documents and avoids (`:184-185`: "embedding 在**事务外**生成（外部 HTTP；事务内长占连接会拖垮连接池）"). `recallMemories` violates its own file's rule. Fix: call `queryEmbedding` before `pool.connect()` (also shrinks transaction lifetime).
+
+**B3 — Important (product-specific): the FTS arm is effectively non-functional for Chinese text.** `memory-store.ts:106-108` + index `0001_init.sql:289-291` (`to_tsvector('simple', value)`).
+The default parser has no CJK segmentation: a stored "今天想喝奶茶" becomes one lexeme, and the query "喝什么" becomes another — `@@` never matches. The app's content is Chinese, and the current live state is FTS-only (no EMBEDDING keys configured per status doc) → recall returns ~nothing for Chinese queries. Fix direction: zhparser/pg_jieba config for the FTS index, or treat the vector arm as the required path and document FTS-only as degraded.
+
+**B4 — Minor: `input.topK` is ignored; nondeterministic ties in both arms.** `:93-100`, `:107`, `:126`.
+The store interface advertises `topK` but `RECALL_ARM_LIMIT=20` is hardcoded — intentional per comment, but if a future routing level needs topK > 20 the cap silently bites. Both `order by ts_rank_cd(...) desc` and `order by embedding <=> ...` lack tie-breakers, so equal-score rows give an arbitrary subset under `limit 20` (recall results become non-reproducible). Fix: `max(topK * k, 20)` + tie-breaker `, created_at desc, memory_id`.
+
+**B5 — Minor: the friend_visit filter branch can never match stored data (dead code in practice).** `:85-90`, `:33`.
+`persistMemory` hardcodes `visibility='private'`, `purpose='private_chat'` (`:206`), and `PersistMemoryInput`/`ConfirmationDraft` (`memory-extract.ts:64-90`) have no visibility/purpose fields. Nothing in the codebase writes `public_profile`/`friend_visit` (grep confirms). So `recallMemories` with `purpose='friend_visit'` always returns empty — and more importantly, the permission-filter logic (`visibilityScope`/`sensitivityScope`) is untestable against real data. Contract mismatch between write path and read path worth flagging to the 10.7 workstream.
+
+**B6 — Minor: `to_tsvector`/`plainto_tsquery` recomputed per row in WHERE + ORDER BY.** `:106-108`. Cheap at current per-owner row counts; a generated tsvector column (or selecting it once in a derived table) removes the recompute.
+
+**B7 — Nit: embedding dimension is implicit.** Column is `vector(1536)` (`0001_init.sql:137`); if the configured EMBEDDING_MODEL dims differ, `$4::vector` throws at runtime and recall fails (see B1). Validate dimension once at startup.
+
+---
+
+## 2) RLS / permission risks
+
+**R1 — Important (design risk, not a current exploit): `recallMemories` impersonates the data owner in `request.jwt.claims`, neutralizing RLS as a backstop.** `memory-store.ts:80-82` + `pool.ts:28-30` + policy `0001_init.sql:302-303` (`owner_user_id = auth.uid()`).
+`rlsClaimsJson(input.ownerUserId)` sets `sub` = the memory owner, so `auth.uid()` == owner and the sole RLS policy passes for **every** row of that owner — including `visibility='private'`, `sensitivity='high'`. The only things protecting a friend_visit from private/high memories are the app-layer literals `visibility = any($3)` / `sensitivity = any($6)` / `purpose = $2`. Today `ownerUserId` is always `state.userId` (self-query, `memory-retrieval.ts:169`), so there is no live cross-user read — but the store fully trusts `input.ownerUserId`, and any future cross-user call site (e.g., host's memories in a friend_visit), a typo in `visibilityScope`/`sensitivityScope`, or a purpose-enum extension would be invisible to the DB layer. Note `bond_memories` got a real member-check policy (`0011_bond_memories_rls.sql`), while `private_memories`' policy cannot express "friend may read only `public_profile`".
+Suggested direction (not now): build claims from the *acting* user + scope and use `owner_user_id = auth.uid() OR (visibility='public_profile' AND purpose='friend_visit')`; at minimum, assert `ownerUserId === session user` at the route boundary before calling the store.
+
+**R2 — Minor: `sensitivityScope` is the only gate on `high` (health/financial) data for friend context and has no RLS equivalent.** `:69-71`. Single point of failure; see R1.
+
+**R3 — Minor: no DB-level test exercises the visibility/sensitivity/time-window filters.** The RLS policy tests recommended by Postgres best practice are absent; the current tests never execute SQL. The app-layer filter is untested at the DB layer, which is exactly where R1 says the residual risk lives.
+
+**R4 — Nit: time-validity (`expires_at`/`valid_from`/`valid_to`) is also app-layer only.** Consistent with AGENTS.md convention #4 (app layer primary, RLS defense-in-depth) — but note the defense layer is currently a no-op for this table.
+
+---
+
+## 3) Optimization suggestions
+
+1. **O1 — Move `queryEmbedding` before `pool.connect()`** (fixes B2; embedding HTTP off the connection). Highest-value change.
+2. **O2 — Overlap the two arms:** the FTS query doesn't depend on the embedding. Option (a): embedding first (off-connection), then both queries on one client; option (b): two pool clients + `Promise.all` (each sets its own transaction-local claims) for true parallelism at 2 connections per recall. Given recall runs on every chat message, latency win is real; measure before (b).
+3. **O3 — Cheap determinism:** add tie-breakers to both `order by` clauses (see B4) — also makes tests assertable.
+4. **O4 — HNSW is approximate under the WHERE filter** (visibility/sensitivity/time quals are applied to ANN candidates, not indexed) — the `RECALL_ARM_LIMIT=20` headroom is the right mitigation; if recall quality degrades when per-owner volume grows, raise `ef_search` or add a btree on `(owner_user_id, memory_status)` to pre-filter. Not needed at current volumes — monitoring note only.
+5. **O5 — FTS-only path round trips:** begin + set_config + select + commit = 4 round trips for one query. Can't drop the transaction while `set_config(..., true)` is used (SET LOCAL requires a tx), so this is low priority; if it ever matters, it's a claims-mechanism change, not a query change.
+6. **O6 — Robustness: timeout/retry around `embed()`** (matches B1/B7); validate embedding dimension at startup.
+
+---
+
+## Summary
+
+| # | Severity | Type | Location |
+|---|----------|------|----------|
+| B1 | Important | unhandled provider error → recall fails, no FTS-only fallback | :47-51, :114 |
+| B2 | Important | external HTTP inside open tx holds pooled connection | :77-81→:114→:133 |
+| B3 | Important | 'simple' FTS config ineffective for Chinese (app language) | :106-108 |
+| R1 | Important | claims impersonate data owner → RLS backstop is a no-op | :80-82 |
+| B4/B5/B6 | Minor | ignored topK + nondeterministic ties; friend_visit filter dead vs write path; tsvector recompute | :93-108 |
+| R2/R3/R4 | Minor | sensitivity gating app-layer only; no RLS/filter tests | :69-71 |
+| B7, O1-O6 | Nit/Opt | dim validation, off-connection embedding, parallel arms, determinism | — |
+
+The two highest-leverage fixes are both small: **catch the embedding failure and degrade to FTS-only (B1)**, and **generate the query embedding before acquiring the DB connection (B2)**. R1 is a design debt to track with the friend_visit/10.7 workstream rather than a current hole.

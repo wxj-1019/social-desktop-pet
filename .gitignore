@@ -19,6 +19,9 @@ coverage/
 test-results/
 playwright-report/
 
+# 管理后台 UI 预览截图（tools/admin-preview.mjs 生成）
+.preview/
+
 # ZCode / brainstorming / isolated worktree directories
 .zcode/
 .superpowers/

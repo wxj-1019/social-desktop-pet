@@ -6,9 +6,10 @@
  * 深链 NEED_SIGN_IN 横幅（既有 onDeepLink 消费）保持可用。
  */
 // @vitest-environment jsdom
-import type { PanelOpen } from '@pet/protocol';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { PanelOpen } from '@pet/protocol';
 
 import { api } from '../lib/api/client.js';
 

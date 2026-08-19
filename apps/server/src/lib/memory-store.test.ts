@@ -4,8 +4,9 @@
  * 覆盖：persistMemory 落库 embedding（有/无 provider）；recallMemories 查询向量
  * 生成与向量臂 SQL（有/无 provider 降级 FTS-only）。
  */
-import type { EmbeddingProvider } from '@pet/ai-graph';
 import { describe, expect, it, vi } from 'vitest';
+
+import type { EmbeddingProvider } from '@pet/ai-graph';
 
 import { PgMemoryExtractStore } from './memory-store.js';
 

@@ -15,9 +15,10 @@
  * - 历史加载完成前禁用发送（加载失败也放开）
  * - 网络/模型异常 try/catch 兜底，streaming 永不卡死
  */
-import type { MemoryConfirmation, ModelOutput, SavedMemoryBrief } from '@pet/protocol';
 import { Send, Sparkles, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+
+import type { MemoryConfirmation, ModelOutput, SavedMemoryBrief } from '@pet/protocol';
 
 import { api } from '../lib/api/client.js';
 import { localReply } from '../lib/local-mode.js';

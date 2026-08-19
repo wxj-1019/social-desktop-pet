@@ -10,9 +10,10 @@
  * 合并进本地 StarIsleVisualState 供组件消费。卸载清理全部订阅并 dispose。
  * window.pet 缺失（非 Electron）时静默降级，不抛错。
  */
+import { useCallback, useEffect, useRef, useState } from 'react';
+
 import { stateToExpression, stateToMotion } from '@pet/pet-state';
 import type { PetProfile, PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
-import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   DEFAULT_VISUAL_STATE,
@@ -140,12 +141,16 @@ export function usePetRuntime(options: UsePetRuntimeOptions = {}): PetRuntimeCon
         if (disposed) return;
         setProfile(next);
         rendererRef.current?.setReducedMotion(next.reducedMotion);
-        // 首次运行引导：未标记过 onboarding 时给 3 条提示气泡（经 chatEvent 走真实链路）
+        // 首次运行引导：未标记过 onboarding 时给提示气泡（经 chatEvent 走真实链路）。
+        // 前 3 条教操作（摸头/拖动/双击），后 2 条是价值钩子：让用户首日就体验
+        // "它会记住我"（记忆）与"去好友家旅行"（差异化卖点），对抗新鲜感衰减。
         if (!localStorage.getItem('pet:onboarded')) {
           const hints = [
             `你好呀，我是${petName}！可以摸摸我的头～`,
             '拖我可以移动，右键有菜单哦',
             '双击我可以打开聊天面板',
+            '和我聊聊吧，你告诉我的小事我都会记住',
+            '登录后我还能去你好友的电脑串门，带着我们的记忆',
           ];
           let delay = 800;
           for (const hint of hints) {

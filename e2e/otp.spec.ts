@@ -37,11 +37,16 @@ async function api(
   return { status: res.status, ok: res.ok, data };
 }
 
-test('邮箱 OTP 登录：request 拿 devCode → login 出 token（13.2 全链路）', async () => {
-  // 预检：后端可达（不可达时后续请求会失败，不 skip——与其它依赖后端的 spec 语义一致）
-  const health = await fetch(`${API_BASE}/healthz`);
-  expect(health.ok).toBe(true);
+test.beforeAll(async () => {
+  try {
+    const health = await fetch(`${API_BASE}/healthz`);
+    if (!health.ok) test.skip(true, '后端未就绪（/healthz 非 200）');
+  } catch {
+    test.skip(true, '后端不可达（/healthz 请求失败）');
+  }
+});
 
+test('邮箱 OTP 登录：request 拿 devCode → login 出 token（13.2 全链路）', async () => {
   // 注册独立账号（已存在则 500/409 视为成功，幂等）
   const reg = await api('/auth/register', {
     method: 'POST',

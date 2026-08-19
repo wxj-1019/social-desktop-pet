@@ -12,8 +12,9 @@
  * main.tsx 根据 URL ?character= 从此表取 VisualComponent；
  * usePetRuntime 根据 rendererFactory 选择适配层。
  */
-import type { PetId } from '@pet/protocol';
 import type { ComponentType } from 'react';
+
+import type { PetId } from '@pet/protocol';
 
 import { createImagePetRenderer } from './image-pet-renderer.js';
 import { ImageVisual } from './image-visual.js';

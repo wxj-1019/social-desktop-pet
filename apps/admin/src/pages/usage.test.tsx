@@ -12,13 +12,14 @@ afterEach(() => {
 describe('UsagePage', () => {
   it('renders summary and rows from the API', async () => {
     vi.spyOn(await import('../api.js').then((m) => m.adminApi), 'usage').mockResolvedValue({
-      summary: { requests: 30, tokens: 4000 },
-      items: [{ usageDate: '2026-08-18', requests: 20, tokens: 2500 }],
+      summary: { requests: 30, tokens: 4000, fails: 3, limitHits: 1 },
+      items: [{ usageDate: '2026-08-18', requests: 20, tokens: 2500, fails: 1, limitHits: 0 }],
     });
     await act(async () => {
       render(<UsagePage />);
     });
-    expect(screen.getByText(/30 次请求/)).toBeTruthy();
+    expect(screen.getByText('30')).toBeTruthy(); // 区间请求总数
+    expect(screen.getByText('4000')).toBeTruthy(); // 区间 token 估算
     expect(screen.getByText('2026-08-18')).toBeTruthy();
   });
 });

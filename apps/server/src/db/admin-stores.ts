@@ -41,6 +41,10 @@ export class PgAdminSessionStore implements AdminSessionStore {
     try {
       await client.query('begin');
       await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [tokenHash]);
+      // 会话活跃标记（会话盘点/闲置管理的数据基础；rotate 是唯一稳定活跃信号）
+      await client.query('update admin_sessions set last_seen_at = now() where token_hash = $1', [
+        tokenHash,
+      ]);
       const consumed = await client.query(
         `update admin_sessions
          set revoked_at = to_timestamp($2 / 1000.0)
@@ -124,6 +128,46 @@ export class PgAdminUserStore {
     return {
       id: String(row.id),
       email: row.email as string,
+      status: row.status as 'active' | 'disabled',
+    };
+  }
+
+  /** 管理员列表（/admin/admins 页面） */
+  async list(): Promise<
+    Array<{
+      id: string;
+      email: string;
+      status: 'active' | 'disabled';
+      lastLoginAt: string | null;
+      createdAt: string;
+    }>
+  > {
+    const { rows } = await this.pool.query(
+      `select id, email, status, last_login_at, created_at
+       from admin_users order by created_at asc`,
+    );
+    return rows.map((r) => ({
+      id: String(r.id),
+      email: r.email as string,
+      status: r.status as 'active' | 'disabled',
+      lastLoginAt: r.last_login_at as string | null,
+      createdAt: r.created_at as string,
+    }));
+  }
+
+  /** 改密校验用：按 id 取密码哈希 */
+  async getWithHash(
+    id: string,
+  ): Promise<{ id: string; passwordHash: string; status: 'active' | 'disabled' } | null> {
+    const { rows } = await this.pool.query(
+      'select id, password_hash, status from admin_users where id = $1',
+      [id],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      passwordHash: row.password_hash as string,
       status: row.status as 'active' | 'disabled',
     };
   }

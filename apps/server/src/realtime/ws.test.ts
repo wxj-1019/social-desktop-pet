@@ -114,6 +114,59 @@ describe('RealtimeServer 稳定性', () => {
   });
 });
 
+describe('RealtimeServer 账号暂停校验', () => {
+  it('已认证连接在账号被暂停后重连被拒绝（4403 suspended）', async () => {
+    const realtime = new RealtimeServer(jwt, {}, 30_000, async () => true);
+    const server: Server = createServer();
+    realtime.attach(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as AddressInfo).port;
+    openServers.push({
+      close: async () => {
+        realtime.close();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      },
+    });
+
+    const token = await jwt.sign({ sub: 'user-1', deviceId: 'dev-1' });
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/realtime`);
+    const closed = await new Promise<string>((resolve) => {
+      ws.once('open', () => ws.send(JSON.stringify({ type: 'auth', token })));
+      ws.once('close', (code, reason) => resolve(`${code}:${reason}`));
+    });
+    expect(closed).toBe('4403:suspended');
+    expect(realtime.onlineUsers).toBe(0);
+    ws.terminate();
+  });
+
+  it('未暂停用户照常通过鉴权（checkUserSuspended=false）', async () => {
+    const realtime = new RealtimeServer(jwt, {}, 30_000, async () => false);
+    const server: Server = createServer();
+    realtime.attach(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as AddressInfo).port;
+    openServers.push({
+      close: async () => {
+        realtime.close();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      },
+    });
+
+    const token = await jwt.sign({ sub: 'user-1', deviceId: 'dev-1' });
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/realtime`);
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', () => ws.send(JSON.stringify({ type: 'auth', token })));
+      ws.once('message', (data) => {
+        if (String(data).includes('auth_ok')) resolve();
+        else reject(new Error(`auth 失败：${String(data)}`));
+      });
+      ws.once('error', reject);
+    });
+    expect(realtime.onlineUsers).toBe(1);
+    ws.terminate();
+  });
+});
+
 describe('RealtimeServer.kickUser', () => {
   it('关闭该用户全部连接；无连接用户为 no-op 不抛错', () => {
     const server = new RealtimeServer(jwt, {}, 30_000);

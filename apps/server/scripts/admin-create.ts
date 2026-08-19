@@ -39,7 +39,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     const id = await store.create(email, await hashPasswordArgon2(password));
-    console.log(`管理员创建成功：${email}（id=${id}）`);
+    console.info(`管理员创建成功：${email}（id=${id}）`);
   } finally {
     await pool.end();
   }

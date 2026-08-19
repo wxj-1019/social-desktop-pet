@@ -75,4 +75,30 @@ describe('SaoMenu · 刀剑神域风格环形轮盘托盘', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('二级面板右缘不越出 240px 设计窗口（controls 最易溢出节点被钳制）', () => {
+    render(<SaoMenu isOpen={true} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('menuitem', { name: /控制/ }));
+
+    const panel = document.querySelector('.sao-radial-sub--right') as HTMLElement | null;
+    expect(panel).not.toBeNull();
+    const left = Number.parseFloat(panel!.style.left);
+    const width = Number.parseFloat(panel!.style.width);
+    // 无钳制时 controls 面板右缘 ≈253 > 240；现在被钳到右缘 8px 边距内
+    expect(left + width).toBeLessThanOrEqual(240);
+    expect(left + width).toBe(232);
+  });
+
+  it('空间充足的节点（好友）保持未钳制的理想弹出位置', () => {
+    render(<SaoMenu isOpen={true} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('menuitem', { name: /好友/ }));
+
+    const panel = document.querySelector('.sao-radial-sub--right') as HTMLElement | null;
+    expect(panel).not.toBeNull();
+    const left = Number.parseFloat(panel!.style.left);
+    const width = Number.parseFloat(panel!.style.width);
+    expect(left + width).toBeLessThanOrEqual(240);
+    // 好友节点 x≈27 → 理想 left≈51，无需钳制
+    expect(left).toBeCloseTo(51.1, 0);
+  });
 });

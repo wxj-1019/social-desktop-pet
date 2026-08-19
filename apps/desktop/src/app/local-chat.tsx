@@ -6,9 +6,10 @@
  * Task 11：本地回复经 window.pet.petRuntime.chatEvent 推送
  * （start → done，source: local_chat）；动作由 Main petRuntime 驱动。
  */
-import type { LocalLlmConfigView } from '@pet/protocol';
 import { Send, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+
+import type { LocalLlmConfigView } from '@pet/protocol';
 
 import {
   appendLocalMessage,

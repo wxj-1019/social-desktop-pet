@@ -29,11 +29,11 @@ describe('admin usage routes', () => {
       // find 按数组顺序匹配，必须把更具体的 group by 片段放前面，否则日查询会误命中汇总片段。
       {
         fragment: 'group by usage_date',
-        rows: [{ usage_date: '2026-08-18', requests: 20, tokens: 2500 }],
+        rows: [{ usage_date: '2026-08-18', requests: 20, tokens: 2500, fails: 1, limit_hits: 2 }],
       },
       {
         fragment: 'sum(request_count)',
-        rows: [{ requests: 30, tokens: 4000 }],
+        rows: [{ requests: 30, tokens: 4000, fails: 3, limit_hits: 4 }],
       },
     ]);
     const token = await JWT.signAdmin('a1');
@@ -42,27 +42,47 @@ describe('admin usage routes', () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      summary: { requests: number; tokens: number };
-      items: Array<{ usageDate: string; requests: number }>;
+      summary: { requests: number; tokens: number; fails: number; limitHits: number };
+      items: Array<{ usageDate: string; requests: number; fails: number; limitHits: number }>;
     };
     expect(body.summary.requests).toBe(30);
+    expect(body.summary.fails).toBe(3);
+    expect(body.summary.limitHits).toBe(4);
     expect(body.items[0]!.usageDate).toBe('2026-08-18');
+    expect(body.items[0]!.fails).toBe(1);
+    expect(body.items[0]!.limitHits).toBe(2);
   });
 
-  it('returns per-user usage', async () => {
+  it('returns per-user usage with fail/limit/model dims', async () => {
     const { app } = buildRouter([
       {
         fragment: 'where user_id = $1',
-        rows: [{ usage_date: '2026-08-18', requests: 5, tokens: 600 }],
+        rows: [
+          {
+            usage_date: '2026-08-18',
+            requests: 5,
+            tokens: 600,
+            fails: 0,
+            limit_hits: 1,
+            model: 'glm-4-flash',
+          },
+        ],
       },
     ]);
     const token = await JWT.signAdmin('a1');
-    const res = await app.request('/usage/users/u1?from=2026-08-01', {
-      headers: { authorization: `Bearer ${token}` },
-    });
+    const res = await app.request(
+      '/usage/users/11111111-1111-4111-8111-111111111111?from=2026-08-01',
+      {
+        headers: { authorization: `Bearer ${token}` },
+      },
+    );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { items: Array<{ requests: number }> };
+    const body = (await res.json()) as {
+      items: Array<{ requests: number; fails: number; limitHits: number; model: string | null }>;
+    };
     expect(body.items[0]!.requests).toBe(5);
+    expect(body.items[0]!.limitHits).toBe(1);
+    expect(body.items[0]!.model).toBe('glm-4-flash');
   });
 
   it('rejects a date range longer than 31 days', async () => {

@@ -7,6 +7,7 @@ import type pg from 'pg';
 
 import type { JwtService } from '../auth/jwt.js';
 import type { PgAdminUserStore } from '../db/admin-stores.js';
+import { isValidUuid } from '../lib/validate.js';
 
 import type { AdminVariables } from './admin.js';
 import { requireAdminAuth } from './admin.js';
@@ -59,7 +60,11 @@ export function createAdminUsageRouter(deps: AdminUsageDeps): Hono<{ Variables: 
     if (!range) return c.json({ error: 'invalid_input' }, 422);
 
     const { rows } = await deps.pool.query(
-      `select usage_date, sum(request_count)::int as requests, sum(token_estimate)::int as tokens
+      `select usage_date,
+              sum(request_count)::int as requests,
+              sum(token_estimate)::int as tokens,
+              sum(fail_count)::int as fails,
+              sum(limit_hits)::int as limit_hits
        from chat_usage
        where usage_date between $1::date and $2::date
        group by usage_date
@@ -68,31 +73,45 @@ export function createAdminUsageRouter(deps: AdminUsageDeps): Hono<{ Variables: 
     );
     const summary = await deps.pool.query(
       `select coalesce(sum(request_count), 0)::int as requests,
-              coalesce(sum(token_estimate), 0)::int as tokens
+              coalesce(sum(token_estimate), 0)::int as tokens,
+              coalesce(sum(fail_count), 0)::int as fails,
+              coalesce(sum(limit_hits), 0)::int as limit_hits
        from chat_usage where usage_date between $1::date and $2::date`,
       [range.from, range.to],
     );
+    const s = (summary.rows[0] ?? {}) as {
+      requests?: number;
+      tokens?: number;
+      fails?: number;
+      limit_hits?: number;
+    };
     return c.json({
       summary: {
-        requests: Number(summary.rows[0]?.requests ?? 0),
-        tokens: Number(summary.rows[0]?.tokens ?? 0),
+        requests: Number(s.requests ?? 0),
+        tokens: Number(s.tokens ?? 0),
+        fails: Number(s.fails ?? 0),
+        limitHits: Number(s.limit_hits ?? 0),
       },
       items: rows.map((r) => ({
         usageDate: r.usage_date as string,
         requests: Number(r.requests),
         tokens: Number(r.tokens),
+        fails: Number(r.fails),
+        limitHits: Number(r.limit_hits),
       })),
     });
   });
 
   app.get('/usage/users/:userId', auth, async (c) => {
     const userId = c.req.param('userId');
+    if (!isValidUuid(userId)) return c.json({ error: 'invalid_input' }, 422);
     const q = c.req.query();
     const range = parseRange(q.from, q.to);
     if (!range) return c.json({ error: 'invalid_input' }, 422);
 
     const { rows } = await deps.pool.query(
-      `select usage_date, request_count as requests, token_estimate as tokens
+      `select usage_date, request_count as requests, token_estimate as tokens,
+              fail_count as fails, limit_hits as limit_hits, model
        from chat_usage
        where user_id = $1 and usage_date between $2::date and $3::date
        order by usage_date desc`,
@@ -103,6 +122,9 @@ export function createAdminUsageRouter(deps: AdminUsageDeps): Hono<{ Variables: 
         usageDate: r.usage_date as string,
         requests: Number(r.requests),
         tokens: Number(r.tokens),
+        fails: Number(r.fails),
+        limitHits: Number(r.limit_hits),
+        model: (r.model as string) || null,
       })),
     });
   });

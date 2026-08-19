@@ -3,9 +3,10 @@
  * 敏感候选（health/finance/relationship/identity）经此卡由用户裁决：
  * 记住 / 仅本次聊天 / 修改（内联编辑后保存）。
  */
-import type { MemoryConfirmation } from '@pet/protocol';
 import { Pencil } from 'lucide-react';
 import { useState } from 'react';
+
+import type { MemoryConfirmation } from '@pet/protocol';
 
 const CATEGORY_LABELS: Record<MemoryConfirmation['category'], string> = {
   preference: '偏好',

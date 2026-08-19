@@ -4,6 +4,8 @@
  * Task 7：新增 petRuntime / panel / petProfile 命名空间，类型全部来自 @pet/protocol；
  * 所有 subscribe 返回 void cleanup；session / deepLink 等既有 API 保持不变。
  */
+import { contextBridge, ipcRenderer } from 'electron';
+
 import type {
   LocalLlmChatRequest,
   LocalLlmConfig,
@@ -20,7 +22,6 @@ import type {
   PetSocialEvent,
   PetVisualCommand,
 } from '@pet/protocol';
-import { contextBridge, ipcRenderer } from 'electron';
 
 import type { SessionIpcResult } from '../main/session-service.js';
 
@@ -46,6 +47,11 @@ const api = {
   /** 6.3 拉取主进程尚未被推送消费的深链 payload（拉取即清除）——面板挂载时序兜底（C1） */
   consumeDeepLinkPayload: () =>
     ipcRenderer.invoke('deeplink:consume-pending') as Promise<string | null>,
+  /** 8.2 开机自启（Windows 登录项；仅打包版生效，dev 恒 false） */
+  autoLaunch: {
+    get: () => ipcRenderer.invoke('app:get-auto-launch') as Promise<boolean>,
+    set: (enabled: boolean) => ipcRenderer.send('app:set-auto-launch', { enabled }),
+  },
   /** 自建后端地址（D-13）：API client 基址 */
   getApiBase: () => ipcRenderer.invoke('app:getApiBase') as Promise<string>,
   /** 桌宠大小：调节（滑块/档位）与查询 */
@@ -90,6 +96,8 @@ const api = {
     dragMove: (point: PetDragPoint) => ipcRenderer.send('pet:drag-move', point),
     dragEnd: () => ipcRenderer.send('pet:drag-end'),
     setDnd: (enabled: boolean) => ipcRenderer.send('pet:set-dnd', { enabled }),
+    /** 在线状态上报（面板 WS 连接状态；断线时桌宠给出人格化提示） */
+    setOnline: (online: boolean) => ipcRenderer.send('pet:set-online', { enabled: online }),
     setPassThrough: (enabled: boolean) => ipcRenderer.send('pet:set-pass-through', { enabled }),
     /** 隐藏/显示桌宠（与托盘同源入口；隐藏后经托盘"显示"或 SAO 恢复） */
     setHidden: (hidden: boolean) => ipcRenderer.send('pet:set-hidden', { enabled: hidden }),

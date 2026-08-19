@@ -11,9 +11,12 @@
  */
 import { join } from 'node:path';
 
-import type { PanelOpen, PetRuntimeSnapshot } from '@pet/protocol';
 import { app, BrowserWindow, screen, session as electronSession } from 'electron';
+import { z } from 'zod';
 
+import type { PanelOpen, PetRuntimeSnapshot } from '@pet/protocol';
+
+import { AtomicJsonStore } from './atomic-json-store.js';
 import { DeepLinkController } from './deep-link-controller.js';
 import {
   DEFAULT_PET_SCALE,
@@ -164,6 +167,29 @@ void app.whenReady().then(async () => {
   const pendingStore = new PendingInviteStore(join(app.getPath('userData'), 'pending-invite.json'));
   // 本地 BYOK 模型配置（userData/local-llm.json；密钥 safeStorage 加密落盘）
   const localLlmStore = new LocalLlmStore(join(app.getPath('userData'), 'local-llm.json'));
+  // P2 升级气泡：记录上次运行版本（userData/last-version.json；非敏感数据走原子 JSON）
+  const versionStore = new AtomicJsonStore<{ version: string }>(
+    join(app.getPath('userData'), 'last-version.json'),
+    z.object({ version: z.string() }),
+    { version: '' },
+  );
+  // 升级检测一次性气泡：版本变化时星屿在启动后说"我升级到 vX 啦～"，
+  // 把强制更新链路变成留存触点；首装（无历史版本）不播音、只落库。
+  let upgradeAnnounced = false;
+  const announceUpgradeOnce = (): void => {
+    if (upgradeAnnounced || !runtime) return;
+    upgradeAnnounced = true;
+    try {
+      const current = app.getVersion();
+      const last = versionStore.load().version;
+      if (last && last !== current) {
+        runtime.showBubble(`我升级到 v${current} 啦～`);
+      }
+      if (last !== current) versionStore.save({ version: current });
+    } catch {
+      // 版本记录写失败不影响启动
+    }
+  };
   // Task 6：安全拖动控制器；拖动结束即持久化当前位置（可靠触发点——
   // 部分环境 setPosition 不触发 'moved' 事件，不能依赖窗口事件做唯一保存）
   const clearScheduledPositionSave = (): void => {
@@ -411,6 +437,8 @@ void app.whenReady().then(async () => {
       if (!runtimeStarted && runtime) {
         runtimeStarted = true;
         runtime.start();
+        // P2 升级气泡：首次渲染就绪后检测版本变化并一次性播音
+        announceUpgradeOnce();
       } else if (runtimeStarted && runtime) {
         syncWanderToSnapshot(runtime.snapshot);
       }
@@ -452,6 +480,11 @@ void app.whenReady().then(async () => {
     getPetScale,
     hidePet,
     showPet,
+    // 8.2 开机自启（设置页开关 → StartupController；仅打包版实际生效）
+    autoLaunch: {
+      get: () => startup.isAutoLaunchEnabled(),
+      set: (enabled) => startup.setAutoLaunch(enabled),
+    },
     localLlm: {
       view: () => localLlmStore.view(),
       save: (config) => localLlmStore.save(config),
