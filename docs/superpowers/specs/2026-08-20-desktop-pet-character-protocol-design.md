@@ -1,6 +1,6 @@
 # 桌宠形象统一规范协议设计
 
-- **状态**：设计稿，待审阅
+- **状态**：已批准；阶段 A+B 已落地（manifest schema + 三角色数据），阶段 C/D 见 docs/superpowers/plans/
 - **日期**：2026-08-20
 - **适用范围**：桌宠形象注册、视觉资源、渲染器、交互区域、动画动作、角色扩展能力、角色选择与发布准入
 - **关联代码**：`apps/desktop/src/pet/*`、`packages/pet-state/src/*`、`packages/protocol/src/desktop/*`、`apps/desktop/electron/main/*`
