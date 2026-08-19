@@ -9,7 +9,7 @@
  *   CodeNoNo/奶盖 dev-only（许可/来源未归档，禁止 release）
  * - 运行时消费方（PetExperience 命中区、面板缩略图等）迁移属于阶段 C，本模块只提供事实源
  */
-import { CharacterManifestSchema, type CharacterManifest } from '@pet/protocol';
+import { CharacterManifestSchema, type CharacterManifest, type PetId } from '@pet/protocol';
 
 /** 画布/缩放/避让区三个角色共用（菜单与角色无关，§5.3） */
 const CANVAS = {
@@ -65,9 +65,10 @@ const starIsleManifest = CharacterManifestSchema.parse({
   renderer: 'svg',
   release: 'bundled',
   canvas: CANVAS,
-  // viewBox 320×380 → 240×260（meet：scale=260/380≈0.684，x 偏移≈10.5）；
-  // 含光晕(r132)/头顶皇冠/±8px 弹跳幅度的保守外包络
-  visualBounds: { x: 14, y: 32, width: 208, height: 204 },
+  // viewBox 320×380 → 240×260（xMidYMax meet：scale=260/380≈0.684，x 偏移≈10.5）；
+  // 外耳尖达 viewBox y≈32（→画布≈22），叠加 3 档弹跳 −13 viewBox 单位（≈8.9px）
+  // → 顶缘取 12；底缘主体椭圆 cy=284（→画布≈236）
+  visualBounds: { x: 14, y: 12, width: 208, height: 224 },
   // 命中区来自 star-isle-visual.tsx 透明 hit rect 映射后取整：
   // body(86,194,108,97)→(69,132,74,67)；head(72,96,136,124)→(60,66,93,85)；
   // tail(22,100,64,160)→(26,68,44,110)。head/tail 为 legacy 兼容 ID（§6.1）
@@ -139,7 +140,7 @@ const codenonoManifest = CharacterManifestSchema.parse({
   canvas: CANVAS,
   // spritesheet 视口 172.8×187.2（FRAME_SCALE 0.9）水平居中 + 底部贴边
   visualBounds: { x: 34, y: 73, width: 173, height: 187 },
-  // 整个视口即 data-hit="body"（spritesheet-visual.tsx）→ primary
+  // 现状：data-hit="body" 在撑满整窗的外层容器；manifest 声明收窄后的视口区为目标 primary（阶段 C 迁移生效）
   interaction: {
     enabled: true,
     zones: [
@@ -205,7 +206,7 @@ const creamKittenManifest = CharacterManifestSchema.parse({
   canvas: CANVAS,
   // .image-pet__img max-width 90%/max-height 80% 居中 + padding-bottom 4% 的保守外包络
   visualBounds: { x: 12, y: 22, width: 216, height: 214 },
-  // 整个 image-pet 容器即 data-hit="body"（image-visual.tsx）→ primary
+  // 现状：data-hit="body" 在撑满整窗的外层容器；manifest 声明收窄后的图像区为目标 primary（阶段 C 迁移生效）
   interaction: {
     enabled: true,
     zones: [
@@ -328,7 +329,7 @@ const creamKittenManifest = CharacterManifestSchema.parse({
 });
 
 /** 全部已注册角色的 manifest（键 = PetId） */
-export const CHARACTER_MANIFESTS: Readonly<Record<string, CharacterManifest>> = {
+export const CHARACTER_MANIFESTS: Readonly<Record<PetId, CharacterManifest>> = {
   'star-isle': starIsleManifest,
   codenono: codenonoManifest,
   'cream-kitten': creamKittenManifest,
@@ -336,5 +337,5 @@ export const CHARACTER_MANIFESTS: Readonly<Record<string, CharacterManifest>> = 
 
 /** 按 id 取 manifest；未知 id 回退星屿（与 getCharacterConfig 同语义） */
 export function getCharacterManifest(id: string | undefined): CharacterManifest {
-  return CHARACTER_MANIFESTS[id ?? ''] ?? starIsleManifest;
+  return CHARACTER_MANIFESTS[id as PetId] ?? starIsleManifest;
 }
