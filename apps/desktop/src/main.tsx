@@ -5,6 +5,7 @@ import { AppPanel } from './app/app.js';
 import { getCharacterManifest } from './pet/character-manifests.js';
 import { getCharacterConfig } from './pet/character-registry.js';
 import { PetExperience } from './pet/pet-experience.js';
+import { PetFallback } from './pet/pet-fallback.js';
 import { PocApp } from './poc/poc-app.js';
 import './styles.css';
 import './app/panel.css';
@@ -24,6 +25,7 @@ if (params.has('poc')) {
   root = (
     <PetExperience
       VisualComponent={character.VisualComponent}
+      FallbackComponent={character.FallbackComponent ?? PetFallback}
       rendererFactory={character.rendererFactory}
       petName={character.petName}
       manifest={getCharacterManifest(character.id)}

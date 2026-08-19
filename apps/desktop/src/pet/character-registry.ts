@@ -6,6 +6,7 @@
  * - petName/displayName/description：卡片文案，派生自 character-manifests（单一事实源，§11.2）
  * - VisualComponent：渲染组件（消费 StarIsleVisualState）
  * - rendererFactory：PetRenderer 适配层工厂（与 usePetRuntime 接线）
+ * - FallbackComponent：渲染抛错时的角色专属静态降级（§11.8）
  *
  * 新增角色 = 在此注册表加一条 + 协议 PetIdSchema 加枚举值。
  * main.tsx 根据 URL ?character= 从此表取 VisualComponent；
@@ -15,6 +16,7 @@ import type { ComponentType } from 'react';
 
 import type { PetId } from '@pet/protocol';
 
+import { CodenonoFallback, CreamKittenFallback, PetFallback } from './character-fallbacks.js';
 import { getCharacterManifest } from './character-manifests.js';
 import { createImagePetRenderer } from './image-pet-renderer.js';
 import { ImageVisual } from './image-visual.js';
@@ -34,6 +36,8 @@ export interface CharacterConfig {
   VisualComponent: ComponentType<{ state?: StarIsleVisualState }>;
   /** PetRenderer 适配层工厂（注入 usePetRuntime） */
   rendererFactory: (update: (state: StarIsleVisualState) => void) => PetRenderer;
+  /** 渲染抛错时的角色专属静态降级（协议 §11.8）；缺省由调用方用 PetFallback */
+  FallbackComponent?: ComponentType;
 }
 
 /** 从 manifest 派生卡片文案（单一事实源，协议 §11.2） */
@@ -49,18 +53,21 @@ export const CHARACTERS: readonly CharacterConfig[] = [
     ...copyOf('star-isle'),
     VisualComponent: StarIsleVisual,
     rendererFactory: createSvgPetRenderer,
+    FallbackComponent: PetFallback,
   },
   {
     id: 'codenono',
     ...copyOf('codenono'),
     VisualComponent: SpritesheetVisual,
     rendererFactory: createSpritesheetPetRenderer,
+    FallbackComponent: CodenonoFallback,
   },
   {
     id: 'cream-kitten',
     ...copyOf('cream-kitten'),
     VisualComponent: ImageVisual,
     rendererFactory: createImagePetRenderer,
+    FallbackComponent: CreamKittenFallback,
   },
 ];
 
