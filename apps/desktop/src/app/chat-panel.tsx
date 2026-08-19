@@ -22,8 +22,8 @@ import type { MemoryConfirmation, ModelOutput, SavedMemoryBrief } from '@pet/pro
 
 import { api } from '../lib/api/client.js';
 import { localReply } from '../lib/local-mode.js';
+import { CharacterVisual, useCurrentCharacter } from '../pet/character-visual.js';
 import { DEFAULT_VISUAL_STATE } from '../pet/pet-renderer.js';
-import { StarIsleVisual } from '../pet/star-isle-visual.js';
 
 import { MemoryConfirmCard } from './memory-confirm-card.js';
 
@@ -48,6 +48,7 @@ function shorten(text: string, max = 40): string {
 }
 
 export function ChatPanel() {
+  const { config } = useCurrentCharacter();
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -290,10 +291,10 @@ export function ChatPanel() {
       <div className="chat-heading chat-heading--compact">
         <div className="character-presence">
           <div className="character-presence__avatar" aria-hidden="true">
-            <StarIsleVisual state={{ ...DEFAULT_VISUAL_STATE, speaking: streaming }} />
+            <CharacterVisual state={{ ...DEFAULT_VISUAL_STATE, speaking: streaming }} />
           </div>
           <span className="character-presence__status">
-            {streaming ? '星屿正在思考与回复…' : '星屿在身边'}
+            {streaming ? `${config.petName}正在思考与回复…` : `${config.petName}在身边`}
           </span>
         </div>
         <span className="status-chip status-chip--ai">
@@ -310,7 +311,7 @@ export function ChatPanel() {
         {historyLoaded && entries.length === 0 && (
           <li className="chat-empty">
             <span className="chat-empty__character" aria-hidden="true">
-              <StarIsleVisual />
+              <CharacterVisual />
             </span>
             <strong>想和我聊什么？</strong>
             <p>今天的小事、突然冒出的想法，都可以告诉我。</p>
@@ -320,12 +321,12 @@ export function ChatPanel() {
           <li key={message.id} className={`chat-msg ${message.role}`}>
             {message.role === 'pet' && (
               <span className="chat-msg__avatar" aria-hidden="true">
-                <StarIsleVisual />
+                <CharacterVisual />
               </span>
             )}
             <span className="chat-bubble">
               {message.text || (
-                <span className="typing-dots" aria-label="星屿正在回复">
+                <span className="typing-dots" aria-label={`${config.petName}正在回复`}>
                   <span aria-hidden="true" />
                   <span aria-hidden="true" />
                   <span aria-hidden="true" />

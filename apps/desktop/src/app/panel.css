@@ -761,7 +761,7 @@
   box-shadow: 0 2px 6px rgba(99, 102, 241, 0.12);
 }
 
-.character-presence__avatar .star-isle {
+.character-presence__avatar .character-visual {
   width: 100%;
   height: 100%;
   pointer-events: none;
@@ -850,7 +850,7 @@
   pointer-events: none;
 }
 
-.chat-empty__character .star-isle {
+.chat-empty__character .character-visual {
   width: 100%;
   height: 100%;
 }
@@ -892,7 +892,7 @@
   border: 1px solid rgba(99, 102, 241, 0.15);
 }
 
-.chat-msg__avatar .star-isle {
+.chat-msg__avatar .character-visual {
   width: 100%;
   height: 100%;
   pointer-events: none;
@@ -1193,32 +1193,10 @@
   overflow: hidden;
 }
 
-.character-thumb--star-isle {
-  background: radial-gradient(circle at 50% 40%, #e0e7ff 0%, #c7d2fe 100%);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-}
-
-.character-thumb--star-isle::after {
-  content: '★';
-  font-size: 18px;
-  color: #fbbf24;
-  filter: drop-shadow(0 2px 4px rgba(251, 191, 36, 0.5));
-}
-
-.character-thumb--codenono {
-  background: radial-gradient(circle at 50% 45%, #1e293b 0%, #0f172a 100%);
-  border: 1px solid rgba(15, 23, 42, 0.2);
-}
-
-.character-thumb--codenono::after {
-  content: '';
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-full);
-  box-shadow:
-    -10px 0 0 1px #22d3ee,
-    10px 0 0 1px #22d3ee;
-  background: #22d3ee;
+.character-thumb .character-visual {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .character-card__info {
@@ -1870,7 +1848,7 @@
   justify-content: center;
 }
 
-.settings-preview-pet svg {
+.settings-preview-pet .character-visual {
   display: block;
   width: 100%;
   height: 100%;
@@ -2182,13 +2160,4 @@
   50% {
     opacity: 1;
   }
-}
-
-.character-thumb--cream-kitten {
-  background-image: url('../assets/cream-kitten/idle.png');
-  background-size: contain;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-color: #fff5ec;
-  border: 1px solid rgba(200, 150, 90, 0.25);
 }

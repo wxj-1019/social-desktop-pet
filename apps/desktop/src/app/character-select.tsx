@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { PetId } from '@pet/protocol';
 
 import { listCharacters } from '../pet/character-registry.js';
+import { CharacterVisual } from '../pet/character-visual.js';
 
 export interface CharacterSelectProps {
   /** 返回上一视图 */
@@ -71,7 +72,9 @@ export function CharacterSelect({ onBack: _onBack }: CharacterSelectProps) {
               disabled={switching}
               onClick={() => void handleSelect(c.id)}
             >
-              <CharacterThumbnail petId={c.id} />
+              <div className="character-thumb" aria-hidden="true">
+                <CharacterVisual petId={c.id} />
+              </div>
               <div className="character-card__info">
                 <strong className="character-card__name">{c.displayName}</strong>
                 <span className="character-card__desc">{c.description}</span>
@@ -87,15 +90,4 @@ export function CharacterSelect({ onBack: _onBack }: CharacterSelectProps) {
       </div>
     </div>
   );
-}
-
-/** 角色缩略图：星屿用 SVG 头像，CodeNoNo 用 spritesheet 静态帧，奶盖用 idle 图 */
-function CharacterThumbnail({ petId }: { petId: PetId }) {
-  if (petId === 'codenono') {
-    return <div className="character-thumb character-thumb--codenono" aria-hidden="true" />;
-  }
-  if (petId === 'cream-kitten') {
-    return <div className="character-thumb character-thumb--cream-kitten" aria-hidden="true" />;
-  }
-  return <div className="character-thumb character-thumb--star-isle" aria-hidden="true" />;
 }

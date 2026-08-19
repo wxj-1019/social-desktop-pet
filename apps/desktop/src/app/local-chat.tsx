@@ -17,7 +17,7 @@ import {
   localReply,
   type ChatMessage,
 } from '../lib/local-mode.js';
-import { StarIsleVisual } from '../pet/star-isle-visual.js';
+import { CharacterVisual } from '../pet/character-visual.js';
 
 interface LocalChatProps {
   onLoginClick: () => void;
@@ -109,7 +109,7 @@ export function LocalChat({ onLoginClick }: LocalChatProps) {
         {history.length === 0 && (
           <li className="chat-empty">
             <span className="chat-empty__character" aria-hidden="true">
-              <StarIsleVisual />
+              <CharacterVisual />
             </span>
             <strong>先从一句你好开始吧</strong>
             <p>这些对话只会留在这台电脑里。</p>
@@ -119,7 +119,7 @@ export function LocalChat({ onLoginClick }: LocalChatProps) {
           <li key={index} className={`chat-msg ${message.role}`}>
             {message.role === 'pet' && (
               <span className="chat-msg__avatar" aria-hidden="true">
-                <StarIsleVisual />
+                <CharacterVisual />
               </span>
             )}
             <span className="chat-bubble">{message.text}</span>
@@ -128,7 +128,7 @@ export function LocalChat({ onLoginClick }: LocalChatProps) {
         {pending && (
           <li className="chat-msg pet" aria-live="polite">
             <span className="chat-msg__avatar" aria-hidden="true">
-              <StarIsleVisual />
+              <CharacterVisual />
             </span>
             <span className="chat-bubble chat-bubble--typing">…</span>
           </li>

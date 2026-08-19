@@ -18,13 +18,14 @@ import { useEffect, useState } from 'react';
 
 import type { PetRuntimeSnapshot } from '@pet/protocol';
 
-import { StarIsleVisual } from '../pet/star-isle-visual.js';
+import { CharacterVisual, useCurrentCharacter } from '../pet/character-visual.js';
 
 /** 设置页滑块范围（60%–140%，Main 端 MIN/MAX_PET_SCALE 内） */
 const SCALE_MIN = 0.6;
 const SCALE_MAX = 1.4;
 
 export function SettingsPage() {
+  const { config } = useCurrentCharacter();
   const [bubbleEnabled, setBubbleEnabled] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [petScale, setPetScale] = useState(1);
@@ -129,12 +130,12 @@ export function SettingsPage() {
                 height: `${Math.round(34 * petScale)}px`,
               }}
             >
-              <StarIsleVisual variant="head" />
+              <CharacterVisual />
             </div>
           </span>
           <span className="settings-item__text">
             <strong>实时预览</strong>
-            <small>星屿大小随上方滑块即时变化</small>
+            <small>{`${config.petName}大小随上方滑块即时变化`}</small>
           </span>
           <span className="settings-preview-value">{Math.round(petScale * 100)}%</span>
         </div>
