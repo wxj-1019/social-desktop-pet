@@ -38,6 +38,7 @@ ai-social-desktop-pet/
 | 改桌宠窗口/穿透/托盘/更新                          | `apps/desktop/electron/main/*`                                                                                                                                 | 8.1–8.7                  |
 | 改星屿外观/动作/交互（SVG 角色、动画、气泡）       | `apps/desktop/src/pet/*`（star-isle-visual.tsx 等）                                                                                                            | 星屿设计稿               |
 | 新增/适配桌宠形象（manifest/命中区/动作覆盖/许可） | `apps/desktop/src/pet/character-manifests.ts` + `character-registry.ts`（协议见 `docs/superpowers/specs/2026-08-20-desktop-pet-character-protocol-design.md`） | 桌宠形象协议             |
+| 改面板角色视觉/角色选择卡片/点击命中几何/角色降级  | `apps/desktop/src/pet/character-visual.tsx`（面板入口）+ `zone-hit.ts`（命中）+ `character-fallbacks.tsx`（降级）                                              | 桌宠形象协议 §6/§11      |
 | 改状态审批/动作映射（CHATTING/touch/idle 等）      | `packages/pet-state/src/*`（index.ts + visual-mapping.ts）                                                                                                     | 7.1                      |
 | 改双窗口/拖动/托盘（pet+panel 窗、拖拽持久化）     | `apps/desktop/electron/main/*`（window/drag/tray/position）                                                                                                    | 8.1–8.7 / 星屿设计稿     |
 | 改桌宠状态机逻辑（转换/动作审批/白名单）           | `packages/pet-state/src/index.ts`（纯逻辑，可单测）                                                                                                            | 7.1                      |

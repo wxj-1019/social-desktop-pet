@@ -843,6 +843,18 @@ git commit -m "docs: 形象协议阶段 C 落地状态更新"
 
 ---
 
+## 执行结果（2026-08-20）
+
+阶段 C 已在 `feat/character-protocol-stage-c` 完成：9 个提交（22a6337…22b759a），每任务经"实现 → 规范审查 → 质量审查 → 修复 → 复审"闭环；全量 976/976 单测、typecheck/lint/format 干净、e2e **11 过/1 失败优于基线**（基线 10/2，"交互：摸头"用例转绿，仅剩已知"本地聊天"遗留失败）。审查修复的实质问题：面板窗从未收到 `pet:profile-changed`（实时换装死代码）、CodeNoNo 固定视口在面板小容器里放大裁切、`interaction.enabled=false` 被忽略（含锁定测试空转的反事实修正——保留 zones 仅翻转开关）。实现者另抓到计划自身两处错误：三角形 polygon 测试几何断言写错（(20,25) 实为内点，改凹五边形）、`<entry.FallbackComponent! />` 非法 JSX。
+
+### 遗留 backlog（最终审查确认延后）
+
+1. **阶段 D**：降级组件与本体共享渲染路径——`renderStaticSpritesheet` 仍是同一组件的渲染函数，本体 render 期崩溃会击穿 boundary fallback 导致宠物窗白屏；修法：`PetExperience` 内为 `<FallbackComponent/>` 再包一层 `PetVisualBoundary`（兜底 `PetFallback`）并修正 character-fallbacks.tsx 注释。
+2. **阶段 D**：未知 PetId 回退星屿仍是静默的（registry/manifests 两处），spec §11 末段要求可观察诊断。
+3. **阶段 D**：向下拖动对所有角色发 `tail_touch`、drag/dblclick 在透明区/enabled=false 时仍可用——预存语义，待命中语义二次收敛时处理。
+4. **文案**：friends.tsx 三处"星屿"文案（64/255/315）与 `security.ts:86`/`preload/index.ts:131` 的"main→pet 推送"注释漂移。
+5. **打磨**：面板打开瞬间非星屿用户看到星屿头像闪一下（useCurrentCharacter 初始值 star-isle）。
+
 ## Self-Review 记录
 
 - **Spec 覆盖**：§11.7（缩略图去 if/else → Task 1）、§11.8（角色专属降级 → Task 5）、§11.9（面板去星屿硬编码 → Task 1）、§6.3/§6.4（几何命中 + zone→指令映射 → Task 3/4）、§11.2（文案单源 → Task 2）、backlog #2/#3 → Task 2。**本轮不做**（记录为阶段 D/后续）：zone-id 正则放宽（无角色需要命名空间区域 ID，YAGNI）、`data-hit` DOM 属性删除（e2e 锚点，阶段 D 清理）、`CharacterVisualProvider` 命名的 context 版本（hook+组件已满足"等价 registry 读取路径"，避免过度设计）。
