@@ -3,8 +3,7 @@
  *
  * 每个角色登记：
  * - id：协议枚举值（star-isle / codenono / cream-kitten）
- * - displayName：面板卡片显示名
- * - description：一句话介绍
+ * - petName/displayName/description：卡片文案，派生自 character-manifests（单一事实源，§11.2）
  * - VisualComponent：渲染组件（消费 StarIsleVisualState）
  * - rendererFactory：PetRenderer 适配层工厂（与 usePetRuntime 接线）
  *
@@ -16,6 +15,7 @@ import type { ComponentType } from 'react';
 
 import type { PetId } from '@pet/protocol';
 
+import { getCharacterManifest } from './character-manifests.js';
 import { createImagePetRenderer } from './image-pet-renderer.js';
 import { ImageVisual } from './image-visual.js';
 import type { PetRenderer, StarIsleVisualState } from './pet-renderer.js';
@@ -36,29 +36,29 @@ export interface CharacterConfig {
   rendererFactory: (update: (state: StarIsleVisualState) => void) => PetRenderer;
 }
 
+/** 从 manifest 派生卡片文案（单一事实源，协议 §11.2） */
+function copyOf(id: PetId) {
+  const m = getCharacterManifest(id);
+  return { petName: m.petName, displayName: m.displayName, description: m.description };
+}
+
 /** 全部已注册角色（顺序即面板卡片顺序） */
 export const CHARACTERS: readonly CharacterConfig[] = [
   {
     id: 'star-isle',
-    petName: '星屿',
-    displayName: '星屿',
-    description: '原创 SVG 星尾狐猫，蓝紫大耳，温暖陪伴。',
+    ...copyOf('star-isle'),
     VisualComponent: StarIsleVisual,
     rendererFactory: createSvgPetRenderer,
   },
   {
     id: 'codenono',
-    petName: 'CodeNoNo',
-    displayName: 'CodeNoNo',
-    description: 'spritesheet 帧动画角色，编程伙伴气质。',
+    ...copyOf('codenono'),
     VisualComponent: SpritesheetVisual,
     rendererFactory: createSpritesheetPetRenderer,
   },
   {
     id: 'cream-kitten',
-    petName: '奶盖',
-    displayName: '奶盖',
-    description: '伪3D 卡通奶油小猫，立体光影，慵懒陪伴。',
+    ...copyOf('cream-kitten'),
     VisualComponent: ImageVisual,
     rendererFactory: createImagePetRenderer,
   },

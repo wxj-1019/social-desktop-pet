@@ -71,8 +71,20 @@ describe('registry ↔ manifest ↔ PetId 一致性（形象协议 §11）', () 
   });
 
   it('manifest release 级别满足迁移定位（§12）：星屿 bundled，其余 dev-only', () => {
-    expect(CHARACTER_MANIFESTS['star-isle']!.release).toBe('bundled');
-    expect(CHARACTER_MANIFESTS['codenono']!.release).toBe('dev-only');
-    expect(CHARACTER_MANIFESTS['cream-kitten']!.release).toBe('dev-only');
+    for (const [id, manifest] of Object.entries(CHARACTER_MANIFESTS)) {
+      expect(manifest.release, `${id} release 级别应符合 §12 迁移定位`).toBe(
+        id === 'star-isle' ? 'bundled' : 'dev-only',
+      );
+    }
+  });
+
+  it('registry 文案派生自 manifest（单一事实源，阶段 C）', () => {
+    for (const c of CHARACTERS) {
+      const manifest = CHARACTER_MANIFESTS[c.id];
+      expect(manifest).toBeDefined();
+      expect(c.displayName).toBe(manifest!.displayName);
+      expect(c.petName).toBe(manifest!.petName);
+      expect(c.description).toBe(manifest!.description);
+    }
   });
 });
