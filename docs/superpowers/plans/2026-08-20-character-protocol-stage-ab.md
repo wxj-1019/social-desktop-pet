@@ -1378,6 +1378,20 @@ git status --short   # 应为空；有残留则按文件归属补进对应语义
 
 两份 plan 分别在阶段 A+B 验收合并后编写，保证每次执行都交付可运行、可测试的增量。
 
+## 执行结果（2026-08-20）
+
+阶段 A+B 已在 `feat/character-protocol-stage-ab` 完成：7 个提交（b6e095c…5e1eac6），每个任务经"实现 → 规范审查 → 质量审查 → 修复 → 复审"闭环；最终全量验证 951/951 测试通过、typecheck/lint/format 干净、运行时文件与 main 零 diff。审查修复了三处实质问题：manifest 边界校验漏左/上越界（863b49e）、星屿包络裁耳尖（e21487f）、星屿坐标漏 `star-isle__frame` 构图框复合映射导致命中区偏移 30–45px（5e1eac6）。
+
+### 遗留 backlog（审查确认延后，落在阶段 C/D）
+
+1. **阶段 C**：zone-id 正则放宽到 `<character-id>:<name>` 命名空间 ID 时，`CharacterInteractionZoneSchema` 各变体与 `capabilities.interactionZones` 的两条正则必须同步放宽（协议 v1 已注释声明仅短 ID）。
+2. **阶段 C**：registry 改为消费 manifest 后，删除 displayName/petName/description 的三份文案拷贝（现由一致性测试锁定）；`getCharacterManifest` 硬编码 starIsleManifest 回退与 registry 的 `CHARACTERS[0]` 语义对齐可一并收敛。
+3. **阶段 C**：一致性测试 case 4 的硬编码三角色 release 三元组改为按 §12 策略推导（避免第 4 个角色静默漏检）。
+4. **阶段 D**：schema 级 fallback 环检测（现由 character-manifests.test.ts 的 followChain 兜底；superRefine 加链遍历可作纵深防御）。
+5. **阶段 D**：奶盖 visualBounds 未含动画极值（ck-bounce −8px+scale 1.05 / ck-tilt ±8° 可越出数 px），由截图验收覆盖后校正。
+6. **阶段 D**：cream-kitten 帧表 ↔ manifest 资产清单绑定测试；`idle_gs.jpg`（未被引用）清理决策。
+7. **数据质量事实**：`blink.png` 与 `idle.png` sha256 相同（眨眼帧为 idle 拷贝，视觉差异靠 CSS）——已由测试如实锁定，补独立眨眼帧时更新。
+
 ## Self-Review 记录
 
 - **Spec 覆盖**：§3.1（画布常量+superRefine）、§3.2/§6（zone schema+primary+40×40）、§4（manifest 全字段）、§5.3（三边界分离+画布内校验）、§7.2/§7.3（覆盖枚举+fallback 同类校验+链终止测试）、§9（命名空间=角色 id+前缀校验）、§10.1/§10.2（许可字段如实+哈希实测）、§12（三级 release 定位）、§14 阶段 A 全部 3 项 + 阶段 B 第 1/2/3 项中可代码化部分（许可证书面确认与帧画布工具属阶段 D/人工）。缺口：无代码化缺口；§12.3"帧对齐工具"依赖阶段 D CLI。
