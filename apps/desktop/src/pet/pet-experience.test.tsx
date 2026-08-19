@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PetProfile, PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
 
-import { PetExperience } from './pet-experience.js';
+import { isRadialMenuElement, PetExperience } from './pet-experience.js';
 
 afterEach(cleanup);
 
@@ -336,5 +336,33 @@ describe('PetExperience（星屿直连交互面）', () => {
       });
     });
     expect(screen.queryByTestId('sao-menu')).toBeNull();
+  });
+});
+
+describe('isRadialMenuElement（环形菜单点击不被拖拽手势吞掉）', () => {
+  it('SAO 菜单（.sao-radial-overlay）内点击命中', () => {
+    const el = document.createElement('div');
+    el.className = 'sao-radial-overlay';
+    expect(isRadialMenuElement(el)).toBe(true);
+    // 菜单深层子元素（按钮等）同样命中
+    const btn = document.createElement('button');
+    el.appendChild(btn);
+    expect(isRadialMenuElement(btn)).toBe(true);
+  });
+
+  it('classic 菜单（.classic-radial-overlay）内点击命中（f4b9a5a 只修 SAO 的漏网）', () => {
+    const el = document.createElement('div');
+    el.className = 'classic-radial-overlay';
+    expect(isRadialMenuElement(el)).toBe(true);
+    const node = document.createElement('button');
+    el.appendChild(node);
+    expect(isRadialMenuElement(node)).toBe(true);
+  });
+
+  it('菜单外（宠物身体/背景）不命中', () => {
+    const body = document.createElement('div');
+    body.setAttribute('data-hit', 'body');
+    expect(isRadialMenuElement(body)).toBe(false);
+    expect(isRadialMenuElement(null)).toBe(false);
   });
 });

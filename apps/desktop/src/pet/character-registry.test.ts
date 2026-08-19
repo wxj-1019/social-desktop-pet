@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+// registry 导入 image-visual（模块级 new Image() 预载奶盖帧），node 环境无 Image → 必须 jsdom
 import { describe, expect, it } from 'vitest';
 
 import { CHARACTERS, getCharacterConfig, listCharacters } from './character-registry.js';

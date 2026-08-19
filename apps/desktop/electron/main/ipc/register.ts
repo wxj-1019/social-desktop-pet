@@ -293,9 +293,10 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
   // C1：深链 payload 拉取（面板挂载后消费；推送可能早于组件订阅，见 index.ts openPanel）
   registerInvoke(deps, 'deeplink:consume-pending', 'panel', () => deps.consumeDeepLinkPayload());
 
-  // ---- 档案（Task 4）：读取两窗皆可；写入仅 panel ----
+  // ---- 档案（Task 4）：读取两窗皆可；写入 panel + pet（环形菜单"换肤"从宠物窗发起；
+  // 两窗同为受信渲染面，validateIpcSender 已做 surface 严格匹配） ----
   registerInvoke(deps, 'pet-profile:get', ['pet', 'panel'], () => profile.load());
-  registerInvoke(deps, 'pet-profile:set', 'panel', (_win, payload) => {
+  registerInvoke(deps, 'pet-profile:set', ['pet', 'panel'], (_win, payload) => {
     const next = parseIpcPayload(PetProfileSchema, payload);
     profile.save(next);
     // 推送给桌宠窗：气泡开关/减弱动态等即时生效（否则只在挂载时读一次）

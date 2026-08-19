@@ -12,9 +12,10 @@
  *
  * 资产经 Vite import 引入（dev server / prod asar 都走 CSP 'self' 源）。
  */
-import type { PetExpression, PetFacing, PetMotion } from '@pet/protocol';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+
+import type { PetExpression, PetFacing, PetMotion } from '@pet/protocol';
 
 import {
   CREAM_KITTEN_FRAME_MAP,

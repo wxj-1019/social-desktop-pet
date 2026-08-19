@@ -51,6 +51,15 @@ const HIT_INTERACTION: Record<HitPart, PetInteraction['kind']> = {
   tail: 'tail_touch',
 };
 
+/** 环形菜单交互面（SAO / classic 共用）：菜单内点击不进入拖拽手势流。
+ *  指针捕获会把后续 click 重定向到根容器，吞掉菜单按钮 onClick；
+ *  f4b9a5a 只修了 SAO，classic（.classic-radial-overlay）同源漏修。 */
+export function isRadialMenuElement(target: EventTarget | null): boolean {
+  return Boolean(
+    (target as Element | null)?.closest?.('.sao-radial-overlay, .classic-radial-overlay'),
+  );
+}
+
 export interface PetExperienceProps {
   /** 主视觉组件；可注入抛出渲染错误的组件以测试降级路径 */
   VisualComponent?: ComponentType<{ state?: StarIsleVisualState }>;
@@ -116,7 +125,9 @@ export function PetExperience({
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
-    if ((e.target as Element | null)?.closest?.('.sao-radial-overlay')) return;
+    // 环形菜单（SAO/classic）内的点击不进入拖拽手势：指针捕获会把后续 click
+    // 重定向到本容器，吞掉菜单按钮的 onClick（f4b9a5a 曾修 SAO，classic 同源漏修）。
+    if (isRadialMenuElement(e.target)) return;
     const runtime = window.pet?.petRuntime;
     if (!runtime) return;
     const sample = screenSample(e);

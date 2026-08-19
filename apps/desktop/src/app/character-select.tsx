@@ -46,7 +46,12 @@ export function CharacterSelect({ onBack: _onBack }: CharacterSelectProps) {
   return (
     <div className="character-select" data-testid="character-select">
       <div className="character-select__header">
-        <button className="character-select__back" type="button" onClick={onBack} aria-label="返回">
+        <button
+          className="character-select__back"
+          type="button"
+          onClick={_onBack}
+          aria-label="返回"
+        >
           <ArrowLeft size={14} aria-hidden="true" />
           返回
         </button>

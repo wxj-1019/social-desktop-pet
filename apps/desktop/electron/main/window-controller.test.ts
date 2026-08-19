@@ -205,6 +205,42 @@ describe('createPetWindow (宠物窗)', () => {
     expect(created[1]!.fake.shown).toBe(false);
   });
 
+  it('falls back to show on did-finish-load when ready-to-show never fires（RDP/透明窗兜底）', () => {
+    const { runtime, created } = makeRuntime(dualDisplays);
+    createPetWindow({ runtime });
+    const fake = created[0]!.fake;
+    // ready-to-show 永不触发 → 加载完成事件兜底显示，避免"角色切换后桌宠消失"
+    const finishHandler = fake.webContents.on.mock.calls.find(
+      ([ev]) => ev === 'did-finish-load',
+    )?.[1];
+    expect(finishHandler).toBeTypeOf('function');
+    finishHandler!();
+    expect(fake.shown).toBe(true);
+  });
+
+  it('does not fall back to show when startHidden', () => {
+    const { runtime, created } = makeRuntime(dualDisplays);
+    createPetWindow({ runtime, startHidden: true });
+    const fake = created[0]!.fake;
+    const finishHandler = fake.webContents.on.mock.calls.find(
+      ([ev]) => ev === 'did-finish-load',
+    )?.[1];
+    finishHandler!();
+    expect(fake.shown).toBe(false);
+  });
+
+  it('shows at most once（ready-to-show 与 did-finish-load 双触发只 show 一次）', () => {
+    const { runtime, created } = makeRuntime(dualDisplays);
+    createPetWindow({ runtime });
+    const fake = created[0]!.fake;
+    fake.emitOnce('ready-to-show');
+    const finishHandler = fake.webContents.on.mock.calls.find(
+      ([ev]) => ev === 'did-finish-load',
+    )?.[1];
+    finishHandler!();
+    expect(fake.show).toHaveBeenCalledTimes(1);
+  });
+
   it('emits persisted anchor via onPositionChanged on moved', () => {
     const { runtime } = makeRuntime(dualDisplays);
     const onPositionChanged = vi.fn();

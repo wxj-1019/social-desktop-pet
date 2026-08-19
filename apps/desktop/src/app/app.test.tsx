@@ -180,4 +180,21 @@ describe('AppPanel · panel.onNavigate 消费（I1）', () => {
     expect(await screen.findByText(/星屿记住的0件小事/)).not.toBeNull();
     expect(api.memories).toHaveBeenCalled();
   });
+
+  it('角色 tab：渲染角色选择页并可返回（回归：onBack 引用未定义变量曾致整页崩溃）', async () => {
+    installFakePet(ACTIVE_PROFILE);
+    render(<AppPanel />);
+    await act(async () => {});
+    await screen.findByRole('button', { name: '邀请好友' });
+
+    fireEvent.click(screen.getByRole('tab', { name: '角色' }));
+    expect(await screen.findByTestId('character-select')).not.toBeNull();
+    expect(screen.getByRole('radio', { name: /星屿/ })).not.toBeNull();
+    expect(screen.getByRole('radio', { name: /CodeNoNo/ })).not.toBeNull();
+    expect(screen.getByRole('radio', { name: /奶盖/ })).not.toBeNull();
+
+    // 返回按钮回好友页（修复前 onClick={onBack} 渲染时引用未定义变量 → ReferenceError → 整页卸载）
+    fireEvent.click(screen.getByRole('button', { name: '返回' }));
+    expect(await screen.findByRole('button', { name: '邀请好友' })).not.toBeNull();
+  });
 });

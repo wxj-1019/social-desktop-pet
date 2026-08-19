@@ -195,10 +195,18 @@ export function createPetWindow(options: WindowOptions = {}): BrowserWindow {
     },
   });
 
-  win.once('ready-to-show', () => {
-    // --minimized：启动隐藏到托盘
-    if (!options.startHidden) win.show();
-  });
+  // 显示窗口（ready-to-show 与 did-finish-load 兜底共用；startHidden 启动不显示）
+  let startedShown = options.startHidden;
+  const showWindow = (): void => {
+    if (startedShown) return;
+    startedShown = true;
+    win.show();
+  };
+  win.once('ready-to-show', showWindow);
+  // 兜底：透明窗在部分环境（RDP / 软件渲染）ready-to-show 可能永不触发，
+  // 角色切换重建后新窗会一直隐藏 → "点角色后桌宠消失"。加载完成仍未显示则
+  // 强制显示（透明窗无首帧白闪问题，与 ready-to-show 语义等价）。
+  win.webContents.on('did-finish-load', showWindow);
 
   // 8.5：位置变化时回调（由调用方持久化）。
   // 注：部分环境（RDP 会话等）setPosition 不触发 'move'/'moved'，持久化的可靠

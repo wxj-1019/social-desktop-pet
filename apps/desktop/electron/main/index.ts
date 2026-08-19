@@ -356,8 +356,16 @@ void app.whenReady().then(async () => {
     alivePetWindow()?.hide();
     runtime?.setHidden(true);
   };
-  const showPet = (): void => {
+  /** 桌宠窗不存活（未创建/销毁/二次崩溃后置空）时重建，避免"桌宠消失后无法恢复" */
+  const ensurePetWindow = (): BrowserWindow | null => {
     const win = alivePetWindow();
+    if (win) return win;
+    if (quitting) return null;
+    createAndWirePetWindow();
+    return petWindow;
+  };
+  const showPet = (): void => {
+    const win = ensurePetWindow();
     win?.show();
     win?.setIgnoreMouseEvents(false);
     runtime?.setHidden(false);
@@ -380,9 +388,13 @@ void app.whenReady().then(async () => {
       }
       panelHandle = createPanelWindow();
       panelCrashed = false;
-      // 面板渲染进程崩溃：标记损坏，下次 openPanel 重建（win 对象本身仍存活）
+      // 面板渲染进程崩溃：标记损坏，下次 openPanel 重建（win 对象本身仍存活）。
+      // 崩溃后的透明窗不可见但仍是置顶窗口会挡点击 → 立即隐藏（按句柄捕获，
+      // 避免事件回调时 panelHandle 已被新面板替换而误隐藏新窗）。
+      const crashedHandle = panelHandle;
       panelHandle.win.webContents.on('render-process-gone', () => {
         panelCrashed = true;
+        crashedHandle.win.hide();
       });
     }
     const win = alivePetWindow();
@@ -421,6 +433,9 @@ void app.whenReady().then(async () => {
       wander?.stop();
       if (rendererCrashAttempts >= 1) {
         petWindow = null;
+        // 30s 内二次崩溃：停止自动重建（避免崩溃循环），托盘"显示桌宠"可经
+        // ensurePetWindow 手动恢复（showPet 兜底重建），无需重启应用。
+        console.warn('[pet-window] 渲染进程 30s 内二次崩溃，停止自动重建；托盘"显示桌宠"可恢复');
         return;
       }
       rendererCrashAttempts += 1;

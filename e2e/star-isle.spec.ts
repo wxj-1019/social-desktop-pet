@@ -81,9 +81,10 @@ test('交互：摸头触发 touch 动作；双击身体打开聊天面板', asyn
   await pet.waitForTimeout(500);
   await isle.locator('[data-hit="body"] [data-hit-rect]').dblclick({ force: true });
 
-  // 面板窗（surface=panel，懒创建）出现且落在登录页（无后端）
+  // 面板窗（surface=panel，懒创建）出现且落在本地聊天
+  //（I1：未登录时 panel:navigate 切进本地模式并定位目标 tab，不再停留在登录页）
   const panel = await app.panelWindow();
-  await expect(panel.locator('.login-page')).toBeVisible({ timeout: 15_000 });
+  await expect(panel.locator('.local-chat')).toBeVisible({ timeout: 15_000 });
 
   // 关掉面板：面板锚定在宠物旁，可能盖住宠物窗口，干扰后续拖拽测试的鼠标事件
   await panel.evaluate(() => window.pet?.panel?.close());
@@ -187,10 +188,8 @@ test('托盘恢复：穿透开关 + 隐藏/显示（8.4 不可恢复事故为 0�
 
 test('本地聊天：面板本地模式输入 → 宠物气泡出现，宠物窗保持可见', async () => {
   const panel = await app.openPanel('chat');
-  await expect(panel.locator('.login-page')).toBeVisible({ timeout: 15_000 });
-
-  await panel.getByRole('button', { name: '先体验本地聊天' }).click();
-  await expect(panel.locator('.local-chat')).toBeVisible();
+  // I1：未登录时 open-chat 直达本地聊天（登录页的"先体验本地聊天"不再需要）
+  await expect(panel.locator('.local-chat')).toBeVisible({ timeout: 15_000 });
 
   await panel.locator('.chat-input-row input').fill('你好');
   await panel.getByRole('button', { name: '发送' }).click();
@@ -276,4 +275,60 @@ test('CodeNoNo：切换皮肤后 spritesheet 帧会持续推进', async () => {
       message: 'CodeNoNo 的 spritesheet 帧号应随 requestAnimationFrame 推进',
     })
     .not.toBe(initialFrame);
+});
+
+test('菜单角色（SAO）：右键菜单 → 角色 → 打开角色页 → 切换皮肤后宠物窗保持可见', async () => {
+  const pet = await app.petWindow();
+
+  // 右键打开 SAO 环形菜单
+  await pet.locator('.pet-experience').click({ button: 'right' });
+  await expect(pet.getByTestId('sao-menu')).toBeVisible();
+
+  // 角色节点 → 二级菜单 → 打开角色页（面板懒创建）
+  await pet.getByRole('menuitem', { name: /角色/ }).click();
+  await pet.getByRole('button', { name: '打开角色页' }).click();
+
+  const panel = await app.panelWindow();
+  await expect(panel.locator('.character-select')).toBeVisible({ timeout: 15_000 });
+
+  // 点击 CodeNoNo 卡片 → 宠物窗销毁重建（reloadPetWithCharacter）
+  await panel.getByRole('radio', { name: /CodeNoNo/ }).click();
+
+  // 重建后的新宠物窗必须可见且渲染新角色（回归：ready-to-show 不触发/崩溃时曾"消失"）
+  const pet2 = await app.petWindow();
+  await expect(pet2.getByRole('img', { name: 'CodeNoNo' })).toBeVisible({ timeout: 15_000 });
+  await expect
+    .poll(async () => (await app.windowState('pet'))?.visible === true, { timeout: 10_000 })
+    .toBe(true);
+
+  // 关闭面板，避免影响后续用例
+  await panel.evaluate(() => window.pet?.panel?.close());
+});
+
+test('菜单角色（classic）：经典环状菜单点"角色"不被指针捕获吞掉（f4b9a5a 同源修复）', async () => {
+  const panel = await app.openPanel('chat');
+  // 切到 classic 皮肤（档案写入；宠物页需 reload 重读档案）
+  await panel.evaluate(async () => {
+    const current = await window.pet.petProfile.get();
+    await window.pet.petProfile.set({ ...current, menuStyle: 'classic' });
+  });
+  const pet = await app.petWindow();
+  await pet.reload();
+  await expect(pet.getByTestId('classic-menu')).not.toBeVisible();
+
+  // 右键打开 classic 菜单 → 点"角色"（修复前 pointer capture 会吞掉 click）
+  await pet.locator('.pet-experience').click({ button: 'right' });
+  await expect(pet.getByTestId('classic-menu')).toBeVisible();
+  await pet.getByRole('menuitem', { name: '角色' }).click();
+
+  // 面板出现/定位到角色页（证明 click 真实生效）
+  await expect(panel.locator('.character-select')).toBeVisible({ timeout: 15_000 });
+  await panel.evaluate(() => window.pet?.panel?.close());
+
+  // 还原 SAO 皮肤，避免影响后续用例
+  await panel.evaluate(async () => {
+    const current = await window.pet.petProfile.get();
+    await window.pet.petProfile.set({ ...current, menuStyle: 'sao' });
+  });
+  await pet.reload();
 });

@@ -369,21 +369,22 @@ describe('channel-to-surface binding（Task 7）', () => {
     ).rejects.toThrow(IpcSenderError);
   });
 
-  it('rejects panel-only invoke channels when the pet window sends', async () => {
-    const { pet, deps } = makeDeps();
+  it('allows pet-profile:set from both surfaces（环形菜单"换肤"从宠物窗发起）', async () => {
+    const { pet, panel, deps } = makeDeps();
     registerIpcAllowlist(deps);
     const handler = electronMocks.invokeHandlers.get('pet-profile:set');
+    const profile = {
+      version: 1,
+      petId: 'star-isle',
+      displayName: '星屿',
+      reducedMotion: false,
+      dnd: false,
+      bubbleEnabled: true,
+      menuStyle: 'classic',
+    };
 
-    await expect(
-      handler?.(eventFrom(pet), {
-        version: 1,
-        petId: 'star-isle',
-        displayName: '星屿',
-        reducedMotion: false,
-        dnd: false,
-        bubbleEnabled: true,
-      }),
-    ).rejects.toThrow(IpcSenderError);
+    expect(await handler?.(eventFrom(pet), profile)).toEqual(profile);
+    expect(await handler?.(eventFrom(panel), profile)).toEqual(profile);
   });
 
   it('allows pet:runtime:get from both surfaces', async () => {
