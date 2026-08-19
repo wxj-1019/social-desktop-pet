@@ -89,6 +89,10 @@ describe('hitTestZone（manifest 区域几何命中，协议 §6）', () => {
     (zones[0] as { enabled: boolean }).enabled = false;
     expect(hitTestZone(zones, { x: 50, y: 50 })).toBeNull();
   });
+
+  it('空 zones 数组返回 null（不可交互角色的输入）', () => {
+    expect(hitTestZone([], { x: 120, y: 130 })).toBeNull();
+  });
 });
 
 describe('zoneToInteractionKind（zone → 交互指令，保持现行为）', () => {

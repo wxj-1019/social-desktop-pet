@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PetProfile, PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
 
+import { getCharacterManifest } from './character-manifests.js';
 import { isRadialMenuElement, PetExperience } from './pet-experience.js';
 
 afterEach(cleanup);
@@ -101,6 +102,24 @@ function installFakePet(state: PetRuntimeSnapshot['state'] = 'IDLE'): void {
   (window as unknown as { pet: unknown }).pet = pet;
 }
 
+/** jsdom 无布局：mock .pet-canvas 为 240×260、原点 (0,0)（logical === client 坐标） */
+function installCanvasRect(): void {
+  const canvas = document.querySelector('.pet-canvas') as HTMLElement | null;
+  if (!canvas) throw new Error('.pet-canvas not rendered');
+  canvas.getBoundingClientRect = () =>
+    ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 240,
+      bottom: 260,
+      width: 240,
+      height: 260,
+      toJSON: () => ({}),
+    }) as DOMRect;
+}
+
 function firePointer(
   el: Element,
   type: 'down' | 'move' | 'up' | 'cancel',
@@ -117,6 +136,8 @@ function firePointer(
       buttons: type === 'up' ? 0 : button === 0 ? 1 : button,
       screenX: init.screenX,
       screenY: init.screenY,
+      clientX: init.screenX,
+      clientY: init.screenY,
     }),
   );
 }
@@ -162,6 +183,7 @@ describe('PetExperience（星屿直连交互面）', () => {
 
   it('sends head_touch when clicking the head hit area', () => {
     render(<PetExperience />);
+    installCanvasRect();
     const head = document.querySelector('[data-hit="head"]');
     expect(head).not.toBeNull();
     firePointer(head!, 'down', { screenX: 100, screenY: 100 });
@@ -171,6 +193,7 @@ describe('PetExperience（星屿直连交互面）', () => {
 
   it('sends body_touch when clicking the body hit area', () => {
     render(<PetExperience />);
+    installCanvasRect();
     const body = document.querySelector('[data-hit="body"]');
     expect(body).not.toBeNull();
     firePointer(body!, 'down', { screenX: 140, screenY: 240 });
@@ -180,6 +203,7 @@ describe('PetExperience（星屿直连交互面）', () => {
 
   it('opens the chat panel on double click', () => {
     render(<PetExperience />);
+    installCanvasRect();
     const head = document.querySelector('[data-hit="head"]');
     firePointer(head!, 'down', { screenX: 100, screenY: 100 });
     firePointer(head!, 'up', { screenX: 100, screenY: 100 });
@@ -190,6 +214,7 @@ describe('PetExperience（星屿直连交互面）', () => {
 
   it('double right-click is not classified as double click (no panel)', () => {
     render(<PetExperience />);
+    installCanvasRect();
     const head = document.querySelector('[data-hit="head"]');
     for (const screenX of [100, 101]) {
       firePointer(head!, 'down', { screenX, screenY: 100, button: 2 });
@@ -201,6 +226,7 @@ describe('PetExperience（星屿直连交互面）', () => {
 
   it('starts from the original pointer and forwards the threshold-crossing move', () => {
     render(<PetExperience />);
+    installCanvasRect();
     const container = document.querySelector('.pet-experience');
     firePointer(container!, 'down', { screenX: 100, screenY: 100 });
     firePointer(container!, 'move', { screenX: 130, screenY: 120 });
@@ -212,6 +238,7 @@ describe('PetExperience（星屿直连交互面）', () => {
 
   it('self-heals a stuck drag when the button is already released mid-move', () => {
     render(<PetExperience />);
+    installCanvasRect();
     const container = document.querySelector('.pet-experience');
     firePointer(container!, 'down', { screenX: 100, screenY: 100 });
     firePointer(container!, 'move', { screenX: 130, screenY: 120 });
@@ -239,6 +266,7 @@ describe('PetExperience（星屿直连交互面）', () => {
 
   it('ends the drag on pointercancel', () => {
     render(<PetExperience />);
+    installCanvasRect();
     const container = document.querySelector('.pet-experience');
     firePointer(container!, 'down', { screenX: 100, screenY: 100 });
     firePointer(container!, 'move', { screenX: 130, screenY: 120 });
@@ -285,6 +313,7 @@ describe('PetExperience（星屿直连交互面）', () => {
 
   it('clicking the bubble opens the chat panel (气泡直达聊天的短路径)', async () => {
     render(<PetExperience />);
+    installCanvasRect();
     await act(async () => {
       visualCommandHandler({ type: 'bubble', text: '你好，我是星屿' });
     });
@@ -379,6 +408,37 @@ describe('PetExperience（星屿直连交互面）', () => {
       });
     });
     expect(screen.queryByTestId('sao-menu')).toBeNull();
+  });
+
+  it('zone 命中迁移：透明角落点击不触发互动（协议 §6 收窄语义）', () => {
+    render(<PetExperience />);
+    installCanvasRect();
+    const canvas = document.querySelector('.pet-canvas')!;
+    firePointer(canvas, 'down', { screenX: 5, screenY: 5 });
+    firePointer(canvas, 'up', { screenX: 5, screenY: 5 });
+    expect(pet.petRuntime.interaction).not.toHaveBeenCalled();
+  });
+
+  it('注入 codenono manifest：视口内点击触发 body_touch，视口外不触发（命中收窄）', () => {
+    render(<PetExperience manifest={getCharacterManifest('codenono')} />);
+    installCanvasRect();
+    const canvas = document.querySelector('.pet-canvas')!;
+    firePointer(canvas, 'down', { screenX: 120, screenY: 170 });
+    firePointer(canvas, 'up', { screenX: 120, screenY: 170 });
+    expect(pet.petRuntime.interaction).toHaveBeenCalledWith({ kind: 'body_touch' });
+
+    firePointer(canvas, 'down', { screenX: 10, screenY: 10 });
+    firePointer(canvas, 'up', { screenX: 10, screenY: 10 });
+    expect(pet.petRuntime.interaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('画布 rect 无效（jsdom 未 mock）时 zone 为 null，不回退 DOM 命中', () => {
+    render(<PetExperience />);
+    // 不 installCanvasRect：默认 getBoundingClientRect 宽高为 0
+    const head = document.querySelector('[data-hit="head"]');
+    firePointer(head!, 'down', { screenX: 100, screenY: 100 });
+    firePointer(head!, 'up', { screenX: 100, screenY: 100 });
+    expect(pet.petRuntime.interaction).not.toHaveBeenCalled();
   });
 });
 

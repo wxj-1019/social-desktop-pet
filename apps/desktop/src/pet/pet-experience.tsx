@@ -3,7 +3,9 @@
  *
  * 组合 usePetRuntime 的视觉状态渲染 StarIsleVisual，叠加 PetBubble 气泡，
  * 并在根容器上绑定指针交互：
- * - 按下记录起点与 data-hit 命中区（head/body/tail）
+ * - 按下记录起点与 manifest 几何命中区（阶段 C：client 坐标换算回 240×260
+ *   逻辑画布后对 manifest.interaction.zones 做纯几何命中；zone → 交互指令
+ *   见 zone-hit.ts）
  * - 位移 >= 6px 才启动 drag（dragStart + rAF 节流的 dragMove，up 时 dragEnd），
  *   避免单击误触发窗口移动
  * - 未达阈值的抬起由 classifyPointer 决定 click（按命中区发 interaction）或
@@ -27,8 +29,9 @@ import {
   type ReactNode,
 } from 'react';
 
-import type { PetInteraction, PetRuntimeSnapshot } from '@pet/protocol';
+import type { CharacterManifest, PetRuntimeSnapshot } from '@pet/protocol';
 
+import { getCharacterManifest } from './character-manifests.js';
 import { ClassicMenu } from './classic-menu.js';
 import { PetBubble } from './pet-bubble.js';
 import { PetFallback } from './pet-fallback.js';
@@ -41,21 +44,13 @@ import {
 import { SaoMenu } from './sao-menu.js';
 import { StarIsleVisual } from './star-isle-visual.js';
 import { usePetRuntime, type RendererFactory } from './use-pet-runtime.js';
-
-type HitPart = 'head' | 'body' | 'tail';
+import { hitTestZone, zoneToInteractionKind } from './zone-hit.js';
 
 /** 桌宠画布基准尺寸（与 Main 侧 PET_WINDOW_SIZE 240×260 对应）：
  *  桌宠本体渲染区域 = 基准 × 用户缩放档位，始终锚定窗口右下角。
  *  环形菜单展开时窗口会被临时扩到 ≥ 基准（Main 侧 setMenuCanvas），
  *  扩出的空间全部在左/上 —— 桌宠屏幕位置不动，菜单画布完整可见。 */
 const PET_CANVAS_BASE = { width: 240, height: 260 };
-
-/** 命中区 → 交互指令（data-hit 属性值即此枚举） */
-const HIT_INTERACTION: Record<HitPart, PetInteraction['kind']> = {
-  head: 'head_touch',
-  body: 'body_touch',
-  tail: 'tail_touch',
-};
 
 /** 环形菜单交互面（SAO / classic 共用）：菜单内点击不进入拖拽手势流。
  *  指针捕获会把后续 click 重定向到根容器，吞掉菜单按钮 onClick；
@@ -75,6 +70,8 @@ export interface PetExperienceProps {
   rendererFactory?: RendererFactory;
   /** 角色名（onboarding 引导气泡自称用；缺省星屿） */
   petName?: string;
+  /** 形象协议 manifest：交互区域/能力的单一事实源；缺省星屿（协议 §6） */
+  manifest?: CharacterManifest;
 }
 
 export function PetExperience({
@@ -82,6 +79,7 @@ export function PetExperience({
   FallbackComponent = PetFallback,
   rendererFactory,
   petName,
+  manifest = getCharacterManifest('star-isle'),
 }: PetExperienceProps) {
   const { snapshot, profile, visualState, bubbleText, renderer } = usePetRuntime(
     rendererFactory ? { rendererFactory, petName } : { petName },
@@ -89,11 +87,13 @@ export function PetExperience({
 
   const gestureRef = useRef<{
     start: PointerSample | null;
-    hit: HitPart | null;
+    zone: string | null;
     dragging: boolean;
     /** 按下点在说话气泡上（抬起时点击气泡 → 直达聊天面板，缩短聊天路径） */
     bubbleHit: boolean;
-  }>({ start: null, hit: null, dragging: false, bubbleHit: false });
+  }>({ start: null, zone: null, dragging: false, bubbleHit: false });
+  /** 桌宠画布节点：pointerdown 时读 getBoundingClientRect 做几何命中换算 */
+  const canvasRef = useRef<HTMLDivElement | null>(null);
   const lastClickAtRef = useRef<number | null>(null);
   const schedulerRef = useRef<ReturnType<typeof createDragMoveScheduler> | null>(null);
   /** 连续点击计数：2秒内点击>=3次触发"生气" */
@@ -126,7 +126,7 @@ export function PetExperience({
         output: { dialogue: '', emotion: 'warm', actionIntent: 'idle', intensity: 1 },
       });
     }
-    gestureRef.current = { start: null, hit: null, dragging: false, bubbleHit: false };
+    gestureRef.current = { start: null, zone: null, dragging: false, bubbleHit: false };
   };
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -138,11 +138,19 @@ export function PetExperience({
     if (!runtime) return;
     const sample = screenSample(e);
     if (!sample) return;
-    const hit = (e.target as Element | null)
-      ?.closest?.('[data-hit]')
-      ?.getAttribute('data-hit') as HitPart | null;
+    // manifest 几何命中（阶段 C）：client 坐标换算回 240×260 逻辑画布；
+    // 画布 rect 无效（宽高为 0，如布局未就绪）→ zone=null，
+    // 不回退 DOM data-hit（单一真相源，协议 §6）
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    let zone: string | null = null;
+    if (canvasRect && canvasRect.width > 0 && canvasRect.height > 0) {
+      zone = hitTestZone(manifest.interaction.zones, {
+        x: ((e.clientX - canvasRect.left) * PET_CANVAS_BASE.width) / canvasRect.width,
+        y: ((e.clientY - canvasRect.top) * PET_CANVAS_BASE.height) / canvasRect.height,
+      });
+    }
     const bubbleHit = Boolean((e.target as Element | null)?.closest?.('.pet-speech'));
-    gestureRef.current = { start: sample, hit, dragging: false, bubbleHit };
+    gestureRef.current = { start: sample, zone, dragging: false, bubbleHit };
     // 指针捕获：光标甩出窗口后 pointermove/up 仍会回到本元素，
     // 避免松手丢失导致拖动卡死（jsdom 不支持时静默降级）
     try {
@@ -208,7 +216,7 @@ export function PetExperience({
       } else if (kind === 'click' && gesture.bubbleHit) {
         // 点击气泡 → 直达聊天面板（比"双击身体"更短的聊天入口）
         window.pet?.panel?.open({ view: 'chat' });
-      } else if (kind === 'click' && gesture.hit) {
+      } else if (kind === 'click' && gesture.zone) {
         // 睡眠中单击先唤醒：走 playMotion('touch')，让 image renderer 的
         // comingFromSleep 分支播 500ms 伸懒腰过渡，再切到 touch（点击反馈）。
         if (visualState.motion === 'sleep') {
@@ -233,12 +241,12 @@ export function PetExperience({
             // intensity=3 表示"生气"——image-pet-renderer 会识别并加 _imageAngry 标记
             void renderer.playMotion('sad', 3);
           } else {
-            runtime.interaction({ kind: HIT_INTERACTION[gesture.hit] });
+            runtime.interaction({ kind: zoneToInteractionKind(gesture.zone) });
           }
         }
       }
       lastClickAtRef.current = sample.at;
-      gestureRef.current = { start: null, hit: null, dragging: false, bubbleHit: false };
+      gestureRef.current = { start: null, zone: null, dragging: false, bubbleHit: false };
     }
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
@@ -343,6 +351,7 @@ export function PetExperience({
       {/* 桌宠画布：基准 × 缩放档位、锚定窗口右下角。菜单展开扩窗时窗口变大、
           画布不变 —— 桌宠屏幕位置不动；菜单画布（240×260 基准）与本画布右下对齐 */}
       <div
+        ref={canvasRef}
         className="pet-canvas"
         style={{
           width: Math.round(PET_CANVAS_BASE.width * petScale),

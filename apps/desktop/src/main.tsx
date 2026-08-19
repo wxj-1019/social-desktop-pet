@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { AppPanel } from './app/app.js';
+import { getCharacterManifest } from './pet/character-manifests.js';
 import { getCharacterConfig } from './pet/character-registry.js';
 import { PetExperience } from './pet/pet-experience.js';
 import { PocApp } from './poc/poc-app.js';
@@ -25,6 +26,7 @@ if (params.has('poc')) {
       VisualComponent={character.VisualComponent}
       rendererFactory={character.rendererFactory}
       petName={character.petName}
+      manifest={getCharacterManifest(character.id)}
     />
   );
 } else {
