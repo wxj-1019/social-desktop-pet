@@ -442,9 +442,11 @@ describe('PetExperience（星屿直连交互面）', () => {
   });
 
   it('interaction.enabled=false 的角色不响应点击互动（协议 §6.3）', () => {
+    const base = getCharacterManifest('star-isle');
     const disabled = {
-      ...getCharacterManifest('star-isle'),
-      interaction: { enabled: false, zones: [] },
+      ...base,
+      // 保留 zones、只翻 enabled：确保锁定的是 enabled 门控而非空 zones 的 vacuous 通过
+      interaction: { enabled: false, zones: base.interaction.zones },
     };
     render(<PetExperience manifest={disabled} />);
     installCanvasRect();
