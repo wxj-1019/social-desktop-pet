@@ -80,6 +80,7 @@ export const IPC_ALLOWLIST = [
   'pet:set-online', // 在线状态上报（面板 WS 连接状态 → 运行时 OFFLINE/ONLINE）
   'pet:set-size', // 桌宠大小调节（设置页滑块）
   'pet:get-size', // 桌宠大小查询（设置页初始值）
+  'pet:set-menu-canvas', // 环形菜单画布（菜单展开临时扩窗 ≥240×260 基准，右下锚定）
   'pet:set-pass-through', // 整窗穿透
   'pet:set-hidden', // 隐藏/显示桌宠（SAO 菜单）
   'pet:profile-changed', // main→pet 推送（设置页写档案后广播，气泡/减弱动态实时生效）

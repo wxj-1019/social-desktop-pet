@@ -50,6 +50,8 @@ import {
   createPanelWindow,
   createPetWindow,
   correctedBounds,
+  menuCollapsedBounds,
+  menuExpandedBounds,
   petWindowSizeFor,
   setPassThrough,
 } from './window-controller.js';
@@ -105,6 +107,10 @@ const RENDERER_STABILIZE_MS = 30_000;
 let rendererCrashAttempts = 0;
 let stabilityTimer: ReturnType<typeof setTimeout> | null = null;
 let positionSaveTimer: ReturnType<typeof setTimeout> | null = null;
+/** 环形菜单画布：菜单展开期间窗口临时扩到 ≥240×260 基准（右下锚定）。
+ *  展开期间的位置/尺寸持久化一律跳过（扩窗 bounds 是临时的，collapse 时
+ *  以画布右下角为锚统一还原并保存），避免污染 PetPosition。 */
+let menuCanvasExpanded = false;
 let runtimeStarted = false;
 /** 显示器列表缓存（app ready 后由 refreshDisplays 填充；显示器事件刷新） */
 let cachedDisplays: DisplayInfo[] = [];
@@ -201,6 +207,8 @@ void app.whenReady().then(async () => {
     clearScheduledPositionSave();
     positionSaveTimer = setTimeout(() => {
       positionSaveTimer = null;
+      // 菜单画布展开期间的 moved（扩窗 setBounds 触发）不持久化：collapse 时统一保存
+      if (menuCanvasExpanded) return;
       // 'moved' 事件路径（window-controller 的 toPersistedPosition）只带位置、
       // scale 恒为 1 —— 必须保留当前持久化的缩放比例，否则任何 moved 事件
       // （setBounds / OS 移动窗口等）会把用户调好的桌宠大小重置为 100%
@@ -224,6 +232,7 @@ void app.whenReady().then(async () => {
   screen.on('display-metrics-changed', refreshDisplays);
   const currentDisplays = (): DisplayInfo[] => cachedDisplays;
   const savePetPosition = (): void => {
+    if (menuCanvasExpanded) return;
     clearScheduledPositionSave();
     const win = alivePetWindow();
     if (!win || !positionStore) return;
@@ -245,6 +254,9 @@ void app.whenReady().then(async () => {
   // 拖动/溜达结束：校正窗口尺寸（跨 DPI 拖动可能被系统改动 → 恢复 scale×基准），
   // 再保存位置（基于校正后的窗口位置）
   const correctPetWindowSize = (): void => {
+    // 菜单画布展开期间窗口尺寸是刻意的扩窗，不做"校正"（否则会把扩窗还原成
+    // scale 尺寸 → 菜单出窗被截断）；collapse 时按新 scale 统一还原
+    if (menuCanvasExpanded) return;
     const win = alivePetWindow();
     if (!win || !positionStore) return;
     const expected = petWindowSizeFor(positionStore.load().scale);
@@ -333,6 +345,11 @@ void app.whenReady().then(async () => {
     const win = alivePetWindow();
     if (!win || !positionStore) return;
     const s = Math.min(Math.max(scale, MIN_PET_SCALE), MAX_PET_SCALE);
+    // 菜单画布展开期间只落库不 resize（此刻窗口是临时扩窗，resize 会把菜单
+    // 挤出窗外再次截断）；菜单收起（collapse）时按新 scale 统一还原窗口
+    positionStore.save({ ...positionStore.load(), scale: s, savedAt: Date.now() });
+    tray?.setScaleForced(s);
+    if (menuCanvasExpanded) return;
     const size = petWindowSizeFor(s);
     // 以窗口中心为锚 resize + 夹进所在显示器工作区（复用 8.5 位置钳制）
     const displays = currentDisplays();
@@ -342,12 +359,40 @@ void app.whenReady().then(async () => {
       size,
     );
     win.setBounds({ x: restored.x, y: restored.y, width: size.width, height: size.height });
-    positionStore.save({ ...positionStore.load(), scale: s, savedAt: Date.now() });
-    tray?.setScaleForced(s);
   };
 
   /** 当前缩放比例（设置页滑块初始值） */
   const getPetScale = (): number => positionStore?.load().scale ?? DEFAULT_PET_SCALE;
+
+  // ---- 环形菜单画布：菜单展开期间窗口临时扩到 ≥240×260 基准（右下锚定） ----
+  // 环形菜单（SAO/经典）几何恒用 240×260 基准坐标；桌宠窗按用户缩放可能小于基准
+  //（0.5 档仅 120×130，几何钳制也装不下 → 出窗被截断）。展开时以画布右下角
+  //（桌宠本体所在角）为锚扩窗（桌宠屏幕位置不动），收起时还原 scale 尺寸并保存位置。
+  const setMenuCanvas = (expanded: boolean): void => {
+    if (expanded === menuCanvasExpanded) return;
+    const win = alivePetWindow();
+    if (!win || !positionStore) return;
+    const displays = currentDisplays();
+    if (displays.length === 0) return;
+    const bounds = win.getBounds();
+    // 窗口所在显示器的工作区（扩窗可能跨出当前工作区 → 夹回）
+    const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+    const workArea = screen.getDisplayNearestPoint(center).workArea;
+    if (expanded) {
+      // 漫步/拖动会挪窗口导致菜单与桌宠错位：与穿透切换同款"先停"处理
+      drag?.cancel();
+      wander?.stop();
+      runtime?.cancelWander();
+      win.setBounds(menuExpandedBounds(bounds, workArea));
+      menuCanvasExpanded = true;
+    } else {
+      menuCanvasExpanded = false;
+      win.setBounds(
+        menuCollapsedBounds(bounds, petWindowSizeFor(positionStore.load().scale), workArea),
+      );
+      savePetPosition();
+    }
+  };
 
   // ---- 隐藏/显示桌宠：托盘与 SAO 菜单共用的单一入口（窗口 + 运行时状态同步） ----
   const hidePet = (): void => {
@@ -412,6 +457,9 @@ void app.whenReady().then(async () => {
 
   // ---- 桌宠窗创建 + 生命周期接线（崩溃重建 / 渲染就绪启动运行时）----
   const createAndWirePetWindow = (): BrowserWindow => {
+    // 新窗口按 scale 尺寸创建（菜单必然关闭）：画布展开状态归零，
+    // 否则新窗的位置持久化/尺寸校正会被误跳过
+    menuCanvasExpanded = false;
     const win = createPetWindow({
       savedPosition: positionStore!.load(),
       // 8.5：位置变化 → 持久化
@@ -493,6 +541,7 @@ void app.whenReady().then(async () => {
     setDnd: syncDnd,
     setPetScale,
     getPetScale,
+    setMenuCanvas,
     hidePet,
     showPet,
     // 8.2 开机自启（设置页开关 → StartupController；仅打包版实际生效）

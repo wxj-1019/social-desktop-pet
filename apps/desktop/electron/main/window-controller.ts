@@ -60,6 +60,62 @@ export function correctedBounds(
   };
 }
 
+interface Bounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** 整窗夹进工作区（尺寸不变，整体平移；出屏部分等于不可见，宁可盖住桌宠） */
+function clampToWorkArea(target: Bounds, workArea: Bounds): Bounds {
+  return {
+    ...target,
+    x: Math.round(
+      Math.min(Math.max(target.x, workArea.x), workArea.x + workArea.width - target.width),
+    ),
+    y: Math.round(
+      Math.min(Math.max(target.y, workArea.y), workArea.y + workArea.height - target.height),
+    ),
+  };
+}
+
+/**
+ * 环形菜单画布扩窗：环形菜单（SAO/经典）需要完整 240×260 基准画布，桌宠窗按
+ * 用户缩放可能小于基准（0.5 档仅 120×130，菜单压缩钳制也装不下 → 出窗被截断）。
+ * 菜单展开期间窗口临时扩到 max(当前, 基准)，以画布右下角（桌宠本体所在角）为锚
+ * 向左/上扩展（桌宠屏幕位置不动），再整体夹进工作区。已 ≥ 基准时原样返回。
+ */
+export function menuExpandedBounds(bounds: Bounds, workArea: Bounds): Bounds {
+  const width = Math.max(bounds.width, PET_WINDOW_SIZE.width);
+  const height = Math.max(bounds.height, PET_WINDOW_SIZE.height);
+  if (width === bounds.width && height === bounds.height) return bounds;
+  return clampToWorkArea(
+    { x: bounds.x + bounds.width - width, y: bounds.y + bounds.height - height, width, height },
+    workArea,
+  );
+}
+
+/**
+ * 菜单收起：以画布右下角为锚还原到 scale 尺寸。扩窗期间若被工作区钳制挪动过，
+ * 桌宠留在钳制后的位置（连续，不跳回）；位置持久化由调用方在还原后统一保存。
+ */
+export function menuCollapsedBounds(
+  expanded: Bounds,
+  petSize: { width: number; height: number },
+  workArea: Bounds,
+): Bounds {
+  return clampToWorkArea(
+    {
+      x: expanded.x + expanded.width - petSize.width,
+      y: expanded.y + expanded.height - petSize.height,
+      width: petSize.width,
+      height: petSize.height,
+    },
+    workArea,
+  );
+}
+
 /** 测试注入端口：生产默认由 BrowserWindow + screen 实现 */
 export interface WindowControllerRuntime {
   /** 创建窗口（对应 new BrowserWindow(...)） */

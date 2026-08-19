@@ -1,8 +1,19 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SaoMenu } from './sao-menu.js';
+
+/** 菜单几何恒用 240×260 基准（展开期间窗口由 Main 扩到 ≥ 基准）：stub 窗口
+ *  尺寸不应影响几何 —— 保留 stub 用于回归"按窗口压缩几何"的旧缺陷 */
+function stubWindowSize(w: number, h: number): void {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: w });
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: h });
+}
+
+beforeEach(() => {
+  stubWindowSize(240, 260);
+});
 
 afterEach(() => {
   cleanup();
@@ -100,5 +111,24 @@ describe('SaoMenu · 刀剑神域风格环形轮盘托盘', () => {
     expect(left + width).toBeLessThanOrEqual(240);
     // 好友节点 x≈27 → 理想 left≈51，无需钳制
     expect(left).toBeCloseTo(51.1, 0);
+  });
+
+  it('小窗（0.5 档 120×130）下几何不压缩：节点仍用 240×260 基准坐标（截断回归）', () => {
+    // 缺陷场景：桌宠大小档位 <100% 时窗口装不下菜单，旧实现按窗口压缩几何
+    // → 菜单挤成一团/出窗被截断。修复后几何恒为基准（窗口由 Main 临时扩到 ≥ 基准）。
+    stubWindowSize(120, 130);
+    render(<SaoMenu isOpen={true} onClose={vi.fn()} />);
+
+    // 控制节点（-54° 弧底，最后一个槽位）：基准坐标 x≈61.3/y≈231.8
+    // → 槽位 left = 61.3-14 ≈ 47、top = 231.8-14 ≈ 218（而非压缩进 120×130）
+    const slots = Array.from(document.querySelectorAll<HTMLElement>('.sao-left-slot'));
+    expect(slots.length).toBe(6);
+    const last = slots[5]!;
+    expect(Number.parseFloat(last.style.left)).toBeGreaterThan(40);
+    expect(Number.parseFloat(last.style.top)).toBeGreaterThan(200);
+
+    // 弧线 viewBox 仍是基准 240×260（不随窗口缩放）
+    const svg = document.querySelector('.sao-left-track-svg') as SVGSVGElement | null;
+    expect(svg?.getAttribute('viewBox')).toBe('0 0 240 260');
   });
 });

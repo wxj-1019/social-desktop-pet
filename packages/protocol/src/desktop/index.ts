@@ -161,6 +161,14 @@ export const PetSetSizeSchema = z
   .strict();
 export type PetSetSize = z.infer<typeof PetSetSizeSchema>;
 
+/** 环形菜单画布指令（菜单展开 → 桌宠窗临时扩到 ≥240×260 基准、右下锚定；收起还原） */
+export const PetSetMenuCanvasSchema = z
+  .object({
+    expanded: z.boolean(),
+  })
+  .strict();
+export type PetSetMenuCanvas = z.infer<typeof PetSetMenuCanvasSchema>;
+
 /** 面板打开指令（view 与面板 tab + 登录页一一对应） */
 export const PanelOpenSchema = z
   .object({

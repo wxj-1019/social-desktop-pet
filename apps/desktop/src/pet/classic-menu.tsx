@@ -19,7 +19,7 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 export interface ClassicMenuProps {
   isOpen: boolean;
@@ -46,7 +46,7 @@ interface ClassicNode {
   onClick: () => void;
 }
 
-/** 环绕桌宠的节点布局（右下半环，圆心在窗口右下之外） */
+/** 环绕桌宠的节点布局（右下半环，圆心在窗口右下之外；240×260 基准坐标） */
 const NODE_POSITIONS: Array<{ x: number; y: number }> = [
   { x: 152, y: 42 }, // 对话（顶部偏右）
   { x: 100, y: 56 },
@@ -58,6 +58,45 @@ const NODE_POSITIONS: Array<{ x: number; y: number }> = [
 
 const RING_CENTER = { x: 190, y: 186 };
 const RING_RADIUS = 108;
+/** 节点视觉直径 32px：小窗时节点中心至少留 18px 边距（16 半径 + 2 呼吸） */
+const NODE_EDGE_MARGIN = 18;
+/** 二级面板 6 个 chip 的近似总高（小窗时面板压缩为滚动容器） */
+const CLASSIC_SUB_HEIGHT = 176;
+
+export interface ClassicMenuGeometry {
+  w: number;
+  h: number;
+  ring: { cx: number; cy: number; r: number };
+  nodePositions: Array<{ x: number; y: number }>;
+  close: { left: number; top: number };
+  sub: { left: number; top: number; maxHeight: number };
+}
+
+/** 按窗口尺寸计算经典环状菜单几何（240×260 基准等比；导出供测试）。
+ *  节点坐标等比缩放并钳进窗口（小窗不越界）；引导环半径钳制到窗口内
+ *  完整可见（原 108px 环在基准窗口下右/下缘就超窗被裁，一并修复）。 */
+export function computeClassicMenuGeometry(w: number, h: number): ClassicMenuGeometry {
+  const kx = w / 240;
+  const ky = h / 260;
+  const cx = RING_CENTER.x * kx;
+  const cy = RING_CENTER.y * ky;
+  const r = Math.min(RING_RADIUS * kx, RING_RADIUS * ky, cx - 8, w - cx - 8, cy - 8, h - cy - 8);
+  const nodePositions = NODE_POSITIONS.map((p) => ({
+    x: Math.min(Math.max(p.x * kx, NODE_EDGE_MARGIN), w - NODE_EDGE_MARGIN),
+    y: Math.min(Math.max(p.y * ky, NODE_EDGE_MARGIN), h - NODE_EDGE_MARGIN),
+  }));
+  const close = { left: cx - 52 * kx, top: cy - 138 * ky };
+  const subTop = Math.max(8, Math.min(148 * ky, h - CLASSIC_SUB_HEIGHT - 8));
+  // 面板宽 148px 固定：left 钳进窗口（小窗下贴左缘，避免右缘出窗）
+  const subLeft = Math.min(118 * kx, w - 148 - 8);
+  const sub = { left: subLeft, top: subTop, maxHeight: Math.max(80, h - subTop - 8) };
+  return { w, h, ring: { cx, cy, r }, nodePositions, close, sub };
+}
+
+/** 菜单画布恒为 240×260 基准（与 Main 侧 PET_WINDOW_SIZE 对应）：菜单展开时
+ *  Main 已把窗口临时扩到 ≥ 基准并右下锚定（pet:set-menu-canvas），几何不随
+ *  窗口/缩放档位重算 —— 任何档位（0.5–2.0）下菜单尺寸、位置恒定且完整可见。 */
+const MENU_CANVAS = { width: 240, height: 260 };
 
 export function ClassicMenu({
   isOpen,
@@ -72,6 +111,13 @@ export function ClassicMenu({
   onShowNativeMenu,
 }: ClassicMenuProps) {
   const [subOpen, setSubOpen] = useState(false);
+
+  // 菜单几何恒用 240×260 基准（展开期间窗口已由 Main 扩到 ≥ 基准、右下锚定）：
+  // 不再按 innerWidth/innerHeight 重算 —— 按窗口压缩几何是小档位下菜单被截断的根因
+  const geometry = useMemo(
+    () => computeClassicMenuGeometry(MENU_CANVAS.width, MENU_CANVAS.height),
+    [],
+  );
 
   useEffect(() => {
     if (!isOpen) {
@@ -106,48 +152,48 @@ export function ClassicMenu({
       id: 'chat',
       label: '对话',
       icon: <MessageCircle size={15} aria-hidden="true" />,
-      x: NODE_POSITIONS[0]!.x,
-      y: NODE_POSITIONS[0]!.y,
+      x: geometry.nodePositions[0]!.x,
+      y: geometry.nodePositions[0]!.y,
       onClick: () => handleOpenView('chat'),
     },
     {
       id: 'friends',
       label: '好友',
       icon: <Users size={15} aria-hidden="true" />,
-      x: NODE_POSITIONS[1]!.x,
-      y: NODE_POSITIONS[1]!.y,
+      x: geometry.nodePositions[1]!.x,
+      y: geometry.nodePositions[1]!.y,
       onClick: () => handleOpenView('friends'),
     },
     {
       id: 'character',
       label: '角色',
       icon: <Sparkles size={15} aria-hidden="true" />,
-      x: NODE_POSITIONS[2]!.x,
-      y: NODE_POSITIONS[2]!.y,
+      x: geometry.nodePositions[2]!.x,
+      y: geometry.nodePositions[2]!.y,
       onClick: () => handleOpenView('character'),
     },
     {
       id: 'memories',
       label: '记忆',
       icon: <Brain size={15} aria-hidden="true" />,
-      x: NODE_POSITIONS[3]!.x,
-      y: NODE_POSITIONS[3]!.y,
+      x: geometry.nodePositions[3]!.x,
+      y: geometry.nodePositions[3]!.y,
       onClick: () => handleOpenView('memories'),
     },
     {
       id: 'model',
       label: '模型',
       icon: <Sliders size={15} aria-hidden="true" />,
-      x: NODE_POSITIONS[4]!.x,
-      y: NODE_POSITIONS[4]!.y,
+      x: geometry.nodePositions[4]!.x,
+      y: geometry.nodePositions[4]!.y,
       onClick: () => handleOpenView('model'),
     },
     {
       id: 'controls',
       label: '控制',
       icon: <Settings2 size={15} aria-hidden="true" />,
-      x: NODE_POSITIONS[5]!.x,
-      y: NODE_POSITIONS[5]!.y,
+      x: geometry.nodePositions[5]!.x,
+      y: geometry.nodePositions[5]!.y,
       onClick: () => setSubOpen((prev) => !prev),
     },
   ];
@@ -160,12 +206,16 @@ export function ClassicMenu({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* 环绕桌宠的半透明引导环 */}
-      <svg className="classic-track-svg" viewBox="0 0 240 260" aria-hidden="true">
+      {/* 环绕桌宠的半透明引导环（半径已钳制到窗口内，完整可见） */}
+      <svg
+        className="classic-track-svg"
+        viewBox={`0 0 ${geometry.w} ${geometry.h}`}
+        aria-hidden="true"
+      >
         <circle
-          cx={RING_CENTER.x}
-          cy={RING_CENTER.y}
-          r={RING_RADIUS}
+          cx={geometry.ring.cx}
+          cy={geometry.ring.cy}
+          r={geometry.ring.r}
           fill="none"
           stroke="rgba(129, 140, 248, 0.4)"
           strokeWidth="1.5"
@@ -175,7 +225,7 @@ export function ClassicMenu({
 
       <button
         className="classic-close"
-        style={{ left: RING_CENTER.x - 52, top: RING_CENTER.y - 138 }}
+        style={{ left: geometry.close.left, top: geometry.close.top }}
         type="button"
         aria-label="关闭菜单"
         title="关闭 (Esc)"
@@ -206,7 +256,11 @@ export function ClassicMenu({
       {subOpen && (
         <div
           className="classic-sub"
-          style={{ left: 118, top: 148 }}
+          style={{
+            left: geometry.sub.left,
+            top: geometry.sub.top,
+            maxHeight: geometry.sub.maxHeight,
+          }}
           role="region"
           aria-label="快捷控制"
         >

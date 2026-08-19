@@ -102,6 +102,9 @@ const api = {
     /** 隐藏/显示桌宠（与托盘同源入口；隐藏后经托盘"显示"或 SAO 恢复） */
     setHidden: (hidden: boolean) => ipcRenderer.send('pet:set-hidden', { enabled: hidden }),
     showContextMenu: () => ipcRenderer.send('pet:show-context-menu'),
+    /** 环形菜单画布：菜单展开时请求 Main 把桌宠窗临时扩到 ≥240×260 基准
+     *  （右下锚定，桌宠屏幕位置不动）——任何桌宠大小档位下菜单完整可见 */
+    setMenuCanvas: (expanded: boolean) => ipcRenderer.send('pet:set-menu-canvas', { expanded }),
     /** 面板 → 桌宠一次性气泡（记忆"已记住"等提示；走 main 侧 showBubble） */
     showBubble: (text: string) =>
       ipcRenderer.send('pet:show-bubble', { type: 'bubble', text } satisfies PetVisualCommand),

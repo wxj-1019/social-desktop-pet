@@ -22,6 +22,7 @@ import {
   PetIdSchema,
   PetInteractionSchema,
   PetProfileSchema,
+  PetSetMenuCanvasSchema,
   PetSetSizeSchema,
   PetSocialEventSchema,
   PetVisualCommandSchema,
@@ -84,6 +85,8 @@ export interface PetIpcDependencies {
   setPetScale: (scale: number) => void;
   /** 当前缩放比例（设置页滑块初始值） */
   getPetScale: () => number;
+  /** 环形菜单画布单一入口（菜单展开临时扩窗 ≥240×260 右下锚定；收起还原） */
+  setMenuCanvas: (expanded: boolean) => void;
   /** 隐藏桌宠单一入口（窗口 hide + 运行时 HIDDEN；托盘同源） */
   hidePet: () => void;
   /** 显示桌宠单一入口（窗口 show + 解除穿透 + 运行时恢复；托盘同源） */
@@ -239,7 +242,15 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
     const { scale } = parseIpcPayload(PetSetSizeSchema, payload);
     deps.setPetScale(scale);
   });
-  registerInvoke(deps, 'pet:get-size', 'panel', () => deps.getPetScale());
+  // pet 窗也需要 scale：环形菜单固定 240×260 基准几何 + 画布锚定需要知道缩放比例
+  //（菜单展开时 Main 侧已把窗口临时扩到 ≥ 基准，任何档位下菜单完整可见）
+  registerInvoke(deps, 'pet:get-size', ['pet', 'panel'], () => deps.getPetScale());
+  // 环形菜单画布：菜单展开（true）时桌宠窗临时扩到 ≥240×260 基准（右下锚定，
+  // 桌宠屏幕位置不动）；收起（false）还原 scale 尺寸。仅 pet 窗的菜单使用。
+  registerOn(deps, 'pet:set-menu-canvas', 'pet', (_win, payload) => {
+    const { expanded } = parseIpcPayload(PetSetMenuCanvasSchema, payload);
+    deps.setMenuCanvas(expanded);
+  });
   // 勿扰：SAO 菜单（pet）与设置页（panel）共入口；Main 端 syncDnd 统一
   // runtime / 档案 / 托盘（快照广播由 runtime emit 驱动）
   registerOn(deps, 'pet:set-dnd', ['pet', 'panel'], (_win, payload) => {

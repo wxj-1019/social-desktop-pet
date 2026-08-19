@@ -127,6 +127,7 @@ function makeDeps() {
   const setDnd = vi.fn((enabled: boolean) => runtime.setDnd(enabled));
   const setPetScale = vi.fn();
   const getPetScale = vi.fn(() => 1);
+  const setMenuCanvas = vi.fn();
   const hidePet = vi.fn();
   const showPet = vi.fn();
   const autoLaunch = {
@@ -155,6 +156,7 @@ function makeDeps() {
     setDnd,
     setPetScale,
     getPetScale,
+    setMenuCanvas,
     hidePet,
     showPet,
     autoLaunch,
@@ -175,6 +177,7 @@ function makeDeps() {
     setDnd,
     setPetScale,
     getPetScale,
+    setMenuCanvas,
     autoLaunch,
     reloadPetWithCharacter,
     deps,
@@ -557,6 +560,45 @@ describe('pet:set-size / pet:get-size（桌宠大小调节）', () => {
 
     await expect(handler?.(eventFrom(panel), undefined)).resolves.toBe(1);
     expect(getPetScale).toHaveBeenCalled();
+  });
+
+  it('pet 窗口也可查询 scale（环形菜单画布锚定需要缩放比例）', async () => {
+    const { pet, deps, getPetScale } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.invokeHandlers?.get('pet:get-size');
+
+    await expect(handler?.(eventFrom(pet), undefined)).resolves.toBe(1);
+    expect(getPetScale).toHaveBeenCalled();
+  });
+});
+
+describe('pet:set-menu-canvas（环形菜单画布扩窗）', () => {
+  it('pet 窗发送 expanded:true → setMenuCanvas 被调用', () => {
+    const { pet, deps, setMenuCanvas } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.onHandlers.get('pet:set-menu-canvas');
+
+    expect(() => handler?.(eventFrom(pet), { expanded: true })).not.toThrow();
+    expect(setMenuCanvas).toHaveBeenCalledWith(true);
+  });
+
+  it('拒绝非法 payload（expanded 非布尔 / 多余字段）', () => {
+    const { pet, deps, setMenuCanvas } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.onHandlers.get('pet:set-menu-canvas');
+
+    expect(() => handler?.(eventFrom(pet), { expanded: 'yes' })).toThrow(IpcPayloadError);
+    expect(() => handler?.(eventFrom(pet), { expanded: true, extra: 1 })).toThrow(IpcPayloadError);
+    expect(setMenuCanvas).not.toHaveBeenCalled();
+  });
+
+  it('panel 窗越权调用被拒绝（画布通道仅 pet 窗的环形菜单使用）', () => {
+    const { panel, deps, setMenuCanvas } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.onHandlers.get('pet:set-menu-canvas');
+
+    expect(() => handler?.(eventFrom(panel), { expanded: true })).toThrow(IpcSenderError);
+    expect(setMenuCanvas).not.toHaveBeenCalled();
   });
 });
 

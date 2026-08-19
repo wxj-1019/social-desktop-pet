@@ -9,6 +9,7 @@ import { isRadialMenuElement, PetExperience } from './pet-experience.js';
 afterEach(cleanup);
 
 interface FakePet {
+  getPetScale: ReturnType<typeof vi.fn>;
   petRuntime: {
     getSnapshot: ReturnType<typeof vi.fn>;
     onSnapshot: ReturnType<typeof vi.fn>;
@@ -21,6 +22,7 @@ interface FakePet {
     dragEnd: ReturnType<typeof vi.fn>;
     setDnd: ReturnType<typeof vi.fn>;
     setPassThrough: ReturnType<typeof vi.fn>;
+    setMenuCanvas: ReturnType<typeof vi.fn>;
     showContextMenu: ReturnType<typeof vi.fn>;
   };
   panel: {
@@ -63,6 +65,7 @@ function installFakePet(state: PetRuntimeSnapshot['state'] = 'IDLE'): void {
   snapshotHandler = () => undefined;
 
   pet = {
+    getPetScale: vi.fn(async () => 1),
     petRuntime: {
       getSnapshot: vi.fn(async () => snapshot),
       onSnapshot: vi.fn((cb: (snapshot: PetRuntimeSnapshot) => void) => {
@@ -81,6 +84,7 @@ function installFakePet(state: PetRuntimeSnapshot['state'] = 'IDLE'): void {
       dragEnd: vi.fn(),
       setDnd: vi.fn(),
       setPassThrough: vi.fn(),
+      setMenuCanvas: vi.fn(),
       showContextMenu: vi.fn(),
     },
     panel: {
@@ -315,6 +319,45 @@ describe('PetExperience（星屿直连交互面）', () => {
     expect(screen.getByTestId('sao-menu')).not.toBeNull();
     expect(event.defaultPrevented).toBe(true);
     expect(pet.petRuntime.showContextMenu).not.toHaveBeenCalled();
+  });
+
+  it('环形菜单开合驱动菜单画布扩窗（展开 → setMenuCanvas(true)，关闭 → false）', () => {
+    render(<PetExperience />);
+    const container = document.querySelector('.pet-experience');
+    expect(pet.petRuntime.setMenuCanvas).toHaveBeenCalledWith(false); // 初始 false
+
+    act(() => {
+      container!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    });
+    expect(pet.petRuntime.setMenuCanvas).toHaveBeenCalledWith(true);
+
+    // 再右键收起菜单 → 还原窗口
+    act(() => {
+      container!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    });
+    expect(screen.queryByTestId('sao-menu')).toBeNull();
+    expect(pet.petRuntime.setMenuCanvas).toHaveBeenLastCalledWith(false);
+  });
+
+  it('桌宠画布按缩放档位定尺寸并右下锚定（扩窗时桌宠屏幕位置不动）', async () => {
+    pet.getPetScale.mockResolvedValue(0.5);
+    render(<PetExperience />);
+    // getPetScale 是异步拉取，等画布尺寸更新
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const canvas = document.querySelector('.pet-canvas') as HTMLElement | null;
+    expect(canvas).not.toBeNull();
+    expect(canvas!.style.width).toBe('120px');
+    expect(canvas!.style.height).toBe('130px');
+    expect(canvas!.className).toBe('pet-canvas');
+  });
+
+  it('unmount 兜底收起菜单画布（角色切换重建窗时扩窗不残留）', () => {
+    const { unmount } = render(<PetExperience />);
+    unmount();
+    const calls = pet.petRuntime.setMenuCanvas.mock.calls.map((c) => c[0]);
+    expect(calls[calls.length - 1]).toBe(false);
   });
 
   it('closes the radial menu when pass-through turns on (菜单留在屏幕上将无法点击关闭)', () => {

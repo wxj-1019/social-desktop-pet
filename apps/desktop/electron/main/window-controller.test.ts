@@ -14,6 +14,8 @@ import {
   createPetWindow,
   loadRendererSurface,
   correctedBounds,
+  menuCollapsedBounds,
+  menuExpandedBounds,
   petWindowSizeFor,
   setPassThrough,
   PANEL_WINDOW_SIZE,
@@ -164,6 +166,48 @@ describe('correctedBounds（跨 DPI 拖动后的尺寸校正）', () => {
       { width: 240, height: 260 },
     );
     expect(corrected).toEqual({ x: 105, y: 200, width: 240, height: 260 });
+  });
+});
+
+describe('menuExpandedBounds / menuCollapsedBounds（环形菜单画布扩窗）', () => {
+  const workArea = { x: 0, y: 0, width: 1920, height: 1040 };
+
+  it('小窗（0.5 档 120×130）扩到 240×260 基准：以右下角为锚向左上扩展，桌宠屏幕位置不动', () => {
+    const expanded = menuExpandedBounds({ x: 400, y: 500, width: 120, height: 130 }, workArea);
+    // 右下角 (520, 630) 保持：x = 520-240, y = 630-260
+    expect(expanded).toEqual({ x: 280, y: 370, width: 240, height: 260 });
+  });
+
+  it('窗口已 ≥ 基准（2 档 480×520）→ 尺寸与位置不变（无需扩窗）', () => {
+    const bounds = { x: 400, y: 500, width: 480, height: 520 };
+    expect(menuExpandedBounds(bounds, workArea)).toBe(bounds);
+  });
+
+  it('贴屏幕左缘的桌宠：扩窗整体夹进工作区（菜单可能略盖桌宠，不出屏）', () => {
+    // 桌宠在 (10, 500)，扩窗理想 x = 130-240 = -110 → 夹到 0
+    const expanded = menuExpandedBounds({ x: 10, y: 500, width: 120, height: 130 }, workArea);
+    expect(expanded).toEqual({ x: 0, y: 370, width: 240, height: 260 });
+  });
+
+  it('收起菜单：以画布右下角为锚还原到 scale 尺寸（扩窗被钳制后桌宠留在钳制位置）', () => {
+    const collapsed = menuCollapsedBounds(
+      { x: 0, y: 370, width: 240, height: 260 },
+      { width: 120, height: 130 },
+      workArea,
+    );
+    // 右下角 (240, 630) 保持 → 桌宠落位 (120, 500)
+    expect(collapsed).toEqual({ x: 120, y: 500, width: 120, height: 130 });
+  });
+
+  it('收起时贴屏幕右缘：整体夹进工作区不出屏', () => {
+    const workAreaEdge = { x: 0, y: 0, width: 300, height: 1040 };
+    const collapsed = menuCollapsedBounds(
+      { x: 60, y: 370, width: 240, height: 260 },
+      { width: 120, height: 130 },
+      workAreaEdge,
+    );
+    // 理想 x = 300-120 = 180 → 已在工作区内；y 理想 500 ✓
+    expect(collapsed).toEqual({ x: 180, y: 500, width: 120, height: 130 });
   });
 });
 

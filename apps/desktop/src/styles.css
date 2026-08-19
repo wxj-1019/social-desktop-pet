@@ -793,6 +793,15 @@ body,
   background: transparent;
 }
 
+/* 桌宠画布：基准 240×260 × 用户缩放档位（内联尺寸），锚定窗口右下角。
+   环形菜单展开时窗口被临时扩到 ≥ 基准（Main 侧 setMenuCanvas），扩出的空间
+   全在左/上 —— 画布锚定右下保证桌宠屏幕位置不动（菜单画布同样右下对齐）。 */
+.pet-canvas {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+}
+
 /* ---- spritesheet 角色皮肤（CodeNoNo）---- */
 /* 外层：撑满容器，水平居中 + 底部锚定（与星屿 xMidYMax meet 一致） */
 .spritesheet-pet {
@@ -939,7 +948,12 @@ body,
 
 .sao-radial-overlay {
   position: absolute;
-  inset: 0;
+  /* 菜单画布恒为 240×260 基准、右下锚定（与桌宠画布右下对齐；菜单展开期间
+     Main 已把窗口临时扩到 ≥ 基准 → 任何桌宠大小档位下菜单完整可见不截断） */
+  right: 0;
+  bottom: 0;
+  width: 240px;
+  height: 260px;
   z-index: 100;
   pointer-events: auto;
   background: transparent;
@@ -1203,6 +1217,9 @@ body,
   gap: 4px;
   animation: sao-sub-pop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 40;
+  /* 小窗（桌宠缩放 <100%）下面板高度被几何压缩：内容超高时面板内滚动 */
+  overflow-y: auto;
+  scrollbar-width: thin;
   -webkit-app-region: no-drag;
 }
 
@@ -1405,7 +1422,12 @@ body,
 
 .classic-radial-overlay {
   position: absolute;
-  inset: 0;
+  /* 菜单画布恒为 240×260 基准、右下锚定（与桌宠画布右下对齐；菜单展开期间
+     Main 已把窗口临时扩到 ≥ 基准 → 任何桌宠大小档位下菜单完整可见不截断） */
+  right: 0;
+  bottom: 0;
+  width: 240px;
+  height: 260px;
   z-index: 100;
   pointer-events: auto;
   background: transparent;
@@ -1548,6 +1570,9 @@ body,
   gap: 4px;
   animation: sao-sub-pop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 40;
+  /* 小窗（桌宠缩放 <100%）下高度被几何压缩：内容超高时面板内滚动 */
+  overflow-y: auto;
+  scrollbar-width: thin;
   -webkit-app-region: no-drag;
 }
 

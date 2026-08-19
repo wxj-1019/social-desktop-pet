@@ -24,7 +24,7 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import type { LocalLlmConfigView } from '@pet/protocol';
 
@@ -59,31 +59,22 @@ interface MenuItemNode {
   onClick: () => void;
 }
 
-/** 二级毛玻璃面板的锚点：从节点圆心向右弹出，水平/垂直都钳制在 240×260 设计窗口内。
- * 此前只钳垂直、left 不钳：controls（x≈61）+24+168=253 > 240，面板被窗口右缘裁掉
- * （chat 节点也越界约 2px）。整套菜单（轨道/节点）是 240×260 固定设计坐标、不随
- * 窗口缩放，故按设计宽 240 钳制即可保证任意窗口缩放下不裁切。 */
-const SUB_PANEL_W = 168;
+/** 二级毛玻璃面板的锚点：从节点圆心向右弹出，水平/垂直都钳制在当前窗口内。
+ * 面板宽/高按窗口收缩（请求高度超窗口时压缩，内容由面板内部滚动兜底），
+ * 任意窗口缩放（桌宠大小档位 0.5–2.0）下面板都完整可见。 */
 const SUB_PANEL_MARGIN = 8;
-const SUB_PANEL_RIGHT_EDGE_MAX = 240 - SUB_PANEL_W - SUB_PANEL_MARGIN;
-const subPanelPos = (node: { x: number; y: number }, height: number) => {
-  const top = Math.min(
-    Math.max(node.y - height / 2, SUB_PANEL_MARGIN),
-    260 - height - SUB_PANEL_MARGIN,
-  );
-  const left = Math.min(
-    Math.max(node.x + NODE_RADIUS + 10, SUB_PANEL_MARGIN),
-    SUB_PANEL_RIGHT_EDGE_MAX,
-  );
-  return { left, top, width: SUB_PANEL_W };
-};
+const SUB_PANEL_W_MAX = 168;
 
 /**
  * 弧形轨道几何 —— 左侧 C 型圆弧（圆心在宠物一侧、凸面向左）。
  * 关闭钮 + 5 个节点作为"珠子"等弧长分布在弧上；能量线在相邻珠子之间
  * 以独立弧段呈现（两端按图标半径收缩），不连续穿过图标本体。
+ *
+ * 窗口缩放适配：240×260 基准下的全部几何按窗口等比重算 —— 弧/节点永远
+ * 完整落在窗口内；节点半径钳制下限保证内容可读（"整容器 transform: scale"
+ * 方案会让节点/文字随小窗一起缩到看不清，这是它的根因）。
  */
-const TRACK = { cx: 126, cy: 142.7, r: 110 };
+const TRACK_RATIO = { cx: 126 / 240, cy: 142.7 / 260, r: 110 / 240 };
 /** 锚点角度（度；0° = 弧最左点，正值向上），相邻锚点间隔 20°（6 节点容纳模型项） */
 const ANCHOR_DEG = {
   close: 66,
@@ -94,56 +85,112 @@ const ANCHOR_DEG = {
   model: -34,
   controls: -54,
 } as const;
-const CLOSE_BTN_RADIUS = 10;
-const NODE_RADIUS = 14;
+type AnchorKey = keyof typeof ANCHOR_DEG;
 const SEG_BREATH = 2; // 弧段与图标边缘的呼吸间隙（px）
-
-const arcPoint = (deg: number) => ({
-  x: TRACK.cx - TRACK.r * Math.cos((deg * Math.PI) / 180),
-  y: TRACK.cy - TRACK.r * Math.sin((deg * Math.PI) / 180),
-});
-
-const ARC_POINTS = {
-  close: arcPoint(ANCHOR_DEG.close),
-  chat: arcPoint(ANCHOR_DEG.chat),
-  friends: arcPoint(ANCHOR_DEG.friends),
-  character: arcPoint(ANCHOR_DEG.character),
-  memories: arcPoint(ANCHOR_DEG.memories),
-  model: arcPoint(ANCHOR_DEG.model),
-  controls: arcPoint(ANCHOR_DEG.controls),
-};
+/** 节点半径下限/上限：14px 是 240×260 基准值；小窗最低 11px 保证可点可读 */
+const NODE_RADIUS_MIN = 11;
+const NODE_RADIUS_MAX = 17;
+const CLOSE_BTN_RADIUS = 10; // 顶部关闭钮固定（不与节点争弧上间距）
 
 interface TrackSegment {
   d: string;
   length: number;
 }
 
-/** 相邻锚点之间的可见弧段：从当前图标边缘出发、到下一图标边缘前停下 */
-const buildTrackSegments = (): TrackSegment[] => {
+export interface SaoMenuGeometry {
+  w: number;
+  h: number;
+  track: { cx: number; cy: number; r: number };
+  nodeRadius: number;
+  closeRadius: number;
+  points: Record<AnchorKey, { x: number; y: number }>;
+  segments: TrackSegment[];
+  /** 二级面板尺寸/位置计算（按当前窗口钳制，面板完整可见） */
+  subPanelPos: (
+    node: { x: number; y: number },
+    height: number,
+  ) => {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  };
+}
+
+/** 按窗口尺寸计算 SAO 菜单几何（240×260 基准等比；导出供测试） */
+export function computeSaoMenuGeometry(w: number, h: number): SaoMenuGeometry {
+  const cx = TRACK_RATIO.cx * w;
+  const cy = TRACK_RATIO.cy * h;
+  const r = Math.min(TRACK_RATIO.r * w, TRACK_RATIO.r * h);
+  const nodeRadius = Math.min(NODE_RADIUS_MAX, Math.max(NODE_RADIUS_MIN, 14 * (r / 110)));
+
+  const arcPoint = (deg: number) => ({
+    x: cx - r * Math.cos((deg * Math.PI) / 180),
+    y: cy - r * Math.sin((deg * Math.PI) / 180),
+  });
+  const points = Object.fromEntries(
+    (Object.entries(ANCHOR_DEG) as Array<[AnchorKey, number]>).map(([key, deg]) => [
+      key,
+      arcPoint(deg),
+    ]),
+  ) as Record<AnchorKey, { x: number; y: number }>;
+
+  /** 相邻锚点之间的可见弧段：从当前图标边缘出发、到下一图标边缘前停下 */
   const order: Array<{ deg: number; radius: number }> = [
     { deg: ANCHOR_DEG.close, radius: CLOSE_BTN_RADIUS },
-    { deg: ANCHOR_DEG.chat, radius: NODE_RADIUS },
-    { deg: ANCHOR_DEG.friends, radius: NODE_RADIUS },
-    { deg: ANCHOR_DEG.character, radius: NODE_RADIUS },
-    { deg: ANCHOR_DEG.memories, radius: NODE_RADIUS },
-    { deg: ANCHOR_DEG.model, radius: NODE_RADIUS },
-    { deg: ANCHOR_DEG.controls, radius: NODE_RADIUS },
+    { deg: ANCHOR_DEG.chat, radius: nodeRadius },
+    { deg: ANCHOR_DEG.friends, radius: nodeRadius },
+    { deg: ANCHOR_DEG.character, radius: nodeRadius },
+    { deg: ANCHOR_DEG.memories, radius: nodeRadius },
+    { deg: ANCHOR_DEG.model, radius: nodeRadius },
+    { deg: ANCHOR_DEG.controls, radius: nodeRadius },
   ];
-  const shrinkDeg = (px: number) => (px / TRACK.r) * (180 / Math.PI);
-  return order.slice(0, -1).map((cur, index) => {
+  const shrinkDeg = (px: number) => (px / r) * (180 / Math.PI);
+  const segments = order.slice(0, -1).map((cur, index) => {
     const next = order[index + 1]!;
     const from = cur.deg - shrinkDeg(cur.radius + SEG_BREATH);
     const to = next.deg + shrinkDeg(next.radius + SEG_BREATH);
     const p1 = arcPoint(from);
     const p2 = arcPoint(to);
     return {
-      d: `M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} A ${TRACK.r} ${TRACK.r} 0 0 0 ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`,
-      length: (TRACK.r * (from - to) * Math.PI) / 180,
+      d: `M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} A ${r} ${r} 0 0 0 ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`,
+      length: (r * (from - to) * Math.PI) / 180,
     };
   });
-};
 
-const TRACK_SEGMENTS = buildTrackSegments();
+  const subPanelPos = (
+    node: { x: number; y: number },
+    height: number,
+  ): { left: number; top: number; width: number; height: number } => {
+    const width = Math.min(SUB_PANEL_W_MAX, w - SUB_PANEL_MARGIN * 2);
+    const panelH = Math.max(SUB_PANEL_MARGIN * 2, Math.min(height, h - SUB_PANEL_MARGIN * 2));
+    const top = Math.min(
+      Math.max(node.y - panelH / 2, SUB_PANEL_MARGIN),
+      h - panelH - SUB_PANEL_MARGIN,
+    );
+    const left = Math.min(
+      Math.max(node.x + nodeRadius + 10, SUB_PANEL_MARGIN),
+      Math.max(w - width - SUB_PANEL_MARGIN, SUB_PANEL_MARGIN),
+    );
+    return { left, top, width, height: panelH };
+  };
+
+  return {
+    w,
+    h,
+    track: { cx, cy, r },
+    nodeRadius,
+    closeRadius: CLOSE_BTN_RADIUS,
+    points,
+    segments,
+    subPanelPos,
+  };
+}
+
+/** 菜单画布恒为 240×260 基准（与 Main 侧 PET_WINDOW_SIZE 对应）：菜单展开时
+ *  Main 已把窗口临时扩到 ≥ 基准并右下锚定（pet:set-menu-canvas），几何不随
+ *  窗口/缩放档位重算 —— 任何档位（0.5–2.0）下菜单尺寸、位置恒定且完整可见。 */
+const MENU_CANVAS = { width: 240, height: 260 };
 
 export function SaoMenu({
   isOpen,
@@ -160,6 +207,11 @@ export function SaoMenu({
   const [activeSubMenu, setActiveSubMenu] = useState<
     'none' | 'quick_controls' | 'chat' | 'model' | 'friends' | 'character' | 'memories'
   >('none');
+
+  // 菜单几何恒用 240×260 基准（展开期间窗口已由 Main 扩到 ≥ 基准、右下锚定）：
+  // 不再按 innerWidth/innerHeight 重算 —— 按窗口压缩几何是小档位（如 0.5 档
+  // 120×130）下菜单被截断/节点重叠的根因
+  const geometry = useMemo(() => computeSaoMenuGeometry(MENU_CANVAS.width, MENU_CANVAS.height), []);
 
   // 迷你聊天（chat 二级菜单）本地状态
   const [chatInput, setChatInput] = useState('');
@@ -328,8 +380,8 @@ export function SaoMenu({
       sub: 'Message',
       icon: <MessageCircle size={14} aria-hidden="true" />,
       colorClass: 'sao-ring-node--cyan',
-      x: ARC_POINTS.chat.x,
-      y: ARC_POINTS.chat.y,
+      x: geometry.points.chat.x,
+      y: geometry.points.chat.y,
       onClick: () => toggleSub('chat'),
     },
     {
@@ -338,8 +390,8 @@ export function SaoMenu({
       sub: 'Friends',
       icon: <Users size={14} aria-hidden="true" />,
       colorClass: 'sao-ring-node--indigo',
-      x: ARC_POINTS.friends.x,
-      y: ARC_POINTS.friends.y,
+      x: geometry.points.friends.x,
+      y: geometry.points.friends.y,
       onClick: () => toggleSub('friends'),
     },
     {
@@ -348,8 +400,8 @@ export function SaoMenu({
       sub: 'Avatar',
       icon: <Sparkles size={14} aria-hidden="true" />,
       colorClass: 'sao-ring-node--purple',
-      x: ARC_POINTS.character.x,
-      y: ARC_POINTS.character.y,
+      x: geometry.points.character.x,
+      y: geometry.points.character.y,
       onClick: () => toggleSub('character'),
     },
     {
@@ -358,8 +410,8 @@ export function SaoMenu({
       sub: 'Memory',
       icon: <Brain size={14} aria-hidden="true" />,
       colorClass: 'sao-ring-node--amber',
-      x: ARC_POINTS.memories.x,
-      y: ARC_POINTS.memories.y,
+      x: geometry.points.memories.x,
+      y: geometry.points.memories.y,
       onClick: () => toggleSub('memories'),
     },
     {
@@ -368,8 +420,8 @@ export function SaoMenu({
       sub: 'LLM',
       icon: <Sparkles size={14} aria-hidden="true" />,
       colorClass: 'sao-ring-node--cyan',
-      x: ARC_POINTS.model.x,
-      y: ARC_POINTS.model.y,
+      x: geometry.points.model.x,
+      y: geometry.points.model.y,
       onClick: () => openModelSub(),
     },
     {
@@ -378,8 +430,8 @@ export function SaoMenu({
       sub: 'Controls',
       icon: <Sliders size={14} aria-hidden="true" />,
       colorClass: 'sao-ring-node--teal',
-      x: ARC_POINTS.controls.x,
-      y: ARC_POINTS.controls.y,
+      x: geometry.points.controls.x,
+      y: geometry.points.controls.y,
       onClick: () => toggleSub('quick_controls'),
     },
   ];
@@ -395,8 +447,12 @@ export function SaoMenu({
       {/* 左侧深空大 C 型全息菜单容器 */}
       <div className="sao-left-menu" role="menu" aria-label="SAO 左侧系统菜单">
         {/* 珠链式能量弧段：图标串在弧上，线只在珠间出现（每段一颗能量珠巡游） */}
-        <svg className="sao-left-track-svg" viewBox="0 0 240 260" aria-hidden="true">
-          {TRACK_SEGMENTS.map((seg, index) => (
+        <svg
+          className="sao-left-track-svg"
+          viewBox={`0 0 ${geometry.w} ${geometry.h}`}
+          aria-hidden="true"
+        >
+          {geometry.segments.map((seg, index) => (
             <g key={index}>
               <path className="sao-seg-base" d={seg.d} />
               <path
@@ -418,8 +474,8 @@ export function SaoMenu({
         <button
           className="sao-left-close"
           style={{
-            left: ARC_POINTS.close.x - CLOSE_BTN_RADIUS,
-            top: ARC_POINTS.close.y - CLOSE_BTN_RADIUS,
+            left: geometry.points.close.x - geometry.closeRadius,
+            top: geometry.points.close.y - geometry.closeRadius,
           }}
           type="button"
           aria-label="关闭环形托盘"
@@ -438,8 +494,8 @@ export function SaoMenu({
               key={node.id}
               className="sao-left-slot"
               style={{
-                left: node.x - NODE_RADIUS,
-                top: node.y - NODE_RADIUS,
+                left: node.x - geometry.nodeRadius,
+                top: node.y - geometry.nodeRadius,
                 animationDelay: `${index * 0.04}s`,
               }}
             >
@@ -451,8 +507,11 @@ export function SaoMenu({
                 title={`${node.label} (${node.sub})`}
               >
                 {node.icon}
-                {/* 悬停时向右内侧浮现的 SAO 全息发光胶囊标签（安全区域，永不被裁切） */}
-                <span className="sao-ring-pill sao-ring-pill--right">
+                {/* 悬停时向右内侧浮现的 SAO 全息发光胶囊标签（随节点半径贴边，小窗不越界） */}
+                <span
+                  className="sao-ring-pill sao-ring-pill--right"
+                  style={{ left: geometry.nodeRadius + 24 }}
+                >
                   <strong>{node.label}</strong>
                   <small>{node.sub}</small>
                 </span>
@@ -466,7 +525,7 @@ export function SaoMenu({
         {activeSubMenu === 'quick_controls' && (
           <div
             className="sao-radial-sub sao-radial-sub--right"
-            style={subPanelPos(ARC_POINTS.controls, 190)}
+            style={geometry.subPanelPos(geometry.points.controls, 190)}
             role="region"
             aria-label="快捷控制面板"
           >
@@ -542,7 +601,7 @@ export function SaoMenu({
         {activeSubMenu === 'chat' && (
           <div
             className="sao-radial-sub sao-radial-sub--right sao-sub--chat"
-            style={subPanelPos(ARC_POINTS.chat, 216)}
+            style={geometry.subPanelPos(geometry.points.chat, 216)}
             role="region"
             aria-label="迷你聊天"
           >
@@ -584,7 +643,7 @@ export function SaoMenu({
         {activeSubMenu === 'model' && (
           <div
             className="sao-radial-sub sao-radial-sub--right sao-sub--model"
-            style={subPanelPos(ARC_POINTS.model, 226)}
+            style={geometry.subPanelPos(geometry.points.model, 226)}
             role="region"
             aria-label="本地模型配置"
           >
@@ -655,7 +714,7 @@ export function SaoMenu({
         {activeSubMenu === 'character' && (
           <div
             className="sao-radial-sub sao-radial-sub--right"
-            style={subPanelPos(ARC_POINTS.character, 130)}
+            style={geometry.subPanelPos(geometry.points.character, 130)}
             role="region"
             aria-label="角色"
           >
@@ -676,7 +735,7 @@ export function SaoMenu({
         {activeSubMenu === 'friends' && (
           <div
             className="sao-radial-sub sao-radial-sub--right"
-            style={subPanelPos(ARC_POINTS.friends, 130)}
+            style={geometry.subPanelPos(geometry.points.friends, 130)}
             role="region"
             aria-label="好友"
           >
@@ -697,7 +756,7 @@ export function SaoMenu({
         {activeSubMenu === 'memories' && (
           <div
             className="sao-radial-sub sao-radial-sub--right"
-            style={subPanelPos(ARC_POINTS.memories, 130)}
+            style={geometry.subPanelPos(geometry.points.memories, 130)}
             role="region"
             aria-label="记忆"
           >

@@ -44,6 +44,12 @@ import { usePetRuntime, type RendererFactory } from './use-pet-runtime.js';
 
 type HitPart = 'head' | 'body' | 'tail';
 
+/** 桌宠画布基准尺寸（与 Main 侧 PET_WINDOW_SIZE 240×260 对应）：
+ *  桌宠本体渲染区域 = 基准 × 用户缩放档位，始终锚定窗口右下角。
+ *  环形菜单展开时窗口会被临时扩到 ≥ 基准（Main 侧 setMenuCanvas），
+ *  扩出的空间全部在左/上 —— 桌宠屏幕位置不动，菜单画布完整可见。 */
+const PET_CANVAS_BASE = { width: 240, height: 260 };
+
 /** 命中区 → 交互指令（data-hit 属性值即此枚举） */
 const HIT_INTERACTION: Record<HitPart, PetInteraction['kind']> = {
   head: 'head_touch',
@@ -254,6 +260,37 @@ export function PetExperience({
   /** 落岛开场：首次快照为 STARTING 时显示脚下底座，约 2.6s 后自动退出（帮用户定位桌宠） */
   const [landingVisible, setLandingVisible] = useState(false);
 
+  // 桌宠画布尺寸 = 基准 × 缩放档位（菜单展开扩窗时窗口变大、画布不变；
+  // resize 时重拉 scale——用户可能在菜单开着时经设置页/托盘调了大小档位）
+  const [petScale, setPetScale] = useState(1);
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => {
+      // 可选链贯穿整条调用链：window.pet 缺失（测试/非 Electron）时静默跳过
+      void window.pet
+        ?.getPetScale()
+        .then((scale) => {
+          if (alive && Number.isFinite(scale)) setPetScale(scale);
+        })
+        .catch(() => undefined);
+    };
+    refresh();
+    window.addEventListener('resize', refresh);
+    return () => {
+      alive = false;
+      window.removeEventListener('resize', refresh);
+    };
+  }, []);
+
+  // 环形菜单画布：菜单展开期间经 Main 把窗口临时扩到 ≥240×260 基准（右下锚定，
+  // 桌宠屏幕位置不动），菜单恒用基准几何 —— 任何缩放档位（0.5–2.0）下都完整
+  // 可见，不再被窗口边缘截断。非 Electron（测试）环境静默跳过。
+  useEffect(() => {
+    window.pet?.petRuntime.setMenuCanvas(saoOpen);
+  }, [saoOpen]);
+  // 卸载兜底（角色切换重建窗/进程退出）：菜单还开着时收起画布，避免扩窗残留
+  useEffect(() => () => window.pet?.petRuntime.setMenuCanvas(false), []);
+
   // 穿透开启后整窗点击都会穿过窗口：留在屏幕上的环形菜单无法被点击关闭
   //（SAO/设置页/托盘任一入口切换穿透都会经运行时快照收敛到这里）→ 立即收起菜单。
   const passThrough = snapshot?.passThrough ?? false;
@@ -303,11 +340,21 @@ export function PetExperience({
       onPointerCancel={handlePointerCancel}
       onContextMenu={handleContextMenu}
     >
-      <PetVisualBoundary fallback={<FallbackComponent />}>
-        <VisualComponent state={visualState} />
-      </PetVisualBoundary>
-      {profile?.bubbleEnabled ? <PetBubble text={bubbleText} /> : null}
-      {landingVisible ? <div className="pet-landing-base" aria-hidden="true" /> : null}
+      {/* 桌宠画布：基准 × 缩放档位、锚定窗口右下角。菜单展开扩窗时窗口变大、
+          画布不变 —— 桌宠屏幕位置不动；菜单画布（240×260 基准）与本画布右下对齐 */}
+      <div
+        className="pet-canvas"
+        style={{
+          width: Math.round(PET_CANVAS_BASE.width * petScale),
+          height: Math.round(PET_CANVAS_BASE.height * petScale),
+        }}
+      >
+        <PetVisualBoundary fallback={<FallbackComponent />}>
+          <VisualComponent state={visualState} />
+        </PetVisualBoundary>
+        {profile?.bubbleEnabled ? <PetBubble text={bubbleText} /> : null}
+        {landingVisible ? <div className="pet-landing-base" aria-hidden="true" /> : null}
+      </div>
       {(profile?.menuStyle ?? 'sao') === 'classic' ? (
         <ClassicMenu
           isOpen={saoOpen}
