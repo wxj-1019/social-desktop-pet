@@ -215,6 +215,7 @@ const ExpressionCoverageSchema = z
  * path 需要渲染层稳定 hit-testing，协议 v1 不开放（§6.2）。
  * priority 数值越小越先命中；id 是角色能力 ID（primary/secondary/accessory/
  * 自定义），legacy head/body/tail 作为兼容 ID 合法（§6.1）。
+ * v1 仅允许短 ID（不含冒号）；<character-id>:<name> 形式的命名空间区域 ID 待阶段 C hit-testing 落地时再开放。
  */
 export const CharacterInteractionZoneSchema = z.discriminatedUnion('shape', [
   z
@@ -262,7 +263,13 @@ export const CharacterInteractionZoneSchema = z.discriminatedUnion('shape', [
       priority: z.number().int().nonnegative(),
       label: z.string().min(1),
       enabled: z.boolean().default(true),
-      points: z.array(z.object({ x: z.number().finite(), y: z.number().finite() }).strict()).min(3),
+      points: z
+        .array(
+          z
+            .object({ x: z.number().finite().nonnegative(), y: z.number().finite().nonnegative() })
+            .strict(),
+        )
+        .min(3),
     })
     .strict(),
 ]);
@@ -435,7 +442,12 @@ export const CharacterManifestSchema = z
       path: (string | number)[],
       label: string,
     ): void => {
-      if (rect.x + rect.width > m.canvas.width || rect.y + rect.height > m.canvas.height) {
+      if (
+        rect.x < 0 ||
+        rect.y < 0 ||
+        rect.x + rect.width > m.canvas.width ||
+        rect.y + rect.height > m.canvas.height
+      ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path,

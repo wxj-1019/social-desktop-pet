@@ -116,6 +116,44 @@ describe('CharacterManifestSchema（形象协议 §4）', () => {
       { id: 'm', reason: 'menu-overlay', x: 0, y: 0, width: 241, height: 260 },
     ];
     expect(CharacterManifestSchema.safeParse(menuOut).success).toBe(false);
+
+    // 左侧越界：circle 的 cx-r < 0（派生坐标，字段级 nonnegative 抓不住）
+    const circleLeft = buildValidManifest();
+    (circleLeft.interaction as unknown) = {
+      enabled: true,
+      zones: [
+        {
+          id: 'primary',
+          shape: 'circle',
+          cx: 20,
+          cy: 100,
+          r: 30,
+          priority: 0,
+          label: '越界圆',
+        },
+      ],
+    };
+    expect(CharacterManifestSchema.safeParse(circleLeft).success).toBe(false);
+
+    // polygon 点坐标为负
+    const negPolygon = buildValidManifest();
+    (negPolygon.interaction as unknown) = {
+      enabled: true,
+      zones: [
+        {
+          id: 'primary',
+          shape: 'polygon',
+          points: [
+            { x: -10, y: 0 },
+            { x: 60, y: 0 },
+            { x: 60, y: 80 },
+          ],
+          priority: 0,
+          label: '负点三角',
+        },
+      ],
+    };
+    expect(CharacterManifestSchema.safeParse(negPolygon).success).toBe(false);
   });
 
   it('可交互角色必须有 primary 区且包围盒 ≥40×40（§3.2/§6.4）', () => {
