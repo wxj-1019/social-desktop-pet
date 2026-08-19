@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, apiBase, getAccessToken, type Friend, type SyncEvent } from '../lib/api/client.js';
 import { syncAfter } from '../lib/inbox-cursor.js';
 import { RealtimeClient, toWsUrl } from '../lib/realtime.js';
-import { StarIsleVisual } from '../pet/star-isle-visual.js';
+import { CharacterVisual } from '../pet/character-visual.js';
 
 interface FriendsPageProps {
   userId: string;
@@ -249,7 +249,7 @@ export function FriendsPage({ userId }: FriendsPageProps) {
       <div className="view-heading">
         <div className="view-heading__identity">
           <span className="view-heading__avatar" aria-hidden="true">
-            <StarIsleVisual />
+            <CharacterVisual />
           </span>
           <div>
             <p className="eyebrow">星屿小圈子</p>
@@ -309,7 +309,7 @@ export function FriendsPage({ userId }: FriendsPageProps) {
           {friends.length === 0 && (
             <li className="friends-state friends-state--empty">
               <span className="friends-empty__character" aria-hidden="true">
-                <StarIsleVisual />
+                <CharacterVisual />
               </span>
               <strong>小圈子还空着</strong>
               <p>邀请一位好友，一起给星屿送点心、串串门。</p>

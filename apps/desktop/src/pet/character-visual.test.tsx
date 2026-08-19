@@ -68,4 +68,17 @@ describe('CharacterVisual（面板侧统一视觉入口）', () => {
     expect(hook!.config.petName).toBe('星屿');
     expect(hook!.manifest.renderer).toBe('svg');
   });
+
+  it('className prop 合并到根元素', () => {
+    render(<CharacterVisual className="extra" />);
+    const root = document.querySelector('.character-visual');
+    expect(root?.className).toBe('character-visual extra');
+  });
+
+  it('显式 petId 时不跟随 profile 变化（缩略图语义）', async () => {
+    render(<CharacterVisual petId="codenono" />);
+    await screen.findByRole('img', { name: 'CodeNoNo' });
+    act(() => changedCb?.({ petId: 'cream-kitten' }));
+    expect(document.querySelector('.spritesheet-pet')).not.toBeNull();
+  });
 });

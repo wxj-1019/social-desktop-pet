@@ -750,6 +750,13 @@
   -webkit-app-region: drag;
 }
 
+/* CharacterVisual 基础尺寸（形象协议阶段 C）：默认撑满容器，
+   新接入的上下文不再踩 auto 高度塌陷；更具体的选择器按上下文覆盖 */
+.character-visual {
+  width: 100%;
+  height: 100%;
+}
+
 .character-presence__avatar {
   width: 32px;
   height: 32px;
@@ -898,6 +905,20 @@
   pointer-events: none;
   transform: scale(1.6);
   transform-origin: center 35%;
+}
+
+/* spritesheet 视口是固定像素（宠物窗裁切需要），面板小容器里按比例缩小：
+   0.24 × (172.8×187.2) ≈ 41×45，44px 缩略图完整可见；更小的头像
+   由容器 overflow 裁底部居中（装饰位，可接受；codenono 为 dev-only 角色） */
+.character-thumb .spritesheet-pet__viewport,
+.character-presence__avatar .spritesheet-pet__viewport,
+.chat-msg__avatar .spritesheet-pet__viewport,
+.chat-empty__character .spritesheet-pet__viewport,
+.settings-preview-pet .spritesheet-pet__viewport,
+.view-heading__avatar .spritesheet-pet__viewport,
+.friends-empty__character .spritesheet-pet__viewport {
+  transform: scale(0.24);
+  transform-origin: center bottom;
 }
 
 .chat-bubble {

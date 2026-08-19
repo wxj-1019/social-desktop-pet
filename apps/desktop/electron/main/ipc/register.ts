@@ -312,6 +312,8 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
     profile.save(next);
     // 推送给桌宠窗：气泡开关/减弱动态等即时生效（否则只在挂载时读一次）
     deps.getPetWindow()?.webContents.send('pet:profile-changed', next);
+    // 广播给面板：聊天/设置等面板侧 CharacterVisual 原地跟随换装/换文案
+    deps.getPanelWindow()?.webContents.send('pet:profile-changed', next);
     return next;
   });
 
@@ -320,6 +322,8 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
     const petId = parseIpcPayload(PetIdSchema, payload);
     const next = { ...profile.load(), petId };
     profile.save(next);
+    // 桌宠窗整窗重载（reloadPetWithCharacter）；面板原地换视觉/文案
+    deps.getPanelWindow()?.webContents.send('pet:profile-changed', next);
     deps.reloadPetWithCharacter(petId);
     return petId;
   });

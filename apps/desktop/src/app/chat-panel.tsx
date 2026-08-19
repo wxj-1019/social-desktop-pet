@@ -354,8 +354,8 @@ export function ChatPanel() {
         </p>
       )}
       {pendingConfirmations.length > 0 && (
-        <section className="memory-confirm-area" aria-label="星屿想记住这些">
-          <p className="memory-confirm-area__title">星屿想记住这些，你愿意吗？</p>
+        <section className="memory-confirm-area" aria-label={`${config.petName}想记住这些`}>
+          <p className="memory-confirm-area__title">{`${config.petName}想记住这些，你愿意吗？`}</p>
           {pendingConfirmations.map((confirmation) => (
             <MemoryConfirmCard
               key={confirmation.confirmationId}
@@ -368,7 +368,7 @@ export function ChatPanel() {
       )}
       <form className="chat-input-row" onSubmit={send}>
         <label className="sr-only" htmlFor="cloud-chat-input">
-          给星屿发消息
+          {`给${config.petName}发消息`}
         </label>
         <textarea
           id="cloud-chat-input"
@@ -381,7 +381,7 @@ export function ChatPanel() {
               void send(event);
             }
           }}
-          placeholder={streaming ? '星屿正在回复…' : '说点什么…（Enter 发送）'}
+          placeholder={streaming ? `${config.petName}正在回复…` : '说点什么…（Enter 发送）'}
           maxLength={2000}
           rows={1}
           disabled={streaming || !historyLoaded}

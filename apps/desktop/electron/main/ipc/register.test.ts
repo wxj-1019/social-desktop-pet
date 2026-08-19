@@ -388,6 +388,27 @@ describe('channel-to-surface binding（Task 7）', () => {
 
     expect(await handler?.(eventFrom(pet), profile)).toEqual(profile);
     expect(await handler?.(eventFrom(panel), profile)).toEqual(profile);
+    // 面板窗也收到广播：面板侧 useCurrentCharacter 原地跟随（形象协议阶段 C）
+    expect(panel.webContents.send).toHaveBeenCalledWith(
+      'pet:profile-changed',
+      expect.objectContaining({ petId: 'star-isle' }),
+    );
+  });
+
+  it('pet:set-character 保存后广播面板（桌宠窗整窗重载，面板原地换视觉）', async () => {
+    const { pet, panel, profile, reloadPetWithCharacter, deps } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.invokeHandlers.get('pet:set-character');
+
+    await expect(handler?.(eventFrom(panel), 'codenono')).resolves.toBe('codenono');
+    expect(profile.save).toHaveBeenCalledWith(expect.objectContaining({ petId: 'codenono' }));
+    expect(reloadPetWithCharacter).toHaveBeenCalledWith('codenono');
+    // 桌宠窗走整窗重载（不发 profile-changed）；面板靠广播原地换装
+    expect(pet.webContents.send).not.toHaveBeenCalled();
+    expect(panel.webContents.send).toHaveBeenCalledWith(
+      'pet:profile-changed',
+      expect.objectContaining({ petId: 'codenono' }),
+    );
   });
 
   it('allows pet:runtime:get from both surfaces', async () => {

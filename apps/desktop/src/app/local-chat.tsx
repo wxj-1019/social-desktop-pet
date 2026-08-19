@@ -17,21 +17,23 @@ import {
   localReply,
   type ChatMessage,
 } from '../lib/local-mode.js';
-import { CharacterVisual } from '../pet/character-visual.js';
+import { CharacterVisual, useCurrentCharacter } from '../pet/character-visual.js';
 
 interface LocalChatProps {
   onLoginClick: () => void;
 }
 
-/** BYOK 模型的系统提示词：本地小宠物人格，短句、无身份承诺（10.4） */
-const LLM_SYSTEM_PROMPT =
-  '你是用户的桌面小宠物"星屿"，温暖、好奇、话少。用中文回复，一次不超过两句话（60字以内），' +
+/** BYOK 模型的系统提示词：本地小宠物人格，短句、无身份承诺（10.4）；
+ *  自称跟随当前角色（profile petId → registry petName），在调用处插值 */
+const llmSystemPrompt = (petName: string): string =>
+  `你是用户的桌面小宠物"${petName}"，温暖、好奇、话少。用中文回复，一次不超过两句话（60字以内），` +
   '语气轻松可爱，可以适度用颜文字。不讨论敏感话题，不扮演真实人类，不说自己是大模型。';
 
 /** 送入 LLM 的最近历史条数（含本轮） */
 const LLM_HISTORY_WINDOW = 16;
 
 export function LocalChat({ onLoginClick }: LocalChatProps) {
+  const { config } = useCurrentCharacter();
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [pending, setPending] = useState(false);
@@ -62,7 +64,7 @@ export function LocalChat({ onLoginClick }: LocalChatProps) {
   /** LLM 路径：历史映射为 OpenAI messages → Main 侧调用；失败回退规则引擎 */
   async function replyViaLlm(text: string, prior: ChatMessage[]): Promise<string> {
     const messages = [
-      { role: 'system' as const, content: LLM_SYSTEM_PROMPT },
+      { role: 'system' as const, content: llmSystemPrompt(config.petName) },
       ...prior.slice(-LLM_HISTORY_WINDOW).map((m) => ({
         role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
         content: m.text,
@@ -141,7 +143,7 @@ export function LocalChat({ onLoginClick }: LocalChatProps) {
       </button>
       <form className="chat-input-row" onSubmit={send}>
         <label className="sr-only" htmlFor="local-chat-input">
-          给星屿发消息
+          {`给${config.petName}发消息`}
         </label>
         <input
           id="local-chat-input"
