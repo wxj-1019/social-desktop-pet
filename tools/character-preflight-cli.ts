@@ -26,4 +26,7 @@ async function main(): Promise<void> {
   process.exit(result.errors.length > 0 ? 1 : 0);
 }
 
-void main();
+void main().catch((error: unknown) => {
+  console.error('[ERROR] preflight 运行失败：', error);
+  process.exit(1);
+});

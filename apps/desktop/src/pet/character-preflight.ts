@@ -116,30 +116,38 @@ export function runCharacterPreflight(): PreflightResult {
       gate(1, 'license-incomplete', '无 sourceUrl 且 notes 未声明来源');
     }
 
-    if (manifest.renderer === 'spritesheet') {
+    if (manifest.id === 'codenono' && manifest.renderer === 'spritesheet') {
+      // 网格常量为 CodeNoNo 专用；第二个 spritesheet 角色需按 §8.4 扩展专属检查
       // 网格整除 + 行越界（硬检查）：帧表常量与磁盘图实际尺寸双向核对
-      const sheetAbs = join(ASSET_ROOT, 'assets/codenono/spritesheet.webp');
-      const size = existsSync(sheetAbs) ? imageSize(sheetAbs) : null;
-      if (size) {
-        if (
-          size.width !== SPRITESHEET_SIZE.width ||
-          size.height !== SPRITESHEET_SIZE.height ||
-          size.width % FRAME_SIZE.width !== 0 ||
-          size.height % FRAME_SIZE.height !== 0
-        ) {
-          err(
-            'spritesheet-grid',
-            `整图 ${size.width}×${size.height} 与帧 ${FRAME_SIZE.width}×${FRAME_SIZE.height} 网格不整除`,
-          );
-        }
-        const rows = size.height / FRAME_SIZE.height;
-        for (const spec of Object.values(CODENONO_MOTION_MAP)) {
-          if (spec.row >= rows) err('spritesheet-grid', `动作行 ${spec.row} 越界（共 ${rows} 行）`);
+      const sheetRel = 'assets/codenono/spritesheet.webp';
+      const sheetAbs = join(ASSET_ROOT, sheetRel);
+      if (existsSync(sheetAbs)) {
+        const size = imageSize(sheetAbs);
+        if (!size) {
+          // 存在但无法解析尺寸：不能静默跳过网格核对（fail-closed）
+          err('asset-unreadable', `${sheetRel} 存在但无法解析尺寸`);
+        } else {
+          if (
+            size.width !== SPRITESHEET_SIZE.width ||
+            size.height !== SPRITESHEET_SIZE.height ||
+            size.width % FRAME_SIZE.width !== 0 ||
+            size.height % FRAME_SIZE.height !== 0
+          ) {
+            err(
+              'spritesheet-grid',
+              `整图 ${size.width}×${size.height} 与帧 ${FRAME_SIZE.width}×${FRAME_SIZE.height} 网格不整除`,
+            );
+          }
+          const rows = size.height / FRAME_SIZE.height;
+          for (const spec of Object.values(CODENONO_MOTION_MAP)) {
+            if (spec.row >= rows)
+              err('spritesheet-grid', `动作行 ${spec.row} 越界（共 ${rows} 行）`);
+          }
         }
       }
     }
     if (manifest.renderer === 'image-sequence') {
-      // 帧表 ↔ manifest 双向绑定（硬检查）
+      // 帧表 → manifest 绑定（清单反向完备由 manifests 双射测试锁定）
       const manifestPaths = new Set(manifest.assets.files.map((f) => f.path));
       for (const spec of Object.values(CREAM_KITTEN_FRAME_MAP)) {
         for (const url of spec.frames) {
@@ -147,12 +155,20 @@ export function runCharacterPreflight(): PreflightResult {
           if (!hit) err('frame-unbound', `帧表 URL 未入清单：${url}`);
         }
       }
-      // 帧画布一致（仅 release error；当前 dev-only → warning）
-      const sizes = manifest.assets.files.map((f) => {
-        const s = imageSize(join(ASSET_ROOT, f.path));
-        return s ? `${s.width}×${s.height}` : 'unreadable';
-      });
-      if (new Set(sizes).size > 1) {
+      // 帧画布一致（仅 release error；当前 dev-only → warning）；
+      // 单文件存在但无法解析尺寸 → 硬错误（不能混进 sizes 集合里静默降级）
+      const sizes: string[] = [];
+      for (const f of manifest.assets.files) {
+        const abs = join(ASSET_ROOT, f.path);
+        if (!existsSync(abs)) continue; // 缺失已由 asset-missing 上报，且避免 readFileSync 抛错
+        const s = imageSize(abs);
+        if (!s) {
+          err('asset-unreadable', `${f.path} 存在但无法解析尺寸`);
+          continue;
+        }
+        sizes.push(`${s.width}×${s.height}`);
+      }
+      if (sizes.length > 0 && new Set(sizes).size > 1) {
         gate(2, 'frame-canvas-consistency', `帧画布不一致：${[...new Set(sizes)].join(' / ')}`);
       }
     }
@@ -163,14 +179,17 @@ export function runCharacterPreflight(): PreflightResult {
     }
   }
 
-  // 未引用资产（warning；扫描角色资产目录的直接图片文件）
-  for (const dir of ['assets/codenono', 'assets/cream-kitten']) {
-    const absDir = join(ASSET_ROOT, dir);
-    if (!existsSync(absDir)) continue;
-    for (const name of readdirSync(absDir)) {
-      const rel = `${dir}/${name}`;
-      if (/\.(png|webp|jpg)$/i.test(name) && !referenced.has(rel)) {
-        warnings.push({ id: 'unreferenced-asset', characterId: dir.split('/')[1]!, message: rel });
+  // 未引用资产（warning；动态枚举 assets/ 下角色目录，未来角色目录自动纳入扫描）
+  const assetsDir = join(ASSET_ROOT, 'assets');
+  if (existsSync(assetsDir)) {
+    for (const entry of readdirSync(assetsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const dir = `assets/${entry.name}`;
+      for (const file of readdirSync(join(assetsDir, entry.name))) {
+        const rel = `${dir}/${file}`;
+        if (/\.(png|webp|jpg)$/i.test(file) && !referenced.has(rel)) {
+          warnings.push({ id: 'unreferenced-asset', characterId: entry.name, message: rel });
+        }
       }
     }
   }
