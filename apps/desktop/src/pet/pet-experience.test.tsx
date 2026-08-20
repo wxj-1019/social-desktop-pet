@@ -338,6 +338,17 @@ describe('PetExperience（星屿直连交互面）', () => {
     expect(screen.getByTestId('custom-fallback')).not.toBeNull();
   });
 
+  it('降级组件自身崩溃时落到通用 PetFallback（二层 boundary，§11.8）', () => {
+    function ThrowingVisual(): never {
+      throw new Error('visual boom');
+    }
+    function ThrowingFallback(): never {
+      throw new Error('fallback boom');
+    }
+    render(<PetExperience VisualComponent={ThrowingVisual} FallbackComponent={ThrowingFallback} />);
+    expect(document.querySelector('[data-testid="star-isle-fallback"]')).not.toBeNull();
+  });
+
   it('opens the SAO menu (not the native one) and prevents default on contextmenu', () => {
     render(<PetExperience />);
     const container = document.querySelector('.pet-experience');

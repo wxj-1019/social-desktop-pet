@@ -71,10 +71,11 @@ export const CHARACTERS: readonly CharacterConfig[] = [
   },
 ];
 
-/** 按 petId 取角色配置；未知 id 回退到第一个（星屿） */
+/** 按 petId 取角色配置；未知 id 回退到第一个（星屿，并告警留诊断痕迹，§11） */
 export function getCharacterConfig(petId: PetId | string | undefined): CharacterConfig {
   const found = CHARACTERS.find((c) => c.id === petId);
   if (found) return found;
+  console.warn('[character] unknown petId "%s", fallback to star-isle', petId);
   // CHARACTERS 至少含星屿一条；noUncheckedIndexedAccess 下需断言
   return CHARACTERS[0]!;
 }

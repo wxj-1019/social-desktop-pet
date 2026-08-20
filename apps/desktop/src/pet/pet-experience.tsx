@@ -15,7 +15,8 @@
  * 睡眠唤醒：单击时若 visualState.motion==='sleep'，直接调用 renderer.playMotion('touch')，
  * 触发 image renderer 的 comingFromSleep 分支：伸懒腰 500ms 过渡 → 目标动作。
  *
- * StarIsleVisual 渲染抛错时由 PetVisualBoundary 降级为 PetFallback（同样可交互）。
+ * StarIsleVisual 渲染抛错时由 PetVisualBoundary 降级为角色 FallbackComponent；
+ * 角色降级组件自身抛错时再经二层 boundary 落到通用 PetFallback（§11.8）。
  * window.pet 缺失（非 Electron）时所有指针处理静默跳过。
  */
 import {
@@ -364,7 +365,16 @@ export function PetExperience({
           height: Math.round(PET_CANVAS_BASE.height * petScale),
         }}
       >
-        <PetVisualBoundary fallback={<FallbackComponent />}>
+        {/* 二层降级（协议 §11.8）：角色专属 fallback 与主视觉共用渲染路径，
+            自身也可能抛错 → 外层 boundary 兜住后再套一层，最终落回通用
+            PetFallback，保证桌面宠物位永不空白 */}
+        <PetVisualBoundary
+          fallback={
+            <PetVisualBoundary fallback={<PetFallback />}>
+              <FallbackComponent />
+            </PetVisualBoundary>
+          }
+        >
           <VisualComponent state={visualState} />
         </PetVisualBoundary>
         {profile?.bubbleEnabled ? <PetBubble text={bubbleText} /> : null}

@@ -83,7 +83,7 @@ export const IPC_ALLOWLIST = [
   'pet:set-menu-canvas', // 环形菜单画布（菜单展开临时扩窗 ≥240×260 基准，右下锚定）
   'pet:set-pass-through', // 整窗穿透
   'pet:set-hidden', // 隐藏/显示桌宠（SAO 菜单）
-  'pet:profile-changed', // main→pet 推送（设置页写档案后广播，气泡/减弱动态实时生效）
+  'pet:profile-changed', // main→pet/panel 推送（设置页写档案/切角色后面板实时跟随）
   'pet:show-context-menu', // 桌宠右键菜单
   'pet:show-bubble', // 面板 → 桌宠气泡（记忆"已记住"等提示）
   'panel:open', // 面板打开（8.2）

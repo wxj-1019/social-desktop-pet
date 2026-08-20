@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, apiBase, getAccessToken, type Friend, type SyncEvent } from '../lib/api/client.js';
 import { syncAfter } from '../lib/inbox-cursor.js';
 import { RealtimeClient, toWsUrl } from '../lib/realtime.js';
-import { CharacterVisual } from '../pet/character-visual.js';
+import { CharacterVisual, useCurrentCharacter } from '../pet/character-visual.js';
 
 interface FriendsPageProps {
   userId: string;
@@ -45,7 +45,7 @@ function parseGiftPayload(
   };
 }
 
-function eventLabel(entry: SyncEvent, friends: Friend[]): string {
+function eventLabel(entry: SyncEvent, friends: Friend[], petName: string): string {
   const payload = entry.event.payload as Record<string, unknown> | null;
   const friendId =
     payload && typeof payload.fromUserId === 'string'
@@ -61,13 +61,15 @@ function eventLabel(entry: SyncEvent, friends: Friend[]): string {
     case 'friend.added':
       return `你和 ${friendName} 成为了好友`;
     case 'visit.created':
-      return `${friendName} 来星屿看看你`;
+      return `${friendName} 来${petName}看看你`;
     default:
       return '你们之间有一条新动态';
   }
 }
 
 export function FriendsPage({ userId }: FriendsPageProps) {
+  // 当前角色名（换装后实时跟随）：好友页文案不写死星屿（形象协议阶段 C）
+  const { config } = useCurrentCharacter();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [events, setEvents] = useState<SyncEvent[]>([]);
@@ -252,7 +254,7 @@ export function FriendsPage({ userId }: FriendsPageProps) {
             <CharacterVisual />
           </span>
           <div>
-            <p className="eyebrow">星屿小圈子</p>
+            <p className="eyebrow">{config.petName}小圈子</p>
             <h2 id="friends-title">好友</h2>
           </div>
         </div>
@@ -312,7 +314,7 @@ export function FriendsPage({ userId }: FriendsPageProps) {
                 <CharacterVisual />
               </span>
               <strong>小圈子还空着</strong>
-              <p>邀请一位好友，一起给星屿送点心、串串门。</p>
+              <p>邀请一位好友，一起给{config.petName}送点心、串串门。</p>
             </li>
           )}
           {friends.map((friend) => (
@@ -335,7 +337,7 @@ export function FriendsPage({ userId }: FriendsPageProps) {
           {events.length === 0 && <li className="empty">还没有新动态</li>}
           {[...events].reverse().map((entry) => (
             <li key={entry.inboxSeq}>
-              <span>{eventLabel(entry, friends)}</span>
+              <span>{eventLabel(entry, friends, config.petName)}</span>
               <time dateTime={entry.event.serverTimestamp}>
                 {new Date(entry.event.serverTimestamp).toLocaleTimeString([], {
                   hour: '2-digit',

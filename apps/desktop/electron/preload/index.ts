@@ -127,7 +127,7 @@ const api = {
     get: () => ipcRenderer.invoke('pet-profile:get') as Promise<PetProfile>,
     set: (profile: PetProfile) =>
       ipcRenderer.invoke('pet-profile:set', profile) as Promise<PetProfile>,
-    /** 档案变更推送（main→pet：设置页写入后气泡/减弱动态即时生效） */
+    /** 档案变更推送（main→pet/panel：设置页写档案/切角色后气泡与面板视觉实时跟随） */
     onChanged: (cb: (profile: PetProfile) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, profile: PetProfile) => cb(profile);
       ipcRenderer.on('pet:profile-changed', listener);

@@ -343,7 +343,10 @@ export const CHARACTER_MANIFESTS: Readonly<Record<PetId, CharacterManifest>> = {
   'cream-kitten': creamKittenManifest,
 };
 
-/** 按 id 取 manifest；未知 id 回退星屿（与 getCharacterConfig 同语义） */
+/** 按 id 取 manifest；未知 id 回退星屿（与 getCharacterConfig 同语义，并告警留诊断痕迹，§11） */
 export function getCharacterManifest(id: string | undefined): CharacterManifest {
-  return CHARACTER_MANIFESTS[id as PetId] ?? starIsleManifest;
+  const found = CHARACTER_MANIFESTS[id as PetId];
+  if (found) return found;
+  console.warn('[character] unknown petId "%s", fallback to star-isle', id);
+  return starIsleManifest;
 }
