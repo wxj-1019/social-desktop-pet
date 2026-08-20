@@ -21,7 +21,10 @@ import { AuthRateLimiter, clientIpOf } from '../lib/auth-rate-limit.js';
 import { isValidDate, isValidUuid } from '../lib/validate.js';
 
 import { createAdminAdminsRouter } from './admin-admins.js';
+import { createAdminMemoriesRouter } from './admin-memories.js';
+import { createAdminPetsRouter } from './admin-pets.js';
 import { createAdminSensitiveRouter } from './admin-sensitive.js';
+import { createAdminSocialRouter } from './admin-social.js';
 import { createAdminUsageRouter } from './admin-usage.js';
 import { createAdminUsersRouter } from './admin-users.js';
 import { createAdminWaitlistRouter } from './admin-waitlist.js';
@@ -268,7 +271,11 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
          (select coalesce(sum(fail_count), 0) from chat_usage
            where usage_date >= current_date - 6)::int as chat_fails_7d,
          (select coalesce(sum(limit_hits), 0) from chat_usage
-           where usage_date >= current_date - 6)::int as limit_hits_7d`,
+           where usage_date >= current_date - 6)::int as limit_hits_7d,
+         (select count(*) from gift_events
+           where created_at >= date_trunc('day', now()))::int as gifts_today,
+         (select count(*) from visits
+           where created_at >= date_trunc('day', now()))::int as visits_today`,
     );
     const r = rows[0] as {
       total_users: number;
@@ -283,6 +290,8 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
       limit_hits_today: number;
       chat_fails_7d: number;
       limit_hits_7d: number;
+      gifts_today: number;
+      visits_today: number;
     };
     return c.json({
       totalUsers: r.total_users,
@@ -297,6 +306,8 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
       limitHitsToday: r.limit_hits_today,
       chatFails7d: r.chat_fails_7d,
       limitHits7d: r.limit_hits_7d,
+      giftsToday: r.gifts_today,
+      visitsToday: r.visits_today,
     });
   });
 
@@ -392,6 +403,30 @@ export function createAdminRouter(deps: AdminRouterDeps): Hono<{ Variables: Admi
     adminSessions: deps.adminSessions,
   });
   app.route('/', adminsRouter);
+
+  // 社交互动中心（事件流/日报/单用户互动历史；只读聚合）
+  const socialRouter = createAdminSocialRouter({
+    pool: deps.pool,
+    jwt,
+    adminUsers: deps.adminUsers,
+  });
+  app.route('/', socialRouter);
+
+  // 宠物与羁绊（名册统计/羁绊分布/单用户明细；只读聚合）
+  const petsRouter = createAdminPetsRouter({
+    pool: deps.pool,
+    jwt,
+    adminUsers: deps.adminUsers,
+  });
+  app.route('/', petsRouter);
+
+  // 记忆确认队列运营视图（HITL 积压/通过率/分布；只读聚合）
+  const memoriesRouter = createAdminMemoriesRouter({
+    pool: deps.pool,
+    jwt,
+    adminUsers: deps.adminUsers,
+  });
+  app.route('/', memoriesRouter);
 
   return app;
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { adminApi } from '../api.js';
+import { adminApi, type MemoryQueueStats } from '../api.js';
 
 type ResourceType = 'chat' | 'private_memory' | 'bond_memory';
 
@@ -159,6 +159,9 @@ export function SensitivePage() {
           </p>
         </div>
       </div>
+
+      {/* 记忆确认队列运营视图（D-3 HITL 积压/通过率/分布） */}
+      <MemoryQueuePanel />
 
       <form className="grant-form" onSubmit={(e) => void loadSummaries(e)}>
         <label>
@@ -360,5 +363,81 @@ export function SensitivePage() {
         </div>
       )}
     </section>
+  );
+}
+
+/** 记忆确认队列运营面板：积压量、7 天确认/拒绝、类别与敏感度分布。
+ *  据此判断 HITL 阈值是否太打扰用户（确认率过低 = 分级确认该放宽）。 */
+function MemoryQueuePanel() {
+  const [stats, setStats] = useState<MemoryQueueStats | null>(null);
+
+  useEffect(() => {
+    adminApi
+      .memoryQueueStats()
+      .then(setStats)
+      .catch(() => undefined); // 队列统计失败不阻塞主工作流
+  }, []);
+
+  if (!stats) return null;
+  const decided = stats.confirmed7d + stats.rejected7d;
+  const confirmRate = decided > 0 ? ((stats.confirmed7d / decided) * 100).toFixed(1) : '—';
+
+  return (
+    <div className="section-card queue-panel">
+      <h3 className="queue-panel__title">记忆确认队列（HITL 运营视图）</h3>
+      <div className="stat-grid">
+        <div className="stat-card amber">
+          <div className="stat-row">
+            <div>
+              <div className="stat-value">{stats.pending.toLocaleString('zh-CN')}</div>
+              <div className="stat-label">待确认积压</div>
+            </div>
+          </div>
+        </div>
+        <div className="stat-card green">
+          <div className="stat-row">
+            <div>
+              <div className="stat-value">{stats.confirmed7d.toLocaleString('zh-CN')}</div>
+              <div className="stat-label">7 天已确认</div>
+            </div>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-row">
+            <div>
+              <div className="stat-value">{stats.rejected7d.toLocaleString('zh-CN')}</div>
+              <div className="stat-label">7 天已拒绝</div>
+            </div>
+          </div>
+        </div>
+        <div className="stat-card blue">
+          <div className="stat-row">
+            <div>
+              <div className="stat-value">
+                {confirmRate}
+                {confirmRate !== '—' ? '%' : ''}
+              </div>
+              <div className="stat-label">7 天确认率</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {(stats.byCategory.length > 0 || stats.bySensitivity.length > 0) && (
+        <div className="queue-dist">
+          {stats.byCategory.length > 0 && (
+            <p className="muted">
+              按类别：
+              {stats.byCategory.map((c) => `${c.category} ${c.count}`).join(' · ')}
+            </p>
+          )}
+          {stats.bySensitivity.length > 0 && (
+            <p className="muted">
+              按敏感度：
+              {stats.bySensitivity.map((s) => `${s.sensitivity} ${s.count}`).join(' · ')}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

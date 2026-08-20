@@ -15,6 +15,8 @@ interface Overview {
   limitHitsToday: number;
   chatFails7d: number;
   limitHits7d: number;
+  giftsToday: number;
+  visitsToday: number;
 }
 
 interface TrendPoint {
@@ -189,6 +191,8 @@ export function OverviewPage({ onNavigate }: { onNavigate?: (view: string) => vo
       trend: peak > 0 ? `峰 ${peak}` : undefined,
     },
     { label: '近 7 天聊天请求', value: data.chatRequests7d, color: 'green' },
+    { label: '今日礼物', value: data.giftsToday ?? 0, color: 'violet' },
+    { label: '今日拜访', value: data.visitsToday ?? 0, color: 'blue' },
     {
       label: '今日失败',
       value: failsToday,

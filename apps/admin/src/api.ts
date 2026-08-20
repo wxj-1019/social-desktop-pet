@@ -149,6 +149,99 @@ export interface AuditRow {
   createdAt: string;
 }
 
+/* ---- 社交互动（P0） ---- */
+
+export interface SocialDailyRow {
+  date: string;
+  gifts: number;
+  visits: number;
+  newFriends: number;
+  activeUsers: number;
+}
+
+export interface SocialEventRow {
+  eventId: string;
+  type: string;
+  payload: Record<string, unknown>;
+  fromEmail: string | null;
+  toEmail: string | null;
+  createdAt: string;
+}
+
+export interface UserSocial {
+  gifts: Array<{
+    giftId: string;
+    snackId: string;
+    status: string;
+    direction: string;
+    peerEmail: string | null;
+    createdAt: string;
+  }>;
+  visits: Array<{
+    visitId: string;
+    type: string;
+    status: string;
+    direction: string;
+    peerEmail: string | null;
+    createdAt: string;
+  }>;
+  friendships: Array<{
+    friendshipId: string;
+    status: string;
+    friendEmail: string;
+    acceptedAt: string | null;
+    createdAt: string;
+  }>;
+}
+
+/* ---- 宠物与羁绊（P0） ---- */
+
+export interface PetsStats {
+  total: number;
+  byCharacter: Record<string, number>;
+  byPersonality: Array<{ mode: string; count: number }>;
+  customNamed: number;
+}
+
+export interface BondsStats {
+  total: number;
+  active: number;
+  byStage: Record<string, number>;
+  avgProgress: number;
+  topBonds: Array<{
+    bondId: string;
+    stage: string;
+    progress: number;
+    petAName: string;
+    petBName: string;
+    userAEmail: string;
+    userBEmail: string;
+  }>;
+}
+
+export interface UserPets {
+  pets: Array<{ petId: string; characterId: string; name: string; personalityMode: string }>;
+  bonds: Array<{
+    bondId: string;
+    stage: string;
+    progress: number;
+    status: string;
+    ownPetName: string;
+    friendPetName: string;
+    friendEmail: string;
+  }>;
+}
+
+/* ---- 记忆确认队列（P0） ---- */
+
+export interface MemoryQueueStats {
+  pending: number;
+  confirmed7d: number;
+  rejected7d: number;
+  byCategory: Array<{ category: string; count: number }>;
+  bySensitivity: Array<{ sensitivity: string; count: number }>;
+}
+
 export const adminApi = {
   login(email: string, password: string) {
     return raw<{ accessToken: string; admin: { id: string; email: string } }>('/auth/login', {
@@ -301,5 +394,45 @@ export const adminApi = {
       `/sensitive-access/${grantId}/content`,
       { headers: { 'x-grant-token': token } },
     );
+  },
+
+  /* ---- 社交互动（P0） ---- */
+
+  socialDaily(from: string, to: string) {
+    return raw<{
+      summary: { gifts: number; visits: number; newFriends: number; activeUsers: number };
+      items: SocialDailyRow[];
+    }>(`/social/daily?from=${from}&to=${to}`);
+  },
+
+  socialEvents(params: Record<string, string>) {
+    const qs = new URLSearchParams(params).toString();
+    return raw<{ total: number; page: number; pageSize: number; items: SocialEventRow[] }>(
+      `/social/events?${qs}`,
+    );
+  },
+
+  userSocial(userId: string) {
+    return raw<UserSocial>(`/users/${userId}/social`);
+  },
+
+  /* ---- 宠物与羁绊（P0） ---- */
+
+  petsStats() {
+    return raw<PetsStats>('/pets/stats');
+  },
+
+  bondsStats() {
+    return raw<BondsStats>('/bonds/stats');
+  },
+
+  userPets(userId: string) {
+    return raw<UserPets>(`/users/${userId}/pets`);
+  },
+
+  /* ---- 记忆确认队列（P0） ---- */
+
+  memoryQueueStats() {
+    return raw<MemoryQueueStats>('/memories/queue-stats');
   },
 };

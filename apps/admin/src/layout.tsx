@@ -5,13 +5,23 @@ import { adminApi, setAccessToken } from './api.js';
 import { AdminsPage } from './pages/admins.js';
 import { AuditPage } from './pages/audit.js';
 import { OverviewPage } from './pages/overview.js';
+import { PetsPage } from './pages/pets.js';
 import { SensitivePage } from './pages/sensitive.js';
+import { SocialPage } from './pages/social.js';
 import { UsagePage } from './pages/usage.js';
 import { UsersPage } from './pages/users.js';
 import { WaitlistPage } from './pages/waitlist.js';
 
 export type AdminView =
-  'overview' | 'users' | 'usage' | 'waitlist' | 'sensitive' | 'audit' | 'admins';
+  | 'overview'
+  | 'social'
+  | 'users'
+  | 'pets'
+  | 'usage'
+  | 'waitlist'
+  | 'sensitive'
+  | 'audit'
+  | 'admins';
 
 /** 导航图标：16px 线性（Feather 风格），aria-hidden，不进入可访问性树 */
 function NavIcon({ children }: { children: ReactNode }) {
@@ -47,12 +57,34 @@ const NAV: Array<{ key: AdminView; label: string; icon: ReactNode }> = [
     ),
   },
   {
+    key: 'social',
+    label: '社交互动',
+    icon: (
+      <NavIcon>
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </NavIcon>
+    ),
+  },
+  {
     key: 'users',
     label: '用户管理',
     icon: (
       <NavIcon>
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
         <circle cx="12" cy="7" r="4" />
+      </NavIcon>
+    ),
+  },
+  {
+    key: 'pets',
+    label: '宠物与羁绊',
+    icon: (
+      <NavIcon>
+        <path d="M10 5.172C10 3.782 8.423 2.679 6.5 3c-2.823.47-4.113 6.006-4 7 .08.703 1.725 1.722 3.656 1 1.261-.472 1.855-1 2.25-1 2.052 0 2.197 2.986 3.5 3 .738 0 1.5-1 2.5-1 3 0 5 2 5 7s-2 7-7 7-7-2-7-7c0-3 1-5 3-7" />
+        <path d="M15.5 10c.28 0 .5-.22.5-.5s-.22-.5-.5-.5-.5.22-.5.5.22.5.5.5z" />
       </NavIcon>
     ),
   },
@@ -198,7 +230,9 @@ export function Layout({ onLogout }: { onLogout(): void }) {
       <main className="content">
         <div className="view" key={view}>
           {view === 'overview' && <OverviewPage onNavigate={(v) => navigate(v as AdminView)} />}
+          {view === 'social' && <SocialPage />}
           {view === 'users' && <UsersPage />}
+          {view === 'pets' && <PetsPage />}
           {view === 'usage' && <UsagePage />}
           {view === 'waitlist' && <WaitlistPage />}
           {view === 'sensitive' && <SensitivePage />}

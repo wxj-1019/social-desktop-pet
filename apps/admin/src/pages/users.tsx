@@ -6,6 +6,8 @@ import {
   type AdminUserDetail,
   type AdminUserSummary,
   type UsageRow,
+  type UserPets,
+  type UserSocial,
 } from '../api.js';
 import { downloadCsv } from '../csv.js';
 import { Pagination } from '../pagination.js';
@@ -71,6 +73,8 @@ export function UsersPage() {
   const [usage, setUsage] = useState<UsageRow[] | null>(null);
   const [chatSummaries, setChatSummaries] = useState<ChatSummaryRow[] | null>(null);
   const [memorySummaries, setMemorySummaries] = useState<MemorySummaryRow[] | null>(null);
+  const [social, setSocial] = useState<UserSocial | null>(null);
+  const [petsInfo, setPetsInfo] = useState<UserPets | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -101,6 +105,8 @@ export function UsersPage() {
     setUsage(null);
     setChatSummaries(null);
     setMemorySummaries(null);
+    setSocial(null);
+    setPetsInfo(null);
   }, []);
 
   // Esc 关闭详情抽屉
@@ -119,19 +125,25 @@ export function UsersPage() {
     setDetailLoading(true);
     const weekAgo = new Date(Date.now() - 6 * 86_400_000).toISOString().slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);
-    // 用量/摘要失败不阻塞详情打开（降级为空列表）
-    const [detail, devs, usageRes, chats, mems] = await Promise.all([
+    // 用量/摘要/社交/宠物失败不阻塞详情打开（降级为空列表）
+    const [detail, devs, usageRes, chats, mems, social, petsInfo] = await Promise.all([
       adminApi.userDetail(userId),
       adminApi.userDevices(userId),
       adminApi.usageForUser(userId, weekAgo, today).catch(() => ({ items: [] as UsageRow[] })),
       adminApi.chatSummary(userId).catch(() => ({ items: [] as ChatSummaryRow[] })),
       adminApi.memoriesSummary(userId).catch(() => ({ items: [] as MemorySummaryRow[] })),
+      adminApi
+        .userSocial(userId)
+        .catch(() => ({ gifts: [], visits: [], friendships: [] }) as UserSocial),
+      adminApi.userPets(userId).catch(() => ({ pets: [], bonds: [] }) as UserPets),
     ]);
     setSelected(detail);
     setDevices(devs.items);
     setUsage(usageRes.items);
     setChatSummaries(chats.items);
     setMemorySummaries(mems.items);
+    setSocial(social);
+    setPetsInfo(petsInfo);
     setDetailLoading(false);
   };
 
@@ -615,6 +627,182 @@ export function UsersPage() {
                     {memorySummaries && memorySummaries.length === 0 && (
                       <p className="muted">暂无记忆</p>
                     )}
+                  </>
+                )}
+              </div>
+
+              {/* 宠物与羁绊 */}
+              <div className="section-card">
+                <h4>宠物与羁绊</h4>
+                {detailLoading ? (
+                  <div className="table-skeleton" aria-hidden="true">
+                    <div className="table-skeleton-row" />
+                  </div>
+                ) : (
+                  <>
+                    {petsInfo && petsInfo.pets.length > 0 && (
+                      <p className="drawer-petline">
+                        {petsInfo.pets.map((p) => (
+                          <span className="pill" key={p.petId}>
+                            {p.name}
+                            <small className="muted">（{p.personalityMode}）</small>
+                          </span>
+                        ))}
+                      </p>
+                    )}
+                    {petsInfo && petsInfo.bonds.length > 0 ? (
+                      <div className="table-panel">
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              <th>对方</th>
+                              <th>宠物</th>
+                              <th>阶段</th>
+                              <th>进度</th>
+                              <th>状态</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {petsInfo.bonds.map((b) => (
+                              <tr key={b.bondId}>
+                                <td className="cell-strong">{b.friendEmail}</td>
+                                <td>
+                                  {b.ownPetName} ↔ {b.friendPetName}
+                                </td>
+                                <td>
+                                  <span
+                                    className={
+                                      b.stage === 'trusted'
+                                        ? 'pill ok'
+                                        : b.stage === 'familiar'
+                                          ? 'pill muted'
+                                          : 'pill'
+                                    }
+                                  >
+                                    {b.stage === 'trusted'
+                                      ? '默契朋友'
+                                      : b.stage === 'familiar'
+                                        ? '熟悉伙伴'
+                                        : '初次见面'}
+                                  </span>
+                                </td>
+                                <td>{b.progress}</td>
+                                <td>{b.status === 'active' ? '活跃' : b.status}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="muted">暂无宠物或羁绊</p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* 互动历史（礼物 / 拜访 / 好友关系） */}
+              <div className="section-card">
+                <h4>互动历史</h4>
+                {detailLoading ? (
+                  <div className="table-skeleton" aria-hidden="true">
+                    <div className="table-skeleton-row" />
+                    <div className="table-skeleton-row" />
+                  </div>
+                ) : (
+                  <>
+                    {social && social.gifts.length > 0 && (
+                      <>
+                        <p className="muted drawer-sublabel">礼物（近 20 条）</p>
+                        <div className="table-panel">
+                          <table className="data-table">
+                            <thead>
+                              <tr>
+                                <th>时间</th>
+                                <th>方向</th>
+                                <th>对方</th>
+                                <th>点心</th>
+                                <th>状态</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {social.gifts.map((g) => (
+                                <tr key={g.giftId}>
+                                  <td>{g.createdAt.slice(0, 10)}</td>
+                                  <td>{g.direction === 'sent' ? '送出' : '收到'}</td>
+                                  <td className="cell-strong">{g.peerEmail ?? '—'}</td>
+                                  <td className="mono">{g.snackId}</td>
+                                  <td>{g.status}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                    {social && social.visits.length > 0 && (
+                      <>
+                        <p className="muted drawer-sublabel">拜访（近 20 条）</p>
+                        <div className="table-panel">
+                          <table className="data-table">
+                            <thead>
+                              <tr>
+                                <th>时间</th>
+                                <th>方向</th>
+                                <th>对方</th>
+                                <th>类型</th>
+                                <th>状态</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {social.visits.map((v) => (
+                                <tr key={v.visitId}>
+                                  <td>{v.createdAt.slice(0, 10)}</td>
+                                  <td>{v.direction === 'sent' ? '发起' : '收到'}</td>
+                                  <td className="cell-strong">{v.peerEmail ?? '—'}</td>
+                                  <td>{v.type}</td>
+                                  <td>{v.status}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                    {social && social.friendships.length > 0 && (
+                      <>
+                        <p className="muted drawer-sublabel">好友关系</p>
+                        <div className="table-panel">
+                          <table className="data-table">
+                            <thead>
+                              <tr>
+                                <th>好友</th>
+                                <th>状态</th>
+                                <th>建立时间</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {social.friendships.map((f) => (
+                                <tr key={f.friendshipId}>
+                                  <td className="cell-strong">{f.friendEmail}</td>
+                                  <td>
+                                    <span
+                                      className={f.status === 'active' ? 'pill ok' : 'pill muted'}
+                                    >
+                                      {f.status}
+                                    </span>
+                                  </td>
+                                  <td>{f.acceptedAt ? f.acceptedAt.slice(0, 10) : '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                    {social &&
+                      social.gifts.length === 0 &&
+                      social.visits.length === 0 &&
+                      social.friendships.length === 0 && <p className="muted">暂无互动记录</p>}
                   </>
                 )}
               </div>
