@@ -208,8 +208,12 @@ const creamKittenManifest = CharacterManifestSchema.parse({
   renderer: 'image-sequence',
   release: 'dev-only',
   canvas: CANVAS,
-  // .image-pet__img max-width 90%/max-height 80% 居中 + padding-bottom 4% 的保守外包络
-  visualBounds: { x: 12, y: 22, width: 216, height: 214 },
+  // 静态布局（.image-pet__img max-width 90%/max-height 80% 居中 + padding-bottom 4%）
+  // 叠加动画极值后的外包络：
+  // ck-bounce：translateY −6px + scaleY 1.04（origin 底部）→ 顶缘 ≈21，取 14 留余量；
+  // ck-tilt ±8°（origin 底部中线）角点下探 半宽108×sin8°≈15px → 底缘 250
+  //（styles.css @keyframes ck-bounce / ck-tilt-left / ck-tilt-right）
+  visualBounds: { x: 12, y: 14, width: 216, height: 236 },
   // 现状：data-hit="body" 在撑满整窗的外层容器；manifest 声明收窄后的图像区为目标 primary（阶段 C 迁移生效）
   interaction: {
     enabled: true,
