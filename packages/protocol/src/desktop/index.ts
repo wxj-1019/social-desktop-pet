@@ -529,6 +529,33 @@ export const CharacterManifestSchema = z
         });
       }
     }
+    // §7.2 fallback 链必须终止于 native/unsupported（无环；桌面测试兜底之外的纵深防御）
+    const checkChain = (
+      table: Record<string, string>,
+      kind: 'coreMotions' | 'expressions',
+    ): void => {
+      for (const start of Object.keys(table)) {
+        const seen = new Set<string>([start]);
+        let current: string | undefined = table[start];
+        // 目标不在本表内（跨类回退，如 expressions → motion）时链终止；
+        // 该情形已由 coverage regex 另行报错，此处只负责环检测
+        while (typeof current === 'string' && current.startsWith('fallback:')) {
+          const target = current.slice('fallback:'.length);
+          if (seen.has(target)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['capabilities', kind, start],
+              message: `fallback cycle detected at ${kind}.${start} -> ${target}`,
+            });
+            break;
+          }
+          seen.add(target);
+          current = table[target];
+        }
+      }
+    };
+    checkChain(m.capabilities.coreMotions, 'coreMotions');
+    checkChain(m.capabilities.expressions, 'expressions');
   });
 export type CharacterManifest = z.infer<typeof CharacterManifestSchema>;
 

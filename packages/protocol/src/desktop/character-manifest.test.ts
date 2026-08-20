@@ -242,6 +242,17 @@ describe('CharacterManifestSchema（形象协议 §4）', () => {
       [...PetExpressionSchema.options].sort(),
     );
   });
+
+  it('fallback 链成环被 schema 拒绝（§7.2 纵深防御）', () => {
+    const selfLoop = buildValidManifest();
+    selfLoop.capabilities.coreMotions.sit = 'fallback:sit';
+    expect(CharacterManifestSchema.safeParse(selfLoop).success).toBe(false);
+
+    const mutual = buildValidManifest();
+    mutual.capabilities.expressions.warm = 'fallback:shy';
+    mutual.capabilities.expressions.shy = 'fallback:warm';
+    expect(CharacterManifestSchema.safeParse(mutual).success).toBe(false);
+  });
 });
 
 describe('CharacterInteractionZoneSchema（形象协议 §6.2）', () => {
