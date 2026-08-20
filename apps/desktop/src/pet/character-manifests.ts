@@ -332,8 +332,7 @@ const creamKittenManifest = CharacterManifestSchema.parse({
     sourceUrl: null,
     commercialUse: false,
     attributionRequired: false,
-    notes:
-      '来源与许可尚未归档（无 license/ 存证）。按协议 §10.1 补齐前仅 dev-only；idle_gs.jpg 未被帧表引用，不在资产清单内。',
+    notes: '来源与许可尚未归档（无 license/ 存证）。按协议 §10.1 补齐前仅 dev-only。',
   },
 });
 

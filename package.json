@@ -24,6 +24,7 @@
     "test:watch": "vitest",
     "test:e2e": "pnpm --filter @pet/desktop build && playwright test --config e2e/playwright.config.ts",
     "test:e2e:star-isle": "pnpm --filter @pet/desktop build && playwright test --config e2e/playwright.config.ts star-isle.spec.ts",
+    "preflight:characters": "node --import tsx --conditions=development tools/character-preflight-cli.ts",
     "package:win": "pnpm --filter @pet/desktop package:win",
     "assets:tray": "node tools/generate-tray-icon.mjs",
     "assets:icon": "node tools/generate-app-icon.mjs",
