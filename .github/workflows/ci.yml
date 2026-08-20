@@ -35,6 +35,8 @@ jobs:
       # D-13 部署产物门禁：server build 必须真实产出 dist/（tsconfig.build.json，noEmit:false）
       - run: pnpm --filter @pet/server build
       - run: pnpm --filter @pet/admin build
+      # 形象协议阶段 D：角色资产预检门禁（0 error 才过；tsx 随 workspace devDeps 全量安装可用）
+      - run: pnpm preflight:characters
       - run: pnpm test
 
   # 补 2：Electron e2e 冒烟（Linux 需 xvfb + Electron 系统依赖）

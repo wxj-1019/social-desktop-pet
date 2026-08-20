@@ -582,3 +582,21 @@ test.describe('角色皮肤 smoke（形象协议阶段 D）', () => {
 - **Spec 覆盖**：§14.1 预检 CLI → Task 3；§14.2 覆盖矩阵 → A+B 已落（schema 显式键 + followChain 测试），Task 1 补 schema 级环检测纵深；§14.3 缩放/命中组件测试 → Task 5（DPI/截图全档自动化超出本轮，窗口缩放等价已锁；菜单/气泡/reduced-motion 组件测试在菜单与视觉既有套件中覆盖）；§14.4 每角色 E2E + 角色选择回归 → Task 6（选择页回归由既有角色页用例 + 本 spec 双角色切换覆盖）；§14.5 CI 阻止 → Task 3 vitest 包装 + Task 7 CI 行。backlog：A+B#4→T1、#5→T2、#6→T2、#7（眨眼帧资源再制，非代码，记录）；C#1→T4、#2→T4、#4→T4、#5（打磨，记录）；C#3（语义收敛，产品决策，记录）。
 - **占位符扫描**：Task 3/5/6 代码完整可粘贴；Task 6 明示"以 helper 真实 API 为准对齐"并给出对齐来源；Task 2 的包络数值给了基准值与实测修正规则。
 - **类型一致性**：`runCharacterPreflight(): PreflightResult`、`PreflightFinding{id,characterId,message}` 在核心/CLI/测试三处一致；TIER_ORDER 与 manifest.release 枚举一致。
+
+## 执行结果（2026-08-20）
+
+阶段 D 已在 `feat/character-protocol-stage-d` 完成：8 个提交（e9110d3…）。每任务经"实现→规范审查→质量审查→修复→复审"闭环。审查修复的实质问题：预检对不可解析资产 fail-open（含缺失文件 ENOENT 崩溃隐患）、codenono 检查硬编码（改为显式 id 键 + 动态目录枚举）、奶盖包络顶缘漏算 scaleY 同时位移极值。实现者抓到计划三处错误：WebP 分派三字符前缀误匹配 VP8L、e2e motion 断言与运行时映射不符（body_touch→cheer→happy）、三角形几何断言（阶段 C 已修）。
+
+### 关键产出
+
+- `character-preflight.ts` + `pnpm preflight:characters`：分层门禁（硬检查全层级/license bundled+/帧一致与 preview 仅 release），当前数据 0 error / 5 warning（奶盖帧画布 8 种尺寸不一致为最大债务）；CI quality job 已接线
+- schema 级 fallback 环检测；奶盖包络动画极值校正（{12,11,216,239}）
+- 二层降级 boundary；未知 PetId console.warn 诊断；friends 文案/注释对齐
+- `e2e/character-skins.spec.ts`：两角色几何命中 smoke（含实测 bounds 缩放）
+
+### 遗留（阶段 D 之后的 backlog）
+
+1. **产品修复**：面板启动竞态——`panel:navigate` 在 renderer 订阅前投递 + `session.init()` 完成后 signed_out 覆盖本地模式（star-isle.spec 两个用例受害；修法参考 deeplink:consume-pending 拉取模式）；修复后移除 character-skins.spec 的规避与 TODO
+2. **资源再制**：奶盖帧画布统一化（8 种尺寸→统一透明画布+脚底锚定，`align_frames` 工具化）与独立眨眼帧（blink≡idle）；完成后预检 warning 清零、可评估 bundled
+3. **CodeNoNo 许可**：上游书面确认后 dev-only→bundled
+4. **打磨**：预检三处扩展名列表统一常量；面板非星屿角色打开瞬间星屿闪烁；tail_touch 语义收敛（产品决策）

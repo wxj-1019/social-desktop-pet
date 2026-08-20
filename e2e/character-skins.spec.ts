@@ -44,6 +44,7 @@ test.afterEach(async () => {
  *    init 的 signed_out 结果会把整棵树再打回登录页（tab 被连根替换，点击一直 detach）。
  * 对策：先等面板离开 booting（会话已落定），再导航一次——此后本地模式稳定。
  */
+// TODO(product): 面板启动竞态修复后移除本规避（panel:navigate 早于订阅 + session.init 覆盖本地模式）
 async function openCharacterSelect(): Promise<Page> {
   const panel = await app.openPanel('chat');
   await expect(panel.locator('.pet-stage--auth, .pet-stage--app')).toBeVisible({
@@ -85,8 +86,12 @@ async function switchToCharacter(panel: Page, name: RegExp): Promise<Page> {
   return next!;
 }
 
-/** 在桌宠窗上按 240×260 逻辑画布坐标点击：页面坐标 = 逻辑坐标 × (bounds / CANVAS) */
-async function clickPetCanvas(x: number, y: number): Promise<void> {
+/**
+ * 在桌宠窗上按 240×260 逻辑画布坐标点击：页面坐标 = 逻辑坐标 × (bounds / CANVAS)。
+ * pet 必须传 switchToCharacter 返回的新窗——内部重新 petWindow() 可能匹配到
+ * 仍列在 windows() 里、即将销毁的旧窗句柄（切换后旧窗销毁与枚举存在竞态）。
+ */
+async function clickPetCanvas(app: PetApp, pet: Page, x: number, y: number): Promise<void> {
   const state = await app.windowState('pet');
   if (!state) throw new Error('桌宠窗口状态不可用（windowState(pet) 返回 null）');
   const sx = state.bounds.width / CANVAS.width;
@@ -94,7 +99,6 @@ async function clickPetCanvas(x: number, y: number): Promise<void> {
   if (Math.abs(sx - 1) > 0.01 || Math.abs(sy - 1) > 0.01) {
     console.info(`[character-skins] 缩放档位 ≠1（sx=${sx}, sy=${sy}）：点击坐标已按比例换算`);
   }
-  const pet = await app.petWindow();
   await pet.mouse.click(x * sx, y * sy);
 }
 
@@ -123,7 +127,7 @@ test('CodeNoNo：切换后 spritesheet 渲染 + 几何命中点击有动作反�
   await expect(visual).toHaveAttribute('data-motion', 'idle', { timeout: 15_000 });
 
   // primary 命中区中心 (120,166)：body_touch → intent=cheer → data-motion=happy
-  await clickPetCanvas(120, 166);
+  await clickPetCanvas(app, pet, 120, 166);
   await expect(visual).toHaveAttribute('data-motion', 'happy', { timeout: 5_000 });
 
   await switchBackToStarIsle();
@@ -144,7 +148,7 @@ test('奶盖：切换后 image-sequence 渲染 + 几何命中点击有动作反�
   await expect(visual).toHaveAttribute('data-motion', 'idle', { timeout: 15_000 });
 
   // primary 命中区中心 (120,130)：body_touch → intent=cheer → data-motion=happy（happy 帧）
-  await clickPetCanvas(120, 130);
+  await clickPetCanvas(app, pet, 120, 130);
   await expect(visual).toHaveAttribute('data-motion', 'happy', { timeout: 5_000 });
 
   await switchBackToStarIsle();
