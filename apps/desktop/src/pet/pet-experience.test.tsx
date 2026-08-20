@@ -123,7 +123,7 @@ function installCanvasRect(): void {
 function firePointer(
   el: Element,
   type: 'down' | 'move' | 'up' | 'cancel',
-  init: { screenX: number; screenY: number; button?: number },
+  init: { screenX: number; screenY: number; button?: number; clientX?: number; clientY?: number },
 ): void {
   const button = init.button ?? 0;
   el.dispatchEvent(
@@ -136,8 +136,8 @@ function firePointer(
       buttons: type === 'up' ? 0 : button === 0 ? 1 : button,
       screenX: init.screenX,
       screenY: init.screenY,
-      clientX: init.screenX,
-      clientY: init.screenY,
+      clientX: init.clientX ?? init.screenX,
+      clientY: init.clientY ?? init.screenY,
     }),
   );
 }
@@ -465,6 +465,37 @@ describe('PetExperience（星屿直连交互面）', () => {
     firePointer(canvas, 'down', { screenX: 124, screenY: 214 });
     firePointer(canvas, 'up', { screenX: 124, screenY: 214 });
     expect(pet.petRuntime.interaction).not.toHaveBeenCalled();
+  });
+
+  it('命中区在 0.5×/1×/2× 缩放下等价解析（同一逻辑点 → 同一交互，§6.4）', () => {
+    const cases = [
+      { scale: 0.5, rect: { x: 0, y: 0, width: 120, height: 130 } },
+      { scale: 1, rect: { x: 0, y: 0, width: 240, height: 260 } },
+      { scale: 2, rect: { x: 0, y: 0, width: 480, height: 520 } },
+    ];
+    for (const { rect } of cases) {
+      cleanup();
+      installFakePet();
+      render(<PetExperience />);
+      const canvas = document.querySelector('.pet-canvas') as HTMLElement;
+      canvas.getBoundingClientRect = () =>
+        ({
+          ...rect,
+          top: rect.y,
+          left: rect.x,
+          right: rect.x + rect.width,
+          bottom: rect.y + rect.height,
+          toJSON: () => ({}),
+        }) as DOMRect;
+      // 逻辑点 (124, 214)（primary 内）→ client = 逻辑 × scale
+      const sx = rect.x + (124 * rect.width) / 240;
+      const sy = rect.y + (214 * rect.height) / 260;
+      firePointer(canvas, 'down', { screenX: sx, screenY: sy, clientX: sx, clientY: sy });
+      firePointer(canvas, 'up', { screenX: sx, screenY: sy, clientX: sx, clientY: sy });
+      expect(pet.petRuntime.interaction).toHaveBeenCalledWith({ kind: 'body_touch' });
+      expect(pet.petRuntime.interaction).toHaveBeenCalledTimes(1);
+    }
+    cleanup();
   });
 });
 
