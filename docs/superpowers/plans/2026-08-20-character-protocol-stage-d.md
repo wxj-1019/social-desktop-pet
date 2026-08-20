@@ -585,7 +585,7 @@ test.describe('角色皮肤 smoke（形象协议阶段 D）', () => {
 
 ## 执行结果（2026-08-20）
 
-阶段 D 已在 `feat/character-protocol-stage-d` 完成：8 个提交（e9110d3…）。每任务经"实现→规范审查→质量审查→修复→复审"闭环。审查修复的实质问题：预检对不可解析资产 fail-open（含缺失文件 ENOENT 崩溃隐患）、codenono 检查硬编码（改为显式 id 键 + 动态目录枚举）、奶盖包络顶缘漏算 scaleY 同时位移极值。实现者抓到计划三处错误：WebP 分派三字符前缀误匹配 VP8L、e2e motion 断言与运行时映射不符（body_touch→cheer→happy）、三角形几何断言（阶段 C 已修）。
+阶段 D 已在 `feat/character-protocol-stage-d` 完成：10 个提交（b8aa958…ac7f2fa）。每任务经"实现→规范审查→质量审查→修复→复审"闭环。审查修复的实质问题：预检对不可解析资产 fail-open（含缺失文件 ENOENT 崩溃隐患）、codenono 检查硬编码（改为显式 id 键 + 动态目录枚举）、奶盖包络顶缘漏算 scaleY 同时位移极值。实现者抓到计划三处错误：WebP 分派三字符前缀误匹配 VP8L、e2e motion 断言与运行时映射不符（body_touch→cheer→happy）、三角形几何断言（阶段 C 已修）。
 
 ### 关键产出
 
@@ -599,4 +599,6 @@ test.describe('角色皮肤 smoke（形象协议阶段 D）', () => {
 1. **产品修复**：面板启动竞态——`panel:navigate` 在 renderer 订阅前投递 + `session.init()` 完成后 signed_out 覆盖本地模式（star-isle.spec 两个用例受害；修法参考 deeplink:consume-pending 拉取模式）；修复后移除 character-skins.spec 的规避与 TODO
 2. **资源再制**：奶盖帧画布统一化（8 种尺寸→统一透明画布+脚底锚定，`align_frames` 工具化）与独立眨眼帧（blink≡idle）；完成后预检 warning 清零、可评估 bundled
 3. **CodeNoNo 许可**：上游书面确认后 dev-only→bundled
-4. **打磨**：预检三处扩展名列表统一常量；面板非星屿角色打开瞬间星屿闪烁；tail_touch 语义收敛（产品决策）
+4. **打磨**：预检三处扩展名列表统一常量；面板非星屿角色打开瞬间星屿闪烁；tail_touch 语义收敛（产品决策）；friends"来${petName}看看你"文案微调
+5. **`data-hit` DOM 属性清理**（阶段 C self-review 标注"阶段 D 清理"未做，现补录）：star-isle/spritesheet/image 三组件的 data-hit 属性现为样式钩子+e2e 锚点（PetExperience 已不读取）；待 e2e 选择器迁移到画布坐标或 manifest 区后删除
+6. **zone-id 正则放宽**：首个需要 `<character-id>:<name>` 命名空间区域 ID 的角色出现时，`CharacterInteractionZoneSchema` 各变体与 `capabilities.interactionZones` 两条正则必须同步放宽（协议 v1 注释已声明仅短 ID）
