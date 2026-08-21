@@ -44,9 +44,9 @@ pnpm preflight:characters        # Task 3 落地后可用
 | --------------------------------------------------------------------------------------------------------------- | --------- | --------- | --------- |
 | manifest schema parse / 文件存在 / sha256 匹配 / PetId 一致 / 帧表↔manifest 资产双向绑定 / spritesheet 网格整除 | **error** | **error** | **error** |
 | license 完备（sourceUrl 或 notes 说明来源；commercialUse/attributionRequired 已声明）                           | warning   | **error** | **error** |
-| image-sequence 帧画布尺寸一致 / assets.preview 存在                                                             | warning   | warning   | **error** |
+| image-sequence 帧画布尺寸一致（assets.preview 已按 2026-08-21 审计 I-1 从门禁移除，降为可选字段）               | warning   | warning   | **error** |
 
-当前数据预期：全部硬检查通过；奶盖帧画布不一致 → dev-only 下为 warning（CLI 退出码 0，报告记录）；星屿无帧无 preview → preview 检查 bundled 下为 warning（星屿是 bundled；该检查仅 release 为 error ✓）。**预检对当前数据必须全绿（0 error）**——这是 Task 3 的验收线。
+当前数据预期：全部硬检查通过；奶盖帧画布不一致 → dev-only 下为 warning（CLI 退出码 0，报告记录）；星屿无帧无 preview → preview 检查 bundled 下为 warning（星屿是 bundled；该检查仅 release 为 error ✓）。**预检对当前数据必须全绿（0 error）**——这是 Task 3 的验收线。（2026-08-21 修订：preview-missing 检查已整体移除，见遗留节 #7。）
 
 ---
 
@@ -589,7 +589,7 @@ test.describe('角色皮肤 smoke（形象协议阶段 D）', () => {
 
 ### 关键产出
 
-- `character-preflight.ts` + `pnpm preflight:characters`：分层门禁（硬检查全层级/license bundled+/帧一致与 preview 仅 release），当前数据 0 error / 5 warning（奶盖帧画布 8 种尺寸不一致为最大债务）；CI quality job 已接线
+- `character-preflight.ts` + `pnpm preflight:characters`：分层门禁（硬检查全层级/license bundled+/帧一致仅 release），当前数据 0 error / 2 warning（奶盖帧画布 8 种尺寸不一致与 license 存证为债务）；CI quality job 已接线（preview 门禁已按审计 I-1 移除，见遗留 #7）
 - schema 级 fallback 环检测；奶盖包络动画极值校正（{12,11,216,239}）
 - 二层降级 boundary；未知 PetId console.warn 诊断；friends 文案/注释对齐
 - `e2e/character-skins.spec.ts`：两角色几何命中 smoke（含实测 bounds 缩放）
@@ -603,3 +603,4 @@ test.describe('角色皮肤 smoke（形象协议阶段 D）', () => {
 5. **`data-hit` DOM 属性清理**（阶段 C self-review 标注"阶段 D 清理"未做，现补录）：star-isle/spritesheet/image 三组件的 data-hit 属性现为样式钩子+e2e 锚点（PetExperience 已不读取）；待 e2e 选择器迁移到画布坐标或 manifest 区后删除
 6. **zone-id 正则放宽**：首个需要 `<character-id>:<name>` 命名空间区域 ID 的角色出现时，`CharacterInteractionZoneSchema` 各变体与 `capabilities.interactionZones` 两条正则必须同步放宽（协议 v1 注释已声明仅短 ID）
 7. **preview 决策（已关闭）**：角色选择缩略图以 registry 驱动的实时渲染实现（阶段 C），assets.preview 降为可选增强字段，preview-missing 检查已从预检移除（2026-08-21 跨阶段审计 I-1）
+8. **文案残留（已关闭）**：memories/settings 星屿文案 petName 化 + 记忆空态代词去性别化（2026-08-21 跨阶段审计 M-3 及复审 nit）

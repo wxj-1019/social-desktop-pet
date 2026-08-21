@@ -130,7 +130,7 @@ export function MemoriesPage() {
       {loaded && memories.length === 0 && !error && (
         <div className="friends-state">
           <strong>还没有记忆</strong>
-          <p>和{config.petName}聊聊，她会记住你喜欢的事。</p>
+          <p>和{config.petName}聊聊，它会记住你喜欢的事。</p>
         </div>
       )}
 
