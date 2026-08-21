@@ -89,7 +89,9 @@ export function resolveCreamKittenAnimation(
     case 'walk':
       return { key: 'motion:walk', frame: 'running' };
     case 'sit':
-      return { key: 'motion:sit', frame: 'sit' };
+      return { key: 'motion:idle', frame: 'idle' };
+    case 'talk':
+      return { key: 'motion:talk', frame: 'idle' };
     default:
       break;
   }
