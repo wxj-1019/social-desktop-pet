@@ -7,6 +7,10 @@
  * - command_receipts / memory_audit_log：180 天上限
  * - 管理后台（0015）：admin_sessions 过期 30 天清理、admin_sensitive_grants
  *   过期/已用 7 天清理（一次性授权不留痕太久）、admin_audit_log 180 天上限
+ * - gift_events / visits（业务流水审计表）：180 天上限（P1-5，防无界膨胀）
+ * - user_inbox：① 全库过期 B 类行兜底清理（/sync 按用户清，sweep 覆盖从不
+ *   sync 的用户）② 每用户深度上限 INBOX_DEPTH_LIMIT（A 类永久语义收敛为
+ *   "近 1000 条可补"，长期不活跃用户不累积）
  * 幂等可重入（delete 按时间条件）；每 24h 由服务入口触发。
  */
 import type pg from 'pg';
@@ -19,6 +23,8 @@ const STALE_RECORD_DAYS = 180;
 const EXPIRED_SESSION_RETENTION_DAYS = 30;
 /** 一次性敏感授权保留窗口（授权已过期/已消费 7 天后清理） */
 const EXPIRED_GRANT_RETENTION_DAYS = 7;
+/** 每用户收件箱深度上限（A 类事件可补窗口；超出删最旧投递行，events 权威行保留） */
+const INBOX_DEPTH_LIMIT = 1_000;
 
 export interface RetentionSweepResult {
   removedChatMessages: number;
@@ -29,6 +35,10 @@ export interface RetentionSweepResult {
   removedAdminSessions: number;
   removedAdminGrants: number;
   removedAdminAudit: number;
+  removedStaleGiftEvents: number;
+  removedStaleVisits: number;
+  removedExpiredInbox: number;
+  removedDeepInbox: number;
 }
 
 export async function runRetentionSweep(pool: pg.Pool): Promise<RetentionSweepResult> {
@@ -58,6 +68,32 @@ export async function runRetentionSweep(pool: pg.Pool): Promise<RetentionSweepRe
       `delete from memory_audit_log where created_at < now() - make_interval(days => $1)`,
       [STALE_RECORD_DAYS],
     );
+    // ---- 业务流水（P1-5）：社交台账表 180 天上限 ----
+    const giftEvents = await client.query(
+      `delete from gift_events where created_at < now() - make_interval(days => $1)`,
+      [STALE_RECORD_DAYS],
+    );
+    const visits = await client.query(
+      `delete from visits where created_at < now() - make_interval(days => $1)`,
+      [STALE_RECORD_DAYS],
+    );
+    // ---- 收件箱（P1-5）----
+    // ① 全库过期 B 类投递行兜底（/sync 按用户惰性清；此处覆盖从不 sync 的用户）
+    const expiredInbox = await client.query(
+      `delete from user_inbox where inbox_seq in (
+         select i.inbox_seq from user_inbox i
+         join events e on e.event_id = i.event_id
+         where e.reliability = 'B' and e.expires_at < now()
+       )`,
+    );
+    // ② 每用户深度上限：删超出近 INBOX_DEPTH_LIMIT 条的最旧投递行（events 权威行保留）
+    const deepInbox = await client.query(
+      `delete from user_inbox i
+       where i.inbox_seq <= (
+         select max(i2.inbox_seq) - $1 from user_inbox i2 where i2.user_id = i.user_id
+       )`,
+      [INBOX_DEPTH_LIMIT],
+    );
     // ---- 管理后台（0015）----
     // admin refresh session：与用户侧同窗口（过期 30 天后清理）
     const adminSessions = await client.query(
@@ -86,6 +122,10 @@ export async function runRetentionSweep(pool: pg.Pool): Promise<RetentionSweepRe
       removedAdminSessions: adminSessions.rowCount ?? 0,
       removedAdminGrants: adminGrants.rowCount ?? 0,
       removedAdminAudit: adminAudit.rowCount ?? 0,
+      removedStaleGiftEvents: giftEvents.rowCount ?? 0,
+      removedStaleVisits: visits.rowCount ?? 0,
+      removedExpiredInbox: expiredInbox.rowCount ?? 0,
+      removedDeepInbox: deepInbox.rowCount ?? 0,
     };
   } catch (e) {
     await client.query('rollback');

@@ -105,8 +105,12 @@ export function createBusinessRouter(deps: BusinessDeps): Hono<{ Variables: Busi
   registerVisitRoutes(app, deps);
   // 9.5 /sync 慢路径补齐
   registerSyncRoutes(app, deps);
-  // 查询（/me /friends）
-  registerQueryRoutes(app, deps);
+  // 查询（/me /friends；/friends 附 presence 快照）
+  registerQueryRoutes(app, {
+    pool: deps.pool,
+    jwt: deps.jwt,
+    realtime: deps.realtime,
+  });
 
   return app;
 }

@@ -5,6 +5,8 @@
  * - 单次最多返回 SYNC_PAGE_LIMIT（200）条，客户端循环调用直到追上
  * - B 类短期事件过期后服务端直接推进游标，不返回内容
  * - 同时推进 device_cursors（9.5 游标策略）
+ * - 不传 afterInboxSeq（或空）→ 从 device_cursors 恢复上次游标（P1-6：
+ *   客户端重启后增量同步，不再从 0 全量重放历史事件）
  */
 import { type Hono } from 'hono';
 import type pg from 'pg';
@@ -28,8 +30,8 @@ export function registerSyncRoutes(
   app.get('/sync', auth, async (c) => {
     const userId = c.get('userId');
     const deviceId = c.get('deviceId');
-    const after = Number(c.req.query('afterInboxSeq') ?? 0);
-    if (!Number.isFinite(after) || after < 0) {
+    const rawAfter = c.req.query('afterInboxSeq');
+    if (rawAfter !== undefined && (!/^\d+$/.test(rawAfter) || Number(rawAfter) < 0)) {
       return c.json({ error: 'afterInboxSeq 非法' }, 400);
     }
 
@@ -37,6 +39,18 @@ export function registerSyncRoutes(
     const client = await deps.pool.connect();
     try {
       await client.query('begin');
+
+      // P1-6：未传游标 → 从 device_cursors 恢复（重启增量同步；无游标则 0）
+      let after = 0;
+      if (rawAfter !== undefined) {
+        after = Number(rawAfter);
+      } else {
+        const { rows: cur } = await client.query(
+          'select last_inbox_seq from device_cursors where device_id = $1',
+          [deviceId],
+        );
+        after = cur[0] ? Number(cur[0].last_inbox_seq) : 0;
+      }
 
       // 过期 B 类：直接删除并推进（不返回内容，9.5）
       await client.query(

@@ -17,6 +17,8 @@ export interface FeatureFlags {
   crisisThreeTierResponse: boolean;
   /** AI Kill Switch（12.7）—— 关闭后只回固定文案 */
   aiEnabled: boolean;
+  /** 9.2 Presence 广播：上线/下线通知好友（基础联动能力；关闭后仅本地在线态，不做好友侧广播） */
+  presenceBroadcast: boolean;
 }
 
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
@@ -27,4 +29,5 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   realtimeDuoInteraction: false,
   crisisThreeTierResponse: true,
   aiEnabled: true,
+  presenceBroadcast: true,
 };

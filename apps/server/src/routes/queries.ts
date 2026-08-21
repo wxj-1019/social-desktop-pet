@@ -7,12 +7,15 @@ import { type Hono } from 'hono';
 import type pg from 'pg';
 
 import type { JwtService } from '../auth/jwt.js';
+import type { RealtimeServer } from '../realtime/ws.js';
 
 import { requireAuth } from './business.js';
 
 export interface QueryDeps {
   pool: pg.Pool;
   jwt: JwtService;
+  /** Presence 快照查询（/friends 附在线标识，9.2） */
+  realtime: RealtimeServer;
 }
 
 export function registerQueryRoutes(
@@ -75,6 +78,8 @@ export function registerQueryRoutes(
         avatar: r.avatar ?? null,
         friendshipId: String(r.friendship_id),
         acceptedAt: (r.accepted_at as Date).toISOString(),
+        // 9.2 Presence 快照（内存在线态；后续变化由 presence.changed 事件增量更新）
+        online: deps.realtime.isOnline(String(r.friend_user_id)),
       })),
     });
   });

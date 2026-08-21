@@ -16,6 +16,8 @@ import type { JwtService } from '../auth/jwt.js';
 export interface RealtimeEvents {
   /** 在线状态变化（V-10 压测 + Presence 替代） */
   onPresenceChanged?: (userId: string, online: boolean) => void;
+  /** 连接鉴权成功（每次连接触发一次；用于 last_seen_at 等按连接刷新的副作用） */
+  onAuthenticated?: (userId: string, deviceId: string | null) => void;
 }
 
 export class RealtimeServer {
@@ -24,15 +26,24 @@ export class RealtimeServer {
   private readonly conns = new Map<string, Set<WebSocket>>();
   /** 服务端心跳定时器（attach 启动，close 清理） */
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  /** presence/鉴权钩子（构造后注入：presence 钩子依赖本实例的 deliver） */
+  private events: RealtimeEvents;
 
   constructor(
     private readonly jwt: JwtService,
-    private readonly events: RealtimeEvents = {},
+    events: RealtimeEvents = {},
     /** 心跳间隔；测试可注入更小值或直接调 heartbeatTick() */
     private readonly heartbeatIntervalMs = 30_000,
     /** 账号暂停校验（管理后台 suspend 后已认证连接立即拒绝，不等 access token 过期） */
     private readonly checkUserSuspended?: (userId: string) => Promise<boolean>,
-  ) {}
+  ) {
+    this.events = events;
+  }
+
+  /** 注入/替换事件钩子（构造后调用；presence 钩子需要本实例的 deliver） */
+  setEvents(events: RealtimeEvents): void {
+    this.events = events;
+  }
 
   /** 附加到 HTTP 服务器（@hono/node-server 的 server 实例） */
   attach(server: {
@@ -105,6 +116,7 @@ export class RealtimeServer {
         return;
       }
       this.register(payload.sub, ws);
+      this.events.onAuthenticated?.(payload.sub, payload.deviceId ?? null);
       // 鉴权通过后：心跳保活（客户端 ping → pong；V-10 压测依赖）
       ws.on('message', (heartbeat) => {
         try {
@@ -154,6 +166,11 @@ export class RealtimeServer {
       if (ws.readyState === WebSocket.OPEN) ws.send(payload);
     }
     return set.size;
+  }
+
+  /** 查询在线状态（Presence 快照；供 /friends 等请求附上当前在线标识） */
+  isOnline(userId: string): boolean {
+    return this.conns.has(userId);
   }
 
   /** 强制断开某用户全部连接（账号暂停等管理操作；close 事件自然清理 conns） */

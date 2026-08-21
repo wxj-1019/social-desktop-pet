@@ -19,6 +19,15 @@ export const PetActionPayloadSchema = z
   })
   .strict();
 
+/** 9.2 Presence：用户在线状态变化（B 类短期可靠，72h 内离线好友登录可补齐） */
+export const PresenceChangedPayloadSchema = z
+  .object({
+    userId: z.string().uuid(),
+    online: z.boolean(),
+  })
+  .strict();
+export type PresenceChangedPayload = z.infer<typeof PresenceChangedPayloadSchema>;
+
 /** 9.3 权威事件 */
 export const SemanticEventSchema = z.object({
   v: z.literal(1),

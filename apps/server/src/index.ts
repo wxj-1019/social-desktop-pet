@@ -9,6 +9,8 @@ import { pathToFileURL } from 'node:url';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { secureHeaders } from 'hono/secure-headers';
+import { timeout } from 'hono/timeout';
 import type pg from 'pg';
 
 import { createOpenAiCompatibleEmbeddingClient, embeddingConfigFromEnv } from './ai/embedding.js';
@@ -23,9 +25,12 @@ import { migrate } from './db/migrate.js';
 import { PgOtpStore } from './db/otp-store.js';
 import { createPool } from './db/pool.js';
 import { PgDevicesStore, PgSessionStore, PgUsersStore } from './db/stores.js';
+import { bodyLimitMiddleware } from './lib/http-guard.js';
+import { accessLogMiddleware, logger, requestIdMiddleware } from './lib/logger.js';
 import { createNoopMailProvider, createSmtpMailProvider, smtpConfigFromEnv } from './lib/mail.js';
 import { PgMemoryExtractStore } from './lib/memory-store.js';
 import { runRetentionSweep } from './lib/retention.js';
+import { createPresenceHooks } from './realtime/presence.js';
 import { RealtimeServer } from './realtime/ws.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createAuthRouter, type AuthDeps } from './routes/auth.js';
@@ -71,7 +76,32 @@ export interface AppDeps {
 export function buildApp(deps: AppDeps) {
   const app = new Hono();
 
-  app.get('/healthz', (c) => c.json({ ok: true, onlineUsers: deps.realtime.onlineUsers }));
+  // ---- 可观测性地基（P0-3）：request-id 贯穿 + 结构化访问日志 ----
+  app.use('*', requestIdMiddleware());
+  app.use('*', accessLogMiddleware());
+  // ---- 安全头（P1-4）：admin 等浏览器端生效 ----
+  app.use('*', secureHeaders());
+  // ---- 入站超时（P1-4）：SSE 长连接（/chat）豁免，其余 60s 兜底 ----
+  app.use('*', async (c, next) => {
+    if (c.req.path.startsWith('/chat')) return next();
+    return timeout(60_000)(c, next);
+  });
+  // ---- 请求体上限（P1-4）：content-length 超限 413（chunked 由路由层校验兜底） ----
+  app.use('*', bodyLimitMiddleware());
+
+  app.get('/healthz', async (c) => {
+    // DB 连通性探活：失败返回 503（负载均衡/探针可据此摘除实例）
+    let db = 'ok';
+    try {
+      await deps.pool.query('select 1');
+    } catch {
+      db = 'error';
+    }
+    return c.json(
+      { ok: db === 'ok', db, onlineUsers: deps.realtime.onlineUsers },
+      db === 'ok' ? 200 : 503,
+    );
+  });
 
   if (deps.devReset) {
     // e2e 自愈：清空配额计数与收件箱（gift 每日 3 次会被反复 e2e 耗尽，12.7 成本保护；
@@ -141,7 +171,7 @@ export async function main(): Promise<void> {
 
   // 启动迁移（幂等；失败则中止启动，避免跑在未迁移的 schema 上）
   const { applied } = await migrate(pool);
-  if (applied.length > 0) console.info(`[server] migrations applied: ${applied.join(', ')}`);
+  if (applied.length > 0) logger.info('migrations applied', { applied });
 
   // ---- 自建 Auth（9.8）----
   const jwtSecret = env('JWT_SECRET');
@@ -150,7 +180,7 @@ export async function main(): Promise<void> {
   if (jwtSecret.length < 32) {
     const msg = `JWT_SECRET 过短（${jwtSecret.length} 字节，建议 ≥32：openssl rand -base64 48）`;
     if (process.env['NODE_ENV'] === 'production') throw new Error(msg);
-    console.warn(`[server] 警告：${msg}（开发环境放行，生产拒绝）`);
+    logger.warn(msg, { scope: 'jwt_secret' });
   }
   const jwt = new JwtService({ secret: jwtSecret });
   const store = new PgSessionStore(pool);
@@ -175,7 +205,7 @@ export async function main(): Promise<void> {
   const mailProvider = (() => {
     const smtp = smtpConfigFromEnv();
     if (smtp) {
-      console.info(`[server] 邮件已启用：${smtp.host}:${smtp.port}`);
+      logger.info('mail enabled', { host: smtp.host, port: smtp.port });
       return createSmtpMailProvider(smtp);
     }
     return createNoopMailProvider();
@@ -200,18 +230,21 @@ export async function main(): Promise<void> {
     );
     return (rows.length ?? 0) > 0;
   });
+  // 9.2 Presence 闭环：上线/下线 B 类事件投递好友 + 连接时刷新 last_seen_at
+  //（构造后注入：钩子依赖 realtime.deliver）
+  realtime.setEvents(createPresenceHooks(pool, realtime));
 
   // ---- 模型客户端（10.1；密钥只存服务端环境变量 8.3；未配置则 chat 降级骨架）----
   const llmConfig = llmConfigFromEnv();
   if (llmConfig) {
-    console.info(`[server] AI 模型已启用：${llmConfig.model}（${llmConfig.baseUrl}）`);
+    logger.info('llm enabled', { model: llmConfig.model, baseUrl: llmConfig.baseUrl });
   }
   const llm = llmConfig ? createOpenAiCompatibleClient(llmConfig) : undefined;
 
   // ---- 嵌入客户端（10.7 向量臂；未配置则记忆检索降级 FTS-only）----
   const embeddingConfig = embeddingConfigFromEnv();
   if (embeddingConfig) {
-    console.info(`[server] 嵌入模型已启用：${embeddingConfig.model}（向量检索臂开启）`);
+    logger.info('embedding enabled', { model: embeddingConfig.model });
   }
   const embeddingProvider = embeddingConfig
     ? createOpenAiCompatibleEmbeddingClient(embeddingConfig)
@@ -220,7 +253,7 @@ export async function main(): Promise<void> {
   // ---- 输出审核（12.5 免费 Moderation；未配置密钥则图内规则版兜底）----
   const moderationConfig = moderationConfigFromEnv();
   if (moderationConfig) {
-    console.info('[server] 输出审核已启用：OpenAI 兼容 /moderations（12.5）');
+    logger.info('output moderation enabled');
   }
   const outputModerator = moderationConfig
     ? createOpenAiCompatibleModerator(moderationConfig)
@@ -255,10 +288,10 @@ export async function main(): Promise<void> {
   // 容器/反代异机场景需显式 PET_BIND_HOST=0.0.0.0（:: 同理），绑定全网卡时高声警告
   const bindHost = process.env['PET_BIND_HOST'] ?? '127.0.0.1';
   if (bindHost === '0.0.0.0' || bindHost === '::') {
-    console.warn(
-      '[server] 警告：PET_BIND_HOST 绑定全部网卡——仅限容器/反代同机场景，' +
-        '务必由防火墙或反向代理限制来源（管理后台 /admin 与业务 API 将对外可达）',
-    );
+    logger.warn('bind host exposes all interfaces', {
+      scope: 'bind',
+      hint: '仅限容器/反代同机场景，务必由防火墙或反向代理限制来源（管理后台 /admin 与业务 API 将对外可达）',
+    });
   }
   const server = serve({ fetch: app.fetch, port, hostname: bindHost });
 
@@ -267,18 +300,18 @@ export async function main(): Promise<void> {
   // 11.4 保留期清理（隐私承诺落地）：启动即跑一次 + 每 24h 一次；幂等，失败仅日志
   const runSweep = (): void => {
     runRetentionSweep(pool)
-      .then((r) => console.info('[retention] sweep:', JSON.stringify(r)))
-      .catch((e) => console.warn('[retention] sweep 失败：', (e as Error).message));
+      .then((r) => logger.info('retention.sweep', { ...r }))
+      .catch((e) => logger.warn('retention sweep failed', { error: (e as Error).message }));
   };
   runSweep();
   setInterval(runSweep, 24 * 60 * 60 * 1000).unref();
 
-  console.info(`[server] listening on ${bindHost}:${port} (ws: /realtime)`);
+  logger.info('listening', { bindHost, port, ws: '/realtime' });
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   void main().catch((e) => {
-    console.error('[server] 启动失败：', (e as Error).message);
+    logger.error('startup failed', { error: (e as Error).message });
     process.exit(1);
   });
 }
