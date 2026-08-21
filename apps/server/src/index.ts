@@ -154,7 +154,15 @@ export async function main(): Promise<void> {
   }
   const jwt = new JwtService({ secret: jwtSecret });
   const store = new PgSessionStore(pool);
-  const sessions = new SessionManager(store);
+  // refresh token 有效期（滑动窗口：每次 /auth/refresh 轮换时按当前 TTL 续期，
+  // 只要在 TTL 内启动过一次应用就永不掉线）。REFRESH_TOKEN_TTL_DAYS 可配，
+  // 默认 30 天；设长（如 3650）即"长期保持登录"。clamp 上限 3650 天。
+  const refreshTtlDays = Number(process.env['REFRESH_TOKEN_TTL_DAYS'] ?? 30);
+  const refreshTtlMs =
+    Number.isFinite(refreshTtlDays) && refreshTtlDays > 0
+      ? Math.min(refreshTtlDays, 3650) * 24 * 60 * 60_000
+      : 30 * 24 * 60 * 60_000;
+  const sessions = new SessionManager(store, refreshTtlMs);
   const users = new PgUsersStore(pool);
   const devices = new PgDevicesStore(pool);
 

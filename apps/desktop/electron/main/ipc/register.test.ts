@@ -1,7 +1,7 @@
 import type { BrowserWindow } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
+import type { PanelOpen, PetRuntimeSnapshot, PetVisualCommand } from '@pet/protocol';
 
 import { PetDragController } from '../pet-drag-controller.js';
 import { PetRuntimeController } from '../pet-runtime-controller.js';
@@ -121,6 +121,7 @@ function makeDeps() {
   const openPanel = vi.fn();
   const closePanel = vi.fn();
   const consumeDeepLinkPayload = vi.fn<() => string | null>(() => null);
+  const consumePendingView = vi.fn<() => PanelOpen['view'] | null>(() => null);
   const showContextMenu = vi.fn();
   const setPassThrough = vi.fn();
   // 勿扰单一状态源：与 index.ts syncDnd 一致，先驱动 runtime（emitSnapshot 广播）
@@ -151,6 +152,7 @@ function makeDeps() {
     openPanel,
     closePanel,
     consumeDeepLinkPayload,
+    consumePendingView,
     showContextMenu,
     setPassThrough,
     setDnd,
@@ -172,6 +174,7 @@ function makeDeps() {
     openPanel,
     closePanel,
     consumeDeepLinkPayload,
+    consumePendingView,
     showContextMenu,
     setPassThrough,
     setDnd,
@@ -764,6 +767,23 @@ describe('panel 通道（Task 7）', () => {
     const { pet, deps } = makeDeps();
     registerIpcAllowlist(deps);
     const handler = electronMocks.invokeHandlers.get('deeplink:consume-pending');
+
+    await expect(handler?.(eventFrom(pet), undefined)).rejects.toThrow(IpcSenderError);
+  });
+
+  it('panel:consume-pending-view returns the buffered navigation intent (panel only)', async () => {
+    const { panel, deps, consumePendingView } = makeDeps();
+    consumePendingView.mockReturnValue('character');
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.invokeHandlers.get('panel:consume-pending-view');
+
+    await expect(handler?.(eventFrom(panel), undefined)).resolves.toBe('character');
+  });
+
+  it('panel:consume-pending-view rejects pet-window callers', async () => {
+    const { pet, deps } = makeDeps();
+    registerIpcAllowlist(deps);
+    const handler = electronMocks.invokeHandlers.get('panel:consume-pending-view');
 
     await expect(handler?.(eventFrom(pet), undefined)).rejects.toThrow(IpcSenderError);
   });
