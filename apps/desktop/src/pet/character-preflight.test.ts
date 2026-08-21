@@ -15,7 +15,7 @@ describe('runCharacterPreflight（资源预检，协议 §10/§12/§14）', () =
   });
 
   it('硬检查覆盖全部资产（哈希复核跑真实磁盘文件）', () => {
-    expect(result.checkedAssets).toBeGreaterThanOrEqual(13); // 1 webp + 12 png
+    expect(result.checkedAssets).toBeGreaterThanOrEqual(12); // 1 webp + 11 png
   });
 
   it('未引用资产报告为空（idle_gs.jpg 已删除）', () => {

@@ -65,6 +65,7 @@ export const IPC_ALLOWLIST = [
   'window:hide',
   'deeplink:payload', // main→renderer 推送（6.3 Deep Link）
   'deeplink:consume-pending', // 面板挂载后拉取深链 payload（C1 时序兜底）
+  'panel:consume-pending-view', // 面板挂载后拉取缓冲的导航意图（C1 同类竞态兜底）
   'poc:getDisplays', // PoC 专用：多屏信息（第 3 周由 DisplayController 正式接入）
   'pet:runtime:get', // 运行时快照（invoke）
   'pet:runtime:snapshot', // main→pet 推送

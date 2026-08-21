@@ -1,6 +1,8 @@
 import { LogOut, ShieldQuestion, Sparkles, UserRound, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { PanelOpen } from '@pet/protocol';
+
 import { initApi, setAccessToken } from '../lib/api/client.js';
 
 import { CharacterSelect } from './character-select.js';
@@ -36,6 +38,23 @@ export function AppPanel() {
   const phaseRef = useRef<SessionPhase>('booting');
   phaseRef.current = phase;
 
+  /** 统一处理导航意图（live 消息与挂载后拉取的缓冲共用同一路由逻辑） */
+  const applyNavigate = useCallback((nav: PanelOpen) => {
+    if (nav.view === 'login') {
+      setPhase('signed_out');
+      return;
+    }
+    // 除 login 外协议 view 与 ActiveTab 一一对应（PanelOpenSchema）。
+    // 未登录（signed_out/local）也不静默丢弃：切进本地模式并定位目标 tab，
+    // 云端专属页（好友/记忆）由 LoginRequired 引导登录。
+    if (phaseRef.current === 'active') {
+      setTab(nav.view);
+    } else {
+      setPhase('local');
+      setLocalTab(nav.view);
+    }
+  }, []);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -58,8 +77,13 @@ export function AppPanel() {
       } catch {
         setPhase('signed_out');
       }
+      // C1 同类竞态兜底：panel:navigate 可能早于本组件订阅到达（did-finish-load
+      // 早于 useEffect 挂载）→ 消息丢失，面板停在登录页。会话恢复完成后拉取
+      // 主进程缓冲的最新导航意图（拉取即清除），复用同一路由逻辑。
+      const pending = await window.pet.panel.consumePendingView().catch(() => null);
+      if (pending) applyNavigate({ view: pending });
     })();
-  }, []);
+  }, [applyNavigate]);
 
   useEffect(() => {
     const off = window.pet.onDeepLink((payload) => {
@@ -69,23 +93,9 @@ export function AppPanel() {
   }, []);
 
   useEffect(() => {
-    const off = window.pet.panel.onNavigate((nav) => {
-      if (nav.view === 'login') {
-        setPhase('signed_out');
-        return;
-      }
-      // 除 login 外协议 view 与 ActiveTab 一一对应（PanelOpenSchema）。
-      // 未登录（signed_out/local）也不静默丢弃：切进本地模式并定位目标 tab，
-      // 云端专属页（好友/记忆）由 LoginRequired 引导登录。
-      if (phaseRef.current === 'active') {
-        setTab(nav.view);
-      } else {
-        setPhase('local');
-        setLocalTab(nav.view);
-      }
-    });
+    const off = window.pet.panel.onNavigate(applyNavigate);
     return off;
-  }, []);
+  }, [applyNavigate]);
 
   const onCharacterBack = useCallback(() => {
     setTab('friends');

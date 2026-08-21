@@ -75,6 +75,8 @@ export interface PetIpcDependencies {
   closePanel: () => void;
   /** 消费主进程待投递的深链 payload（拉取即清除；C1 时序兜底） */
   consumeDeepLinkPayload: () => string | null;
+  /** 消费主进程缓冲的最新面板导航意图（拉取即清除；C1 同类竞态兜底） */
+  consumePendingView: () => PanelOpen['view'] | null;
   /** 桌宠右键菜单 */
   showContextMenu: () => void;
   /** 整窗穿透切换（8.4） */
@@ -303,6 +305,8 @@ export function registerIpcAllowlist(deps: PetIpcDependencies): void {
   });
   // C1：深链 payload 拉取（面板挂载后消费；推送可能早于组件订阅，见 index.ts openPanel）
   registerInvoke(deps, 'deeplink:consume-pending', 'panel', () => deps.consumeDeepLinkPayload());
+  // C1 同类：面板导航意图拉取（panel:navigate 可能早于 React 订阅到达，挂载后拉取兜底）
+  registerInvoke(deps, 'panel:consume-pending-view', 'panel', () => deps.consumePendingView());
 
   // ---- 档案（Task 4）：读取两窗皆可；写入 panel + pet（环形菜单"换肤"从宠物窗发起；
   // 两窗同为受信渲染面，validateIpcSender 已做 surface 严格匹配） ----

@@ -224,6 +224,7 @@ export function createImagePetRenderer(update: (state: StarIsleVisualState) => v
       scheduleIdleAction();
       scheduleIdleTilt();
       scheduleBlink();
+      resetUserActivityTimer();
     }, runMs);
   };
 
@@ -274,10 +275,12 @@ export function createImagePetRenderer(update: (state: StarIsleVisualState) => v
     }, WAKE_TRANSITION_MS);
   };
 
-  scheduleIdleAction();
-  scheduleIdleTilt();
-  scheduleBlink();
-  resetUserActivityTimer();
+  if (!state.reducedMotion) {
+    scheduleIdleAction();
+    scheduleIdleTilt();
+    scheduleBlink();
+    resetUserActivityTimer();
+  }
 
   return {
     playMotion(motion, intensity) {
@@ -342,10 +345,11 @@ export function createImagePetRenderer(update: (state: StarIsleVisualState) => v
       clearIdleActionTimer();
       clearWalkEndTimer();
       commit({ speaking: active });
-      if (!active && state.motion === 'idle' && !state.reducedMotion) {
+      if (!active && !state.reducedMotion) {
         scheduleIdleAction();
         scheduleIdleTilt();
         scheduleBlink();
+        resetUserActivityTimer();
       }
       if (active) {
         resetUserActivityTimer();

@@ -234,11 +234,11 @@ const creamKittenManifest = CharacterManifestSchema.parse({
   menuExclusionBounds: MENU_EXCLUSION,
   capabilities: {
     // 覆盖矩阵按 resolveCreamKittenAnimation 实况：
-    // wave 复用 happy 帧、talk=idle 帧+speaking → 按实况声明（§7.2 禁止静默映射）
+    // wave 复用 happy 帧、talk=idle 帧+speaking、sit 复用 idle 帧 → 按实况声明（§7.2 禁止静默映射）
     coreMotions: {
       idle: 'native',
       walk: 'native',
-      sit: 'native',
+      sit: 'fallback:idle',
       sleep: 'native',
       happy: 'native',
       sad: 'native',
@@ -300,10 +300,6 @@ const creamKittenManifest = CharacterManifestSchema.parse({
       {
         path: 'assets/cream-kitten/sad.png',
         sha256: '10cfee2d870ec43abd2512b599d1f06a302836d11dcb4ae26ae02cf8324aa517',
-      },
-      {
-        path: 'assets/cream-kitten/sit.png',
-        sha256: '47bbb5f6746d178b148f47f77e9a1ce5420117983c077f1be31f098167cbe578',
       },
       {
         path: 'assets/cream-kitten/sleepy.png',

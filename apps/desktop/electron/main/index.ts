@@ -422,6 +422,10 @@ void app.whenReady().then(async () => {
   // 待投递 payload 保留在缓冲里，供渲染进程挂载后主动拉取（deeplink:consume-pending），
   // 覆盖"推送早于组件挂载"的时序（登录完成瞬间 FriendsPage 尚未订阅）。
   let panelDeepLinkPayload: string | null = null;
+  // C1 同类竞态：panel:navigate 可能先于渲染进程 React 订阅到达（did-finish-load
+  // 早于 useEffect 挂载）→ 消息丢失，面板停在登录页/旧视图。缓冲最新一次导航
+  // 意图，渲染进程挂载后经 panel:consume-pending-view 拉取（拉取即清除）。
+  let panelPendingView: PanelOpen['view'] | null = null;
   let panelCrashed = false;
   const openPanel = (view: PanelOpen['view'], deeplinkPayload?: string): void => {
     // 面板窗口被硬关闭销毁 / 渲染进程崩溃 → 重建句柄（保证面板随时可重开）
@@ -445,6 +449,7 @@ void app.whenReady().then(async () => {
     const win = alivePetWindow();
     if (win) panelHandle.showPanel(win.getBounds());
     if (deeplinkPayload !== undefined) panelDeepLinkPayload = deeplinkPayload;
+    panelPendingView = view;
     deliverPanelMessage(panelHandle.win, view, deeplinkPayload);
   };
   const closePanel = (): void => panelHandle?.hide();
@@ -536,6 +541,12 @@ void app.whenReady().then(async () => {
       const payload = panelDeepLinkPayload;
       panelDeepLinkPayload = null;
       return payload;
+    },
+    // 面板挂载后拉取缓冲的最新导航意图（拉取即清除；覆盖"推送早于订阅"时序）
+    consumePendingView: () => {
+      const view = panelPendingView;
+      panelPendingView = null;
+      return view;
     },
     setPassThrough: setPassThroughFromMain,
     setDnd: syncDnd,

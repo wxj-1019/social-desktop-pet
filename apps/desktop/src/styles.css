@@ -1995,12 +1995,16 @@ body,
 
 /* ---- motion animations (target .image-pet__img directly) ---- */
 
-.image-pet[data-motion='idle'] .image-pet__img {
+.image-pet[data-motion='idle'] .image-pet__img,
+.image-pet[data-motion='sit'] .image-pet__img,
+.image-pet[data-animation='motion:idle'] .image-pet__img {
   animation: ck-idle-life 4s ease-in-out infinite;
 }
 
 .image-pet[data-motion='happy'] .image-pet__img,
-.image-pet[data-animation='expression:happy'] .image-pet__img {
+.image-pet[data-motion='wave'] .image-pet__img,
+.image-pet[data-animation='expression:happy'] .image-pet__img,
+.image-pet[data-animation='motion:happy'] .image-pet__img {
   animation: ck-bounce 0.7s ease-in-out infinite;
 }
 
@@ -2024,10 +2028,6 @@ body,
 
 .image-pet[data-motion='walk'] .image-pet__img {
   animation: ck-run 0.7s ease-in-out infinite;
-}
-
-.image-pet[data-motion='sit'] .image-pet__img {
-  animation: ck-sit-breathe 3.2s ease-in-out infinite;
 }
 
 .image-pet[data-motion='talk'] .image-pet__img,
@@ -2230,21 +2230,6 @@ body,
   }
   100% {
     transform: scale(1, 1) translateY(0);
-  }
-}
-
-@keyframes ck-sit-breathe {
-  0%,
-  100% {
-    transform: scale(1) rotate(0deg);
-  }
-  33% {
-    transform: scale(1.02) rotate(0.2deg);
-    animation-timing-function: ease-in-out;
-  }
-  66% {
-    transform: scale(1.015) rotate(-0.1deg);
-    animation-timing-function: ease-in-out;
   }
 }
 
