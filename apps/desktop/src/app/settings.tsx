@@ -103,7 +103,9 @@ export function SettingsPage() {
           </span>
           <span className="settings-item__text">
             <strong>桌宠大小</strong>
-            <small>当前 {Math.round(petScale * 100)}%（也可以右键星屿快速切换）</small>
+            <small>
+              当前 {Math.round(petScale * 100)}%（也可以右键{config.petName}快速切换）
+            </small>
           </span>
           <input
             className="settings-item__range"
@@ -146,7 +148,7 @@ export function SettingsPage() {
           </span>
           <span className="settings-item__text">
             <strong>开机自启</strong>
-            <small>随 Windows 一起启动，星屿每天等你（正式版生效）</small>
+            <small>随 Windows 一起启动，{config.petName}每天等你（正式版生效）</small>
           </span>
           <input
             type="checkbox"
@@ -166,7 +168,7 @@ export function SettingsPage() {
           </span>
           <span className="settings-item__text">
             <strong>说话气泡</strong>
-            <small>聊天和互动时星屿会冒泡说话</small>
+            <small>聊天和互动时{config.petName}会冒泡说话</small>
           </span>
           <input
             type="checkbox"
@@ -198,7 +200,7 @@ export function SettingsPage() {
           </span>
           <span className="settings-item__text">
             <strong>勿扰模式</strong>
-            <small>开启后星屿保持安静，不冒泡不闲逛</small>
+            <small>开启后{config.petName}保持安静，不冒泡不闲逛</small>
           </span>
           <input
             type="checkbox"
@@ -236,7 +238,7 @@ export function SettingsPage() {
           </span>
           <span className="settings-item__text">
             <strong>隐藏桌宠</strong>
-            <small>临时收起星屿；从托盘"显示桌宠"恢复</small>
+            <small>临时收起{config.petName}；从托盘"显示桌宠"恢复</small>
           </span>
           <button
             type="button"

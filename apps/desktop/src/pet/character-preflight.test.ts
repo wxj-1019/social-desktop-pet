@@ -29,11 +29,8 @@ describe('runCharacterPreflight（资源预检，协议 §10/§12/§14）', () =
   it('warning 集精确锁定（任何增删都是有意识变更）', () => {
     const ids = result.warnings.map((w) => `${w.characterId}:${w.id}`).sort();
     expect(ids).toEqual([
-      'codenono:preview-missing',
       'cream-kitten:frame-canvas-consistency',
       'cream-kitten:license-incomplete',
-      'cream-kitten:preview-missing',
-      'star-isle:preview-missing',
     ]);
   });
 });

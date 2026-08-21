@@ -683,7 +683,7 @@ click -> cream-kitten:ring
 4. 实现 `VisualComponent`。
 5. 实现完整 `PetRenderer` 适配器。
 6. 在 `character-registry.ts` 注册 `id`、名称、描述、组件和 factory。
-7. 在角色选择页使用 manifest/registry 提供的缩略图，不允许按角色 ID 写 if/else 回退到星屿。
+7. 在角色选择页使用 manifest/registry 提供的缩略图，不允许按角色 ID 写 if/else 回退到星屿（实现以 registry 驱动的实时渲染缩略图满足本条，CharacterVisual 按当前角色渲染卡片视觉；静态 preview 资产为可选增强）。
 8. 角色窗口错误降级使用该角色的静态 fallback；若角色 fallback 不可用，才使用通用 fallback，并显式记录角色丢失。
 9. 聊天、设置、本地聊天、空状态和角色预览不得硬编码星屿视觉。需要统一的 `CharacterVisualProvider` 或等价 registry 读取路径。
 10. 运行角色级单测、资源预检、窗口边界测试和至少一条 E2E smoke 测试。
@@ -791,7 +791,7 @@ click -> cream-kitten:ring
 
 ### 13.5 P1：产品一致性
 
-- [ ] 角色选择页显示正确缩略图、名称和描述。
+- [ ] 角色选择页显示正确角色视觉（实时渲染缩略图）、名称和描述。
 - [ ] 聊天、设置、本地聊天、预览和错误 fallback 不硬编码星屿。
 - [ ] 角色切换、重启、多显示器、DPI 和菜单扩窗不改变脚底锚点。
 - [ ] 至少一条角色级 E2E smoke 测试覆盖打开、交互和切换。

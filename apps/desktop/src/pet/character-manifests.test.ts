@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest';
 import { PetIdSchema, type PetId } from '@pet/protocol';
 
 import { CHARACTER_MANIFESTS, getCharacterManifest } from './character-manifests.js';
-import { CREAM_KITTEN_FRAME_MAP } from './image-frame-manifest.js';
 
 const ALL_MOTIONS = [
   'idle',
@@ -111,18 +110,5 @@ describe('CHARACTER_MANIFESTS（形象协议阶段 B）', () => {
 
   it('getCharacterManifest 未知 id 回退星屿（与 registry 语义一致）', () => {
     expect(getCharacterManifest('not-a-pet').id).toBe('star-isle');
-  });
-
-  it('奶盖帧表与 manifest 资产清单双向绑定（§10.2 完整性）', () => {
-    const m = CHARACTER_MANIFESTS['cream-kitten']!;
-    const manifestPaths = new Set(m.assets.files.map((f) => f.path));
-    for (const spec of Object.values(CREAM_KITTEN_FRAME_MAP)) {
-      for (const url of spec.frames) {
-        const base = url.split('/').pop()!;
-        const hit = [...manifestPaths].some((p) => p.endsWith(`/${base}`));
-        expect(hit, `帧表 URL 未入清单：${base}`).toBe(true);
-      }
-    }
-    expect(manifestPaths.size).toBe(12);
   });
 });

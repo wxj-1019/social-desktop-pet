@@ -602,3 +602,4 @@ test.describe('角色皮肤 smoke（形象协议阶段 D）', () => {
 4. **打磨**：预检三处扩展名列表统一常量；面板非星屿角色打开瞬间星屿闪烁；tail_touch 语义收敛（产品决策）；friends"来${petName}看看你"文案微调
 5. **`data-hit` DOM 属性清理**（阶段 C self-review 标注"阶段 D 清理"未做，现补录）：star-isle/spritesheet/image 三组件的 data-hit 属性现为样式钩子+e2e 锚点（PetExperience 已不读取）；待 e2e 选择器迁移到画布坐标或 manifest 区后删除
 6. **zone-id 正则放宽**：首个需要 `<character-id>:<name>` 命名空间区域 ID 的角色出现时，`CharacterInteractionZoneSchema` 各变体与 `capabilities.interactionZones` 两条正则必须同步放宽（协议 v1 注释已声明仅短 ID）
+7. **preview 决策（已关闭）**：角色选择缩略图以 registry 驱动的实时渲染实现（阶段 C），assets.preview 降为可选增强字段，preview-missing 检查已从预检移除（2026-08-21 跨阶段审计 I-1）

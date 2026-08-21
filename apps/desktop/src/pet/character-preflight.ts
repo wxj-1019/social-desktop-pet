@@ -3,7 +3,7 @@
  *
  * 纯模块（node 环境）：导入三份 manifest 与两份帧表，复核磁盘资产。
  * 分层门禁：硬检查（存在/哈希/绑定/网格）任何层级都是 error；
- * license 完备 bundled+ 为 error；帧画布一致/preview 仅 release 为 error。
+ * license 完备 bundled+ 为 error；帧画布一致仅 release 为 error。
  * CI 经 vitest 包装（pnpm test）自动门禁；CLI 入口见 tools/character-preflight-cli.ts。
  */
 import { createHash } from 'node:crypto';
@@ -147,13 +147,20 @@ export function runCharacterPreflight(): PreflightResult {
       }
     }
     if (manifest.renderer === 'image-sequence') {
-      // 帧表 → manifest 绑定（清单反向完备由 manifests 双射测试锁定）
+      // 帧表 ↔ manifest 双向绑定（硬检查）：帧表 URL 必须入清单；清单资产必须被帧表引用
       const manifestPaths = new Set(manifest.assets.files.map((f) => f.path));
       for (const spec of Object.values(CREAM_KITTEN_FRAME_MAP)) {
         for (const url of spec.frames) {
           const hit = [...manifestPaths].some((p) => url.endsWith(p.split('/').pop()!));
           if (!hit) err('frame-unbound', `帧表 URL 未入清单：${url}`);
         }
+      }
+      for (const p of manifest.assets.files) {
+        const base = p.path.split('/').pop()!;
+        const referenced = Object.values(CREAM_KITTEN_FRAME_MAP).some((spec) =>
+          spec.frames.some((url) => url.endsWith(`/${base}`)),
+        );
+        if (!referenced) err('frame-unbound', `清单资产未被帧表引用：${p.path}`);
       }
       // 帧画布一致（仅 release error；当前 dev-only → warning）；
       // 单文件存在但无法解析尺寸 → 硬错误（不能混进 sizes 集合里静默降级）
@@ -171,11 +178,6 @@ export function runCharacterPreflight(): PreflightResult {
       if (sizes.length > 0 && new Set(sizes).size > 1) {
         gate(2, 'frame-canvas-consistency', `帧画布不一致：${[...new Set(sizes)].join(' / ')}`);
       }
-    }
-
-    // preview（仅 release error）
-    if (!manifest.assets.preview) {
-      gate(2, 'preview-missing', 'release 级需要 assets.preview');
     }
   }
 
