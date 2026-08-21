@@ -50,12 +50,8 @@ async function launchApp(extraArgs: string[] = []): Promise<PetApp> {
   return launchPetApp(extraArgs);
 }
 
-async function login(page: Page, email: string, password: string): Promise<void> {
-  await expect(page.locator('.login-page')).toBeVisible({ timeout: 15_000 });
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill(password);
-  await page.getByRole('button', { name: '登录并去找星屿', exact: true }).click();
-  await expect(page.locator('.friends-page')).toBeVisible({ timeout: 15_000 });
+async function login(app: PetApp, page: Page, email: string, password: string): Promise<void> {
+  await app.loginAs(page, email, password);
 }
 
 test('inviter（fresh 账号）创建邀请链接（供 acceptor 深链接受）', async () => {
@@ -72,7 +68,7 @@ test('inviter（fresh 账号）创建邀请链接（供 acceptor 深链接受）
   try {
     const page = await app.openPanel('chat');
     await page.waitForLoadState('domcontentloaded');
-    await login(page, inviterEmail, PASSWORD);
+    await login(app, page, inviterEmail, PASSWORD);
 
     await page.getByRole('button', { name: '邀请好友' }).click();
     const link = await page.locator('.invite-link code').innerText();
@@ -102,7 +98,7 @@ test('acceptor（fresh 账号）启动即带 pet:// 链接 → 登录后自动�
     page.on('pageerror', (e) => process.stdout.write(`[pageerror] ${e.message}\n`));
 
     // acceptor 登录 → 主进程 restorePending → 自动接受邀请（fresh 账号，无残留依赖）
-    await login(page, acceptorEmail, PASSWORD);
+    await login(app, page, acceptorEmail, PASSWORD);
 
     // 好友列表出现 inviter（acceptInvite 成功后 refreshFriends）
     await expect(page.locator('.friend-item')).toContainText(inviterNickname, {

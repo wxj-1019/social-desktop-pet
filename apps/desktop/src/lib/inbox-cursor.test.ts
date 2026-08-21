@@ -71,4 +71,16 @@ describe('syncAfter（9.5 循环分页）', () => {
     vi.spyOn(api, 'sync').mockRejectedValue(new Error('network down'));
     await expect(syncAfter(0)).rejects.toThrow('network down');
   });
+
+  it('首参 null：第一页不传游标（服务端从 device_cursors 恢复，P1-6 重启增量）', async () => {
+    const spy = vi.spyOn(api, 'sync').mockResolvedValue(page([evt(5)], 5, false));
+    const result = await syncAfter(null);
+    expect(result.items.map((e) => e.inboxSeq)).toEqual([5]);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(null);
+    // 后续页用推进后的游标
+    spy.mockResolvedValueOnce(page([evt(6)], 6, false));
+    await syncAfter(5);
+    expect(spy).toHaveBeenLastCalledWith(5);
+  });
 });

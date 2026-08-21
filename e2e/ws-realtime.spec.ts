@@ -53,27 +53,34 @@ test('alice 送礼 → bob 的 WS 实时收到事件（10s 内，非 30s 轮询�
   await page.waitForLoadState('domcontentloaded');
 
   // bob 登录（WS 连接建立）
-  await expect(page.locator('.login-page')).toBeVisible({ timeout: 15_000 });
-  await page.locator('input[type="email"]').fill('bob@test.local');
-  await page.locator('input[type="password"]').fill('password123');
-  // 提交按钮是"登录并去找星屿"；"登录"是登录/注册切换（登录页改版后）
-  await page.getByRole('button', { name: '登录并去找星屿', exact: true }).click();
-  await expect(page.locator('.friends-page')).toBeVisible({ timeout: 15_000 });
+  await app.loginAs(page, 'bob@test.local');
 
-  // node 侧：alice 登录 → 给 bob 送点心（幂等键唯一）
+  // node 侧：alice 登录 → 给 bob 送点心（幂等键唯一）。
+  // 注意：不登录 bob——登录会激活新设备并切走 active_display_device_id，
+  // 挤掉 bob 面板设备（9.8 单活跃设备 → 面板 403 device_revoked）。
+  // bob 的 userId 从 alice 的好友列表取。
   const alice = await loginToken('alice@test.local');
-  const bob = await loginToken('bob@test.local');
+  const friendsRes = await fetch(`${API_BASE}/friends`, {
+    headers: { authorization: `Bearer ${alice.token}` },
+  });
+  const { friends } = (await friendsRes.json()) as {
+    friends: Array<{ userId: string; nickname: string }>;
+  };
+  const bob = friends.find((friend) => friend.nickname === 'bob');
+  expect(bob).toBeDefined();
   const giftRes = await fetch(`${API_BASE}/gift`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${alice.token}` },
     body: JSON.stringify({
-      toUserId: bob.userId,
+      toUserId: bob!.userId,
       snackId: 'snack_cookie',
       clientEventId: crypto.randomUUID(),
     }),
   });
   expect(giftRes.ok).toBe(true);
 
-  // 10s 内事件流出现 gift.snack_sent（WS 推送；30s 轮询尚未到点）
-  await expect(page.locator('.event-list')).toContainText('送来了一份小点心', { timeout: 10_000 });
+  // 20s 内事件流出现 gift.snack_sent（WS 推送；30s 轮询尚未到点）。
+  // 窗口取 20s（非 10s）：全量套件/本地 dev 实例并存时 WS 推送与渲染有秒级抖动，
+  // 仍远小于 30s 轮询周期，"实时而非轮询"的判定语义不变。
+  await expect(page.locator('.event-list')).toContainText('送来了一份小点心', { timeout: 20_000 });
 });

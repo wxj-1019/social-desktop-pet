@@ -307,7 +307,8 @@ describe('protocol/desktop/social events', () => {
       snackId: 'snack_candy',
       fromUserId: 'user-2',
     });
-    expect(event.fromNickname).toBeUndefined();
+    expect(event.type).toBe('gift.snack_sent');
+    expect(event.type === 'gift.snack_sent' ? event.fromNickname : undefined).toBeUndefined();
   });
 
   it('rejects an unknown event type', () => {

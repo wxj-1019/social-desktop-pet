@@ -31,11 +31,7 @@ test('自伤消息 → 危机协议话术（11.8 high：12356 热线送达，不
   const page = await app.openPanel('chat');
   await page.waitForLoadState('domcontentloaded');
 
-  await expect(page.locator('.login-page')).toBeVisible({ timeout: 15_000 });
-  await page.locator('input[type="email"]').fill('alice@test.local');
-  await page.locator('input[type="password"]').fill('password123');
-  await page.getByRole('button', { name: '登录并去找星屿', exact: true }).click();
-  await expect(page.locator('.friends-page')).toBeVisible({ timeout: 15_000 });
+  await app.loginAs(page, 'alice@test.local');
   await page.getByRole('tab', { name: '聊天' }).click();
   await expect(page.locator('.chat-panel')).toBeVisible();
 

@@ -31,11 +31,7 @@ test('登录 → 聊天 tab → SSE 流式回复', async () => {
   await page.waitForLoadState('domcontentloaded');
 
   // 登录（本地 pet 库测试账号）
-  await expect(page.locator('.login-page')).toBeVisible({ timeout: 15_000 });
-  await page.locator('input[type="email"]').fill('alice@test.local');
-  await page.locator('input[type="password"]').fill('password123');
-  await page.getByRole('button', { name: '登录并去找星屿', exact: true }).click();
-  await expect(page.locator('.friends-page')).toBeVisible({ timeout: 15_000 });
+  await app.loginAs(page, 'alice@test.local');
 
   // 切到聊天 tab（tablist 内 role=tab，见 app.tsx tabs ARIA）
   await page.getByRole('tab', { name: '聊天' }).click();

@@ -73,6 +73,30 @@ export class PetApp {
     return this.panelWindow();
   }
 
+  /**
+   * 幂等登录（适配 I1：未登录 open-chat 直达本地聊天，登录页经
+   * "登录后解锁好友与云端记忆"进入；已登录则直接返回）。
+   */
+  async loginAs(page: Page, email: string, password = 'password123'): Promise<void> {
+    const header = page.locator('.app-header');
+    if (await header.isVisible().catch(() => false)) {
+      if ((await header.innerText().catch(() => '')).includes('在一起')) return;
+    }
+    if (
+      !(await page
+        .locator('.login-page')
+        .isVisible()
+        .catch(() => false))
+    ) {
+      await page.getByRole('button', { name: '登录后解锁好友与云端记忆' }).click();
+      await expect(page.locator('.login-page')).toBeVisible({ timeout: 10_000 });
+    }
+    await page.locator('input[type="email"]').fill(email);
+    await page.locator('input[type="password"]').fill(password);
+    await page.getByRole('button', { name: '登录并去找星屿', exact: true }).click();
+    await expect(page.locator('.friends-page')).toBeVisible({ timeout: 15_000 });
+  }
+
   /** 窗口状态：Main 进程按 URL surface 匹配（bounds/visible）；无匹配返回 null */
   async windowState(surface: PetSurface): Promise<PetWindowState | null> {
     // 注意：electronApp.evaluate 的第一个实参是 electron 模块，业务参数是第二个

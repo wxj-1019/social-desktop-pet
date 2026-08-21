@@ -135,7 +135,7 @@ export const PetChatEventSchema = z.discriminatedUnion('phase', [
 ]);
 export type PetChatEvent = z.infer<typeof PetChatEventSchema>;
 
-/** 社交事件（好友送礼等；type 判别，各分支严格拒绝多余字段） */
+/** 社交事件（好友送礼/拜访/上线等；type 判别，各分支严格拒绝多余字段） */
 export const PetSocialEventSchema = z.discriminatedUnion('type', [
   z
     .object({
@@ -144,6 +144,22 @@ export const PetSocialEventSchema = z.discriminatedUnion('type', [
       snackId: z.string(),
       fromUserId: z.string(),
       fromNickname: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('visit.arrived'),
+      visitId: z.string(),
+      visitType: z.enum(['wave', 'share_snack', 'leave_message']),
+      fromUserId: z.string(),
+      fromNickname: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('friend.online'),
+      friendUserId: z.string(),
+      friendNickname: z.string().optional(),
     })
     .strict(),
 ]);

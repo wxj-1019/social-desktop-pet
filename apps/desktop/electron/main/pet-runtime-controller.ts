@@ -65,6 +65,9 @@ const ACTION_DURATION_MS: Readonly<Record<ActionIntent, number>> = {
 /** 断线气泡冷却：60s 内反复断线不重复提示，避免网络抖动刷屏（P2 断线降级人格化） */
 const OFFLINE_BUBBLE_COOLDOWN_MS = 60_000;
 
+/** 好友上线欢迎气泡冷却：5min 内不重复（防开关机/重连刷屏） */
+const PRESENCE_BUBBLE_COOLDOWN_MS = 5 * 60_000;
+
 /** 点心名称映射（送礼气泡显示文案；未知 id 回退"点心"） */
 export function snackLabel(snackId: string): string {
   switch (snackId) {
@@ -126,6 +129,8 @@ export class PetRuntimeController {
   private lastActivityAt = 0;
   /** 上次断线气泡时刻（60s 冷却，防抖动刷屏） */
   private lastOfflineBubbleAt = 0;
+  /** 上次好友上线欢迎气泡时刻（5min 冷却，防开关机刷屏） */
+  private lastPresenceBubbleAt = 0;
 
   constructor(options: PetRuntimeOptions) {
     this.options = options;
@@ -257,31 +262,67 @@ export class PetRuntimeController {
   }
 
   /**
-   * 社交事件（好友送礼）：开心表情（情绪不经动作审批）+ cheer 动作（冷却时 wave 补偿）+ 送礼气泡。
-   * 勿扰/隐藏（QUIET/HIDDEN）整体忽略——勿扰时不应弹送礼气泡。
+   * 社交事件（好友送礼/拜访/上线）：
+   * - gift.snack_sent：开心表情 + cheer（冷却时 wave 补偿）+ 送礼气泡
+   * - visit.arrived：开心表情 + wave 欢迎 + "来看你啦"气泡（拜访受每日限额，无需冷却）
+   * - friend.online：开心表情 + wave 欢迎 + "上线啦"气泡（5min 冷却防开关机刷屏）
+   * 勿扰/隐藏（QUIET/HIDDEN）整体忽略——勿扰时不应弹社交气泡。
    */
   handleSocialEvent(event: PetSocialEvent): void {
     if (this.stopped) return;
     this.lastActivityAt = this.nowMs();
     if (this.machine.current === 'QUIET' || this.machine.current === 'HIDDEN') return;
 
-    // 表情是情绪，不经动作审批（9.4 收到礼物的第一反应）
-    this.emitVisual({ type: 'expression', expression: 'happy' });
+    switch (event.type) {
+      case 'gift.snack_sent': {
+        // 表情是情绪，不经动作审批（9.4 收到礼物的第一反应）
+        this.emitVisual({ type: 'expression', expression: 'happy' });
 
-    const decision = this.machine.requestAction({ intent: 'cheer', source: 'system' });
-    if (decision.approved) {
-      this.playAction('cheer', 1);
-    } else if (decision.reason === 'cooldown') {
-      // 冷却补偿：cheer 被冷却挡住时尝试 wave（节奏内仍有庆祝动作）
-      const fallback = this.machine.requestAction({ intent: 'wave', source: 'system' });
-      if (fallback.approved) {
-        this.playAction('wave', 1);
+        const decision = this.machine.requestAction({ intent: 'cheer', source: 'system' });
+        if (decision.approved) {
+          this.playAction('cheer', 1);
+        } else if (decision.reason === 'cooldown') {
+          // 冷却补偿：cheer 被冷却挡住时尝试 wave（节奏内仍有庆祝动作）
+          const fallback = this.machine.requestAction({ intent: 'wave', source: 'system' });
+          if (fallback.approved) {
+            this.playAction('wave', 1);
+          }
+        }
+        // 其余拒绝（dnd/not_allowed/offline）：仅气泡，不动作
+
+        if (this.isBubbleAllowed()) {
+          this.emitVisual({ type: 'bubble', text: giftBubbleText(event) });
+        }
+        return;
       }
-    }
-    // 其余拒绝（dnd/not_allowed/offline）：仅气泡，不动作
-
-    if (this.isBubbleAllowed()) {
-      this.emitVisual({ type: 'bubble', text: giftBubbleText(event) });
+      case 'visit.arrived': {
+        // 好友来串门：wave 欢迎（经动作审批；冷却中仅表情与气泡）
+        this.emitVisual({ type: 'expression', expression: 'happy' });
+        const decision = this.machine.requestAction({ intent: 'wave', source: 'system' });
+        if (decision.approved) {
+          this.playAction('wave', 1);
+        }
+        if (this.isBubbleAllowed()) {
+          this.emitVisual({ type: 'bubble', text: `${event.fromNickname ?? '好友'} 来看你啦` });
+        }
+        return;
+      }
+      case 'friend.online': {
+        // 好友上线：wave 欢迎 + 气泡（5min 冷却防开关机刷屏）
+        this.emitVisual({ type: 'expression', expression: 'happy' });
+        const decision = this.machine.requestAction({ intent: 'wave', source: 'system' });
+        if (decision.approved) {
+          this.playAction('wave', 1);
+        }
+        if (
+          this.isBubbleAllowed() &&
+          this.nowMs() - this.lastPresenceBubbleAt > PRESENCE_BUBBLE_COOLDOWN_MS
+        ) {
+          this.lastPresenceBubbleAt = this.nowMs();
+          this.emitVisual({ type: 'bubble', text: `${event.friendNickname ?? '好友'} 上线啦` });
+        }
+        return;
+      }
     }
   }
 

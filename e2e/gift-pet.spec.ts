@@ -59,26 +59,31 @@ test('好友送礼 → 星屿开心（happy 动作 + 气泡文案）', async () 
   // bob 登录（friends 页挂载 → WS 连接 + sync 事件消费）
   const panel = await app.openPanel('chat');
   await panel.waitForLoadState('domcontentloaded');
-  await expect(panel.locator('.login-page')).toBeVisible({ timeout: 15_000 });
-  await panel.locator('input[type="email"]').fill('bob@test.local');
-  await panel.locator('input[type="password"]').fill('password123');
-  // 提交按钮是"登录并去找星屿"；"登录"是登录/注册切换（登录页改版后）
-  await panel.getByRole('button', { name: '登录并去找星屿', exact: true }).click();
-  await expect(panel.locator('.friends-page')).toBeVisible({ timeout: 15_000 });
+  await app.loginAs(panel, 'bob@test.local');
 
   // 历史送礼事件（此前 e2e 运行残留于 bob inbox）会在挂载时被消费，
   // 立即送礼会命中 cheer/wave 的 10s 冷却（补偿 wave 或干脆无动作）——
   // 等冷却过期，保证本次送礼触发 happy 动作。
   await panel.waitForTimeout(11_000);
 
-  // node 侧：alice 登录 → 给 bob 送小饼干（幂等键唯一）
+  // node 侧：alice 登录 → 给 bob 送小饼干（幂等键唯一）。
+  // 注意：不登录 bob——登录会激活新设备并把 active_display_device_id 切走，
+  // 挤掉 bob 面板设备（9.8 单活跃设备 → 面板后续请求 403 device_revoked）。
+  // bob 的 userId 从 alice 的好友列表取。
   const alice = await loginToken('alice@test.local');
-  const bob = await loginToken('bob@test.local');
+  const friendsRes = await fetch(`${API_BASE}/friends`, {
+    headers: { authorization: `Bearer ${alice.token}` },
+  });
+  const { friends } = (await friendsRes.json()) as {
+    friends: Array<{ userId: string; nickname: string }>;
+  };
+  const bob = friends.find((friend) => friend.nickname === 'bob');
+  expect(bob).toBeDefined();
   const giftRes = await fetch(`${API_BASE}/gift`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${alice.token}` },
     body: JSON.stringify({
-      toUserId: bob.userId,
+      toUserId: bob!.userId,
       snackId: 'snack_cookie',
       clientEventId: crypto.randomUUID(),
     }),

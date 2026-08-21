@@ -595,4 +595,80 @@ describe('PetRuntimeController (Main 进程唯一宠物运行时)', () => {
     });
     expect(visuals.length + snapshots.length).toBe(baseline);
   });
+
+  it('收到拜访（visit.arrived）：happy 表情 + wave 欢迎 + "来看你啦"气泡', () => {
+    vi.useFakeTimers();
+    const visuals: PetVisualCommand[] = [];
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+
+    runtime.handleSocialEvent({
+      type: 'visit.arrived',
+      visitId: 'visit-1',
+      visitType: 'wave',
+      fromUserId: 'user-1',
+      fromNickname: 'Alice',
+    });
+    expect(visuals).toContainEqual({ type: 'expression', expression: 'happy' });
+    expect(visuals).toContainEqual({ type: 'motion', motion: 'wave', intensity: 1 });
+    expect(visuals).toContainEqual({ type: 'bubble', text: 'Alice 来看你啦' });
+
+    runtime.stop();
+  });
+
+  it('好友上线（friend.online）：wave 欢迎 + 气泡；5min 冷却内重复上线不再弹气泡但动作仍播', () => {
+    vi.useFakeTimers();
+    const visuals: PetVisualCommand[] = [];
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+
+    runtime.handleSocialEvent({
+      type: 'friend.online',
+      friendUserId: 'user-1',
+      friendNickname: 'Alice',
+    });
+    expect(visuals).toContainEqual({ type: 'expression', expression: 'happy' });
+    expect(visuals).toContainEqual({ type: 'motion', motion: 'wave', intensity: 1 });
+    expect(visuals).toContainEqual({ type: 'bubble', text: 'Alice 上线啦' });
+
+    // 冷却内再次上线（Date.now 未前进）：气泡不重复，wave 动作照播
+    const bubblesBefore = visuals.filter((c) => c.type === 'bubble').length;
+    runtime.handleSocialEvent({
+      type: 'friend.online',
+      friendUserId: 'user-1',
+      friendNickname: 'Alice',
+    });
+    expect(visuals.filter((c) => c.type === 'bubble')).toHaveLength(bubblesBefore);
+    expect(visuals).toContainEqual({ type: 'motion', motion: 'wave', intensity: 1 });
+
+    runtime.stop();
+  });
+
+  it('QUIET 忽略拜访与上线（无任何视觉指令）', () => {
+    vi.useFakeTimers();
+    const visuals: PetVisualCommand[] = [];
+    const snapshots: PetRuntimeSnapshot[] = [];
+    const runtime = makeRuntime(visuals, snapshots);
+    runtime.start();
+    runtime.setDnd(true);
+    expect(runtime.snapshot.state).toBe('QUIET');
+    const before = visuals.length;
+
+    runtime.handleSocialEvent({
+      type: 'visit.arrived',
+      visitId: 'visit-q',
+      visitType: 'share_snack',
+      fromUserId: 'user-1',
+    });
+    runtime.handleSocialEvent({
+      type: 'friend.online',
+      friendUserId: 'user-1',
+      friendNickname: 'Alice',
+    });
+    expect(visuals.length).toBe(before);
+
+    runtime.stop();
+  });
 });

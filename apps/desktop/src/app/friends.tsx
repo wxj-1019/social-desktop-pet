@@ -12,7 +12,7 @@ interface FriendsPageProps {
 }
 
 const seenDeepLinkPayloads = new Set<string>();
-const seenGiftEventIds = new Set<string>();
+const seenSocialEventIds = new Set<string>();
 
 const snackLabels: Record<string, string> = {
   snack_cookie: '小饼干',
@@ -52,7 +52,9 @@ function eventLabel(entry: SyncEvent, friends: Friend[], petName: string): strin
       ? payload.fromUserId
       : payload && typeof payload.friendUserId === 'string'
         ? payload.friendUserId
-        : null;
+        : payload && typeof payload.userId === 'string'
+          ? payload.userId
+          : null;
   const friendName = friends.find((friend) => friend.userId === friendId)?.nickname ?? '好友';
 
   switch (entry.event.type) {
@@ -60,8 +62,14 @@ function eventLabel(entry: SyncEvent, friends: Friend[], petName: string): strin
       return `${friendName} 送来了一份小点心`;
     case 'friend.added':
       return `你和 ${friendName} 成为了好友`;
-    case 'visit.created':
+    case 'visit.arrived':
       return `${friendName} 来${petName}看看你`;
+    case 'presence.changed':
+      return typeof payload?.online === 'boolean'
+        ? payload.online
+          ? `${friendName} 上线了`
+          : `${friendName} 下线了`
+        : `${friendName} 状态更新了`;
     default:
       return '你们之间有一条新动态';
   }
@@ -80,8 +88,9 @@ export function FriendsPage({ userId }: FriendsPageProps) {
   const [copied, setCopied] = useState(false);
   const friendsRef = useRef<Friend[]>([]);
   // 收件箱游标放 ref（而非 state）：pullSync 保持稳定引用，WS 效应不会
-  // 随每次游标推进重建连接（每事件一次 close/重连的抖动，审查发现 #2）
-  const lastSeqRef = useRef(0);
+  // 随每次游标推进重建连接（每事件一次 close/重连的抖动，审查发现 #2）。
+  // null = 首次同步：服务端从 device_cursors 恢复（P1-6 重启增量，不重放历史）
+  const lastSeqRef = useRef<number | null>(null);
   // 单飞守卫：轮询与 inbox.delivered 并发时同一批事件只拉一次（审查发现 #4）
   const syncingRef = useRef(false);
 
@@ -108,8 +117,9 @@ export function FriendsPage({ userId }: FriendsPageProps) {
       const { items, nextInboxSeq } = await syncAfter(lastSeqRef.current);
       if (items.length > 0) {
         setEvents((previous) => [...previous, ...items].slice(-20));
-        lastSeqRef.current = nextInboxSeq;
       }
+      // 无论有无新事件都推进游标（首次 null → 服务端游标值；下次起增量）
+      lastSeqRef.current = nextInboxSeq;
     } catch {
       // 实时连接或下一次轮询会继续补齐。
     } finally {
@@ -149,19 +159,69 @@ export function FriendsPage({ userId }: FriendsPageProps) {
 
   useEffect(() => {
     for (const entry of events) {
-      if (entry.event.type !== 'gift.snack_sent') continue;
-      if (seenGiftEventIds.has(entry.event.eventId)) continue;
-      seenGiftEventIds.add(entry.event.eventId);
-      const payload = parseGiftPayload(entry.event.payload);
-      if (!payload) continue;
-      const from = friendsRef.current.find((friend) => friend.userId === payload.fromUserId);
-      window.pet?.petRuntime?.socialEvent({
-        type: 'gift.snack_sent',
-        giftId: payload.giftId,
-        snackId: payload.snackId,
-        fromUserId: payload.fromUserId,
-        ...(from ? { fromNickname: from.nickname } : {}),
-      });
+      if (seenSocialEventIds.has(entry.event.eventId)) continue;
+      const payload = (entry.event.payload ?? {}) as Record<string, unknown>;
+      switch (entry.event.type) {
+        case 'gift.snack_sent': {
+          seenSocialEventIds.add(entry.event.eventId);
+          const gift = parseGiftPayload(entry.event.payload);
+          if (!gift) continue;
+          const from = friendsRef.current.find((friend) => friend.userId === gift.fromUserId);
+          window.pet?.petRuntime?.socialEvent({
+            type: 'gift.snack_sent',
+            giftId: gift.giftId,
+            snackId: gift.snackId,
+            fromUserId: gift.fromUserId,
+            ...(from ? { fromNickname: from.nickname } : {}),
+          });
+          break;
+        }
+        case 'visit.arrived': {
+          // P0-2 拜访收口：桌宠对"好友来串门"做出欢迎反应（协议 visit.arrived 变体）
+          seenSocialEventIds.add(entry.event.eventId);
+          if (
+            typeof payload.visitId !== 'string' ||
+            typeof payload.fromUserId !== 'string' ||
+            typeof payload.type !== 'string'
+          ) {
+            break;
+          }
+          const visitType: 'wave' | 'share_snack' | 'leave_message' =
+            payload.type === 'wave' ||
+            payload.type === 'share_snack' ||
+            payload.type === 'leave_message'
+              ? payload.type
+              : 'wave';
+          const from = friendsRef.current.find((friend) => friend.userId === payload.fromUserId);
+          window.pet?.petRuntime?.socialEvent({
+            type: 'visit.arrived',
+            visitId: payload.visitId,
+            visitType,
+            fromUserId: payload.fromUserId,
+            ...(from ? { fromNickname: from.nickname } : {}),
+          });
+          break;
+        }
+        case 'presence.changed': {
+          // 9.2 Presence：好友在线标识增量更新；上线时桌宠欢迎（下线只静默更新）
+          seenSocialEventIds.add(entry.event.eventId);
+          if (typeof payload.userId !== 'string' || typeof payload.online !== 'boolean') break;
+          setFriends((previous) =>
+            previous.map((friend) =>
+              friend.userId === payload.userId ? { ...friend, online: payload.online } : friend,
+            ),
+          );
+          if (payload.online) {
+            const from = friendsRef.current.find((friend) => friend.userId === payload.userId);
+            window.pet?.petRuntime?.socialEvent({
+              type: 'friend.online',
+              friendUserId: payload.userId,
+              ...(from ? { friendNickname: from.nickname } : {}),
+            });
+          }
+          break;
+        }
+      }
     }
   }, [events]);
 
@@ -373,8 +433,19 @@ function FriendActions({
           {friend.nickname.slice(0, 1).toUpperCase()}
         </span>
         <div>
-          <strong>{friend.nickname}</strong>
-          <span>{friend.userId === userId ? '这是你' : '可以互送心意'}</span>
+          <strong>
+            {friend.nickname}
+            {friend.userId !== userId && (
+              <span
+                className={`friend-presence${friend.online ? ' friend-presence--online' : ''}`}
+                aria-label={friend.online ? '在线' : '离线'}
+                title={friend.online ? '在线' : '离线'}
+              />
+            )}
+          </strong>
+          <span>
+            {friend.userId === userId ? '这是你' : friend.online ? '在线中' : '可以互送心意'}
+          </span>
         </div>
       </div>
       <div className="friend-actions">

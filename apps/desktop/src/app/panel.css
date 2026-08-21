@@ -1489,6 +1489,23 @@
   font-size: 10.5px;
 }
 
+/* 9.2 Presence 在线标识：昵称旁状态点（在线绿 / 离线灰） */
+.friend-presence {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 6px;
+  border-radius: var(--radius-full);
+  background: #cbd5e1;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  vertical-align: middle;
+}
+
+.friend-presence--online {
+  background: var(--panel-success);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16);
+}
+
 .friend-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;

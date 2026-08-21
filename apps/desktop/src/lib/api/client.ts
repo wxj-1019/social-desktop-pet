@@ -24,6 +24,8 @@ export interface Friend {
   avatar: string | null;
   friendshipId: string;
   acceptedAt: string;
+  /** 9.2 Presence 快照（/friends 返回；之后由 presence.changed 事件增量更新） */
+  online: boolean;
 }
 
 export interface InviteCreated {
@@ -162,11 +164,15 @@ export const api = {
     });
     return (await jsonOrThrow(res)) as { visitId: string; eventId: string };
   },
-  /** GET /sync：分页拉取事件（9.5 慢路径） */
+  /** GET /sync：分页拉取事件（9.5 慢路径；不传游标 → 服务端从 device_cursors 恢复） */
   async sync(
-    afterInboxSeq: number,
+    afterInboxSeq?: number | null,
   ): Promise<{ events: SyncEvent[]; nextInboxSeq: number; hasMore: boolean }> {
-    const res = await apiFetch(`/sync?afterInboxSeq=${afterInboxSeq}`);
+    const query =
+      afterInboxSeq === undefined || afterInboxSeq === null
+        ? '/sync'
+        : `/sync?afterInboxSeq=${afterInboxSeq}`;
+    const res = await apiFetch(query);
     return (await jsonOrThrow(res)) as {
       events: SyncEvent[];
       nextInboxSeq: number;
