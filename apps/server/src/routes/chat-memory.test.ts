@@ -89,21 +89,26 @@ describe('POST /chat 触发异步记忆抽取（10.6）', () => {
     const res = await postChat(honoApp, '我喜欢抹茶。');
 
     expect(res.status).toBe(200);
-    // 抽取异步 fire-and-forget：等它跑完（全微任务链，无定时器）
-    await vi.waitFor(() => expect(memoryStore.findSimilar).toHaveBeenCalled());
-    expect(memoryStore.persistMemory).toHaveBeenCalledTimes(1);
-    expect(memoryStore.persistMemory).toHaveBeenCalledWith(
-      expect.objectContaining({
-        ownerUserId: USER_ID,
-        value: '我喜欢抹茶',
-        category: 'preference',
-        sourceTurnIds: [TURN_ID],
-      }),
-    );
-    // 审计（11.2）：auto_save 必记
-    expect(memoryStore.logAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'auto_save' }),
-    );
+    // 抽取异步 fire-and-forget：等它跑完（全微任务链，无定时器）。
+    // persistMemory 与 logAudit 在同一微任务突发内先后调用——若分开同步断言，
+    // 断言可能落在两者之间的微任务间隙（Node 24 实测稳定复现：persistMemory
+    // 已调用而 logAudit 尚未）。并入同一 waitFor 正向探针（本文件既有约定）。
+    await vi.waitFor(() => {
+      expect(memoryStore.findSimilar).toHaveBeenCalled();
+      expect(memoryStore.persistMemory).toHaveBeenCalledTimes(1);
+      expect(memoryStore.persistMemory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ownerUserId: USER_ID,
+          value: '我喜欢抹茶',
+          category: 'preference',
+          sourceTurnIds: [TURN_ID],
+        }),
+      );
+      // 审计（11.2）：auto_save 必记
+      expect(memoryStore.logAudit).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'auto_save' }),
+      );
+    });
     // 对话消息已落库（saveChatMessages 在触发前执行）
     expect(pool.query).toHaveBeenCalledWith(
       expect.stringContaining('insert into chat_messages'),
