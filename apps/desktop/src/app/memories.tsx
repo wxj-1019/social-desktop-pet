@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import type { MemoryConfirmation, MemoryListItem } from '@pet/protocol';
 
 import { api } from '../lib/api/client.js';
+import { useCurrentCharacter } from '../pet/character-visual.js';
 
 import { MemoryConfirmCard } from './memory-confirm-card.js';
 
@@ -40,6 +41,7 @@ function formatDate(iso: string): string {
 }
 
 export function MemoriesPage() {
+  const { config } = useCurrentCharacter();
   const [memories, setMemories] = useState<MemoryListItem[]>([]);
   const [pending, setPending] = useState<MemoryConfirmation[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -91,7 +93,9 @@ export function MemoriesPage() {
           </span>
           <div>
             <p className="eyebrow">记忆中心</p>
-            <h2>星屿记住的{memories.length}件小事</h2>
+            <h2>
+              {config.petName}记住的{memories.length}件小事
+            </h2>
           </div>
         </div>
       </div>
@@ -111,7 +115,7 @@ export function MemoriesPage() {
 
       {loaded && pending.length > 0 && (
         <section className="memory-confirm-area" aria-label="待你确认的记忆">
-          <p className="memory-confirm-area__title">星屿想记住这些，你愿意吗？</p>
+          <p className="memory-confirm-area__title">{config.petName}想记住这些，你愿意吗？</p>
           {pending.map((confirmation) => (
             <MemoryConfirmCard
               key={confirmation.confirmationId}
@@ -126,7 +130,7 @@ export function MemoriesPage() {
       {loaded && memories.length === 0 && !error && (
         <div className="friends-state">
           <strong>还没有记忆</strong>
-          <p>和星屿聊聊，她会记住你喜欢的事。</p>
+          <p>和{config.petName}聊聊，它会记住你喜欢的事。</p>
         </div>
       )}
 

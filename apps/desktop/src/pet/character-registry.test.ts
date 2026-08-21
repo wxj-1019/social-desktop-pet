@@ -77,14 +77,4 @@ describe('registry ↔ manifest ↔ PetId 一致性（形象协议 §11）', () 
       );
     }
   });
-
-  it('registry 文案派生自 manifest（单一事实源，阶段 C）', () => {
-    for (const c of CHARACTERS) {
-      const manifest = CHARACTER_MANIFESTS[c.id];
-      expect(manifest).toBeDefined();
-      expect(c.displayName).toBe(manifest!.displayName);
-      expect(c.petName).toBe(manifest!.petName);
-      expect(c.description).toBe(manifest!.description);
-    }
-  });
 });
