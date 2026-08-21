@@ -121,6 +121,9 @@ const api = {
         ipcRenderer.removeListener('panel:navigate', listener);
       };
     },
+    /** 拉取主进程缓冲的最新 panel:navigate（挂载时序兜底，C1 同类竞态） */
+    consumePendingView: () =>
+      ipcRenderer.invoke('panel:consume-pending-view') as Promise<PanelOpen['view'] | null>,
   },
   /** 4.x 档案：读取 / 保存（set 返回保存后的新档案） */
   petProfile: {

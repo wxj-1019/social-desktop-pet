@@ -67,6 +67,7 @@ function installFakePet(initResult: unknown): {
         onNavigateCb = cb;
         return onNavigateOff;
       }),
+      consumePendingView: vi.fn().mockResolvedValue(null),
     },
   };
   return {
