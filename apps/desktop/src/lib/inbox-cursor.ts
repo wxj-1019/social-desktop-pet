@@ -21,7 +21,7 @@ export interface SyncPageResult {
 const MAX_PAGES = 20;
 
 export async function syncAfter(afterSeq: number | null): Promise<SyncPageResult> {
-  let cursor = afterSeq;
+  let cursor: number | null = afterSeq;
   const items: SyncEvent[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
     const result = await api.sync(cursor);
@@ -29,5 +29,6 @@ export async function syncAfter(afterSeq: number | null): Promise<SyncPageResult
     cursor = result.nextInboxSeq;
     if (!result.hasMore) break;
   }
-  return { items, nextInboxSeq: cursor };
+  // 循环至少执行一次，null 只在 MAX_PAGES=0 的理论情况下出现（保守回退 0）
+  return { items, nextInboxSeq: cursor ?? 0 };
 }

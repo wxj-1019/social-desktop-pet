@@ -12,6 +12,8 @@ const FRIEND: Friend = {
   avatar: null,
   friendshipId: 'friendship-1',
   acceptedAt: '2026-08-03T10:00:00.000Z',
+  online: false,
+  bond: { stage: 'first_meet', progress: 0 },
 };
 
 function installFakePet(): void {

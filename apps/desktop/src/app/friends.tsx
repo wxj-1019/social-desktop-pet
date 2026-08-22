@@ -26,6 +26,13 @@ const visitLabels: Record<string, string> = {
   leave_message: '留句话',
 };
 
+/** 7.4 羁绊阶段文案 */
+const bondStageLabels: Record<string, string> = {
+  first_meet: '初识',
+  familiar: '熟悉',
+  trusted: '信任',
+};
+
 function parseGiftPayload(
   payload: unknown,
 ): { giftId: string; snackId: string; fromUserId: string } | null {
@@ -206,16 +213,18 @@ export function FriendsPage({ userId }: FriendsPageProps) {
           // 9.2 Presence：好友在线标识增量更新；上线时桌宠欢迎（下线只静默更新）
           seenSocialEventIds.add(entry.event.eventId);
           if (typeof payload.userId !== 'string' || typeof payload.online !== 'boolean') break;
+          const presenceUserId: string = payload.userId;
+          const online: boolean = payload.online;
           setFriends((previous) =>
             previous.map((friend) =>
-              friend.userId === payload.userId ? { ...friend, online: payload.online } : friend,
+              friend.userId === presenceUserId ? { ...friend, online } : friend,
             ),
           );
-          if (payload.online) {
-            const from = friendsRef.current.find((friend) => friend.userId === payload.userId);
+          if (online) {
+            const from = friendsRef.current.find((friend) => friend.userId === presenceUserId);
             window.pet?.petRuntime?.socialEvent({
               type: 'friend.online',
-              friendUserId: payload.userId,
+              friendUserId: presenceUserId,
               ...(from ? { friendNickname: from.nickname } : {}),
             });
           }
@@ -425,6 +434,8 @@ function FriendActions({
 }) {
   const [snack, setSnack] = useState('snack_cookie');
   const [visitType, setVisitType] = useState<'wave' | 'share_snack' | 'leave_message'>('wave');
+  // 7.4 羁绊（旧服务端缺省时按初识/0 展示）
+  const bond = friend.bond ?? { stage: 'first_meet' as const, progress: 0 };
 
   return (
     <li className="friend-item">
@@ -444,7 +455,9 @@ function FriendActions({
             )}
           </strong>
           <span>
-            {friend.userId === userId ? '这是你' : friend.online ? '在线中' : '可以互送心意'}
+            {friend.userId === userId
+              ? '这是你'
+              : `${friend.online ? '在线中' : '可以互送心意'} · 羁绊${bondStageLabels[bond.stage] ?? '初识'} ${bond.progress}`}
           </span>
         </div>
       </div>

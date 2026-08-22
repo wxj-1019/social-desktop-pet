@@ -18,6 +18,12 @@ export interface MeResult {
   device: { deviceId: string; platform: string; appVersion: string | null; lastSeenAt: string };
 }
 
+/** 羁绊（7.4）：送礼/拜访共同事件累计推进 */
+export interface FriendBond {
+  stage: 'first_meet' | 'familiar' | 'trusted';
+  progress: number;
+}
+
 export interface Friend {
   userId: string;
   nickname: string;
@@ -26,6 +32,8 @@ export interface Friend {
   acceptedAt: string;
   /** 9.2 Presence 快照（/friends 返回；之后由 presence.changed 事件增量更新） */
   online: boolean;
+  /** 7.4 羁绊进度（服务端始终返回；旧服务端缺省时按 first_meet/0 展示） */
+  bond?: FriendBond;
 }
 
 export interface InviteCreated {

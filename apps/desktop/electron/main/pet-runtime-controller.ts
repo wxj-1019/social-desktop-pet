@@ -83,7 +83,9 @@ export function snackLabel(snackId: string): string {
 }
 
 /** 送礼气泡文案（无昵称回退"好友"） */
-export function giftBubbleText(event: Pick<PetSocialEvent, 'snackId' | 'fromNickname'>): string {
+export function giftBubbleText(
+  event: Pick<Extract<PetSocialEvent, { type: 'gift.snack_sent' }>, 'snackId' | 'fromNickname'>,
+): string {
   return `${event.fromNickname ?? '好友'} 送来了${snackLabel(event.snackId)}！`;
 }
 
