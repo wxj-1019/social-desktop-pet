@@ -33,6 +33,7 @@ import { PgMemoryExtractStore } from './lib/memory-store.js';
 import { renderMetrics } from './lib/metrics.js';
 import { runRetentionSweep } from './lib/retention.js';
 import { createPresenceHooks } from './realtime/presence.js';
+import { PgPubSub } from './realtime/pubsub.js';
 import { RealtimeServer } from './realtime/ws.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createAuthRouter, type AuthDeps } from './routes/auth.js';
@@ -248,9 +249,27 @@ export async function main(): Promise<void> {
     );
     return (rows.length ?? 0) > 0;
   });
-  // 9.2 Presence 闭环：上线/下线 B 类事件投递好友 + 连接时刷新 last_seen_at
-  //（构造后注入：钩子依赖 realtime.deliver）
-  realtime.setEvents(createPresenceHooks(pool, realtime));
+  // ---- 集群广播（多实例支持）：PG LISTEN/NOTIFY —— WS 投递跨实例路由 + presence 聚合。
+  // 启动失败降级为纯单实例（WS 通知迟到由 /sync 补齐，不阻塞服务）。
+  const pubsub = new PgPubSub(required.DATABASE_URL);
+  const presenceHooks = createPresenceHooks(pool, realtime);
+  realtime.setEvents({
+    ...presenceHooks,
+    onPubSubError: (e) => logger.warn('pubsub.publish_failed', { error: e.message }),
+  });
+  try {
+    await pubsub.start((e) => logger.warn('pubsub.connection_error', { error: e.message }));
+    realtime.attachPubSub(pubsub);
+    logger.info('cluster pubsub enabled', {
+      instanceId: pubsub.instanceId,
+      transport: 'pg_notify',
+    });
+  } catch (e) {
+    logger.warn('cluster pubsub unavailable, running single-instance', {
+      error: (e as Error).message,
+    });
+    await pubsub.close().catch(() => undefined);
+  }
 
   // ---- 模型客户端（10.1；密钥只存服务端环境变量 8.3；未配置则 chat 降级骨架）----
   const llmConfig = llmConfigFromEnv();

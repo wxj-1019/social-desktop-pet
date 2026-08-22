@@ -1,9 +1,9 @@
 import { LogOut, ShieldQuestion, Sparkles, UserRound, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { PanelOpen } from '@pet/protocol';
+import type { PanelOpen, PetProfile } from '@pet/protocol';
 
-import { initApi, setAccessToken } from '../lib/api/client.js';
+import { api, initApi, setAccessToken } from '../lib/api/client.js';
 
 import { CharacterSelect } from './character-select.js';
 import { ChatPanel } from './chat-panel.js';
@@ -55,6 +55,32 @@ export function AppPanel() {
     }
   }, []);
 
+  // ---- 档案云同步（P2 跨设备）：登录确立后拉云端覆盖本地；本地变更上报 ----
+  const profileSyncingRef = useRef(false);
+
+  const syncProfileFromCloud = useCallback(async () => {
+    try {
+      const remote = await api.getPetProfile();
+      if (remote.profile) {
+        profileSyncingRef.current = true;
+        await window.pet.petProfile.set(remote.profile);
+      }
+    } catch {
+      // 云端不可达/无档案：保留本地（下次登录再试）
+    } finally {
+      profileSyncingRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    // 本地档案变更（设置页/切角色/云端拉取覆盖）→ 上报云端；拉取覆盖期间抑制回环
+    const off = window.pet.petProfile.onChanged((profile: PetProfile) => {
+      if (profileSyncingRef.current) return;
+      void api.putPetProfile(profile).catch(() => undefined);
+    });
+    return off;
+  }, []);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -71,6 +97,7 @@ export function AppPanel() {
             nickname: result.profile.nickname ?? '新朋友',
           });
           setPhase('active');
+          void syncProfileFromCloud(); // 跨设备：云端档案覆盖本地
         } else {
           setPhase('signed_out');
         }
@@ -102,11 +129,15 @@ export function AppPanel() {
     setLocalTab('chat');
   }, []);
 
-  const onAuthed = useCallback((result: AuthResult) => {
-    setUser(result);
-    setPendingInvite(false);
-    setPhase('active');
-  }, []);
+  const onAuthed = useCallback(
+    (result: AuthResult) => {
+      setUser(result);
+      setPendingInvite(false);
+      setPhase('active');
+      void syncProfileFromCloud(); // 跨设备：云端档案覆盖本地
+    },
+    [syncProfileFromCloud],
+  );
 
   const onLogout = useCallback(async () => {
     await window.pet.session.revoke();

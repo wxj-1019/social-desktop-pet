@@ -6,7 +6,7 @@
  * - refresh token：只存在于主进程 safeStorage（经 window.pet.session 刷新）
  * - 401 → 调 session.refresh() → 重试一次；失败则登出回登录页
  */
-import type { MemoryListItem, MemorySummary, ModelOutput } from '@pet/protocol';
+import type { MemoryListItem, MemorySummary, ModelOutput, PetProfile } from '@pet/protocol';
 import { MemoryListSchema, MemorySummarySchema, ModelOutputSchema } from '@pet/protocol';
 
 import { parseSseChunks } from './sse.js';
@@ -160,6 +160,27 @@ export const api = {
       body: JSON.stringify({ toUserId, snackId, clientEventId }),
     });
     return (await jsonOrThrow(res)) as { giftId: string; eventId: string; inboxSeq: number };
+  },
+  /** GET /pet/profile：桌宠档案云端快照（跨设备同步；云端无档案返回 null） */
+  async getPetProfile(): Promise<{
+    petId: string;
+    profile: PetProfile | null;
+    syncedAt: string | null;
+  }> {
+    const res = await apiFetch('/pet/profile');
+    return (await jsonOrThrow(res)) as {
+      petId: string;
+      profile: PetProfile | null;
+      syncedAt: string | null;
+    };
+  },
+  /** PUT /pet/profile：上报档案快照（最后写赢） */
+  async putPetProfile(profile: PetProfile): Promise<{ petId: string; ok: true }> {
+    const res = await apiFetch('/pet/profile', {
+      method: 'PUT',
+      body: JSON.stringify(profile),
+    });
+    return (await jsonOrThrow(res)) as { petId: string; ok: true };
   },
   /** POST /visit：拜访（wave/share_snack/leave_message） */
   async sendVisit(

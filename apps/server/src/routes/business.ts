@@ -20,6 +20,7 @@ import { registerChatRoutes } from './chat.js';
 import { registerGiftRoutes } from './gift.js';
 import { registerInviteRoutes } from './invite.js';
 import { registerMemoriesRoutes } from './memories.js';
+import { registerPetProfileRoutes } from './pet-profile.js';
 import { registerQueryRoutes } from './queries.js';
 import { registerSyncRoutes } from './sync.js';
 import { registerVisitRoutes } from './visit.js';
@@ -111,6 +112,8 @@ export function createBusinessRouter(deps: BusinessDeps): Hono<{ Variables: Busi
     jwt: deps.jwt,
     realtime: deps.realtime,
   });
+  // 桌宠档案跨设备同步（pets.profile_sync；P2 收尾）
+  registerPetProfileRoutes(app, { pool: deps.pool, jwt: deps.jwt });
 
   return app;
 }

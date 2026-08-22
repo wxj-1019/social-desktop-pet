@@ -13,11 +13,15 @@ import { WebSocketServer, WebSocket } from 'ws';
 
 import type { JwtService } from '../auth/jwt.js';
 
+import type { ClusterPubSub } from './pubsub.js';
+
 export interface RealtimeEvents {
   /** 在线状态变化（V-10 压测 + Presence 替代） */
   onPresenceChanged?: (userId: string, online: boolean) => void;
   /** 连接鉴权成功（每次连接触发一次；用于 last_seen_at 等按连接刷新的副作用） */
   onAuthenticated?: (userId: string, deviceId: string | null) => void;
+  /** 集群广播失败（仅日志降级：DB 已提交，通知迟到由 /sync 补齐） */
+  onPubSubError?: (e: Error) => void;
 }
 
 export class RealtimeServer {
@@ -28,6 +32,12 @@ export class RealtimeServer {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   /** presence/鉴权钩子（构造后注入：presence 钩子依赖本实例的 deliver） */
   private events: RealtimeEvents;
+  /** 集群广播（未接入时纯本地单实例语义） */
+  private pubsub: ClusterPubSub | null = null;
+  /** 远端实例在线集合聚合（instanceId → 最后 ping 时间 + 用户集合） */
+  private readonly remoteInstances = new Map<string, { seenAt: number; userIds: Set<string> }>();
+  /** presence 心跳上报定时器（attachPubSub 启动，close 清理） */
+  private presencePingTimer: ReturnType<typeof globalThis.setInterval> | null = null;
 
   constructor(
     private readonly jwt: JwtService,
@@ -43,6 +53,50 @@ export class RealtimeServer {
   /** 注入/替换事件钩子（构造后调用；presence 钩子需要本实例的 deliver） */
   setEvents(events: RealtimeEvents): void {
     this.events = events;
+  }
+
+  /**
+   * 接入集群广播（多实例支持；PgPubSub 见 pubsub.ts）：
+   * - deliver → 同时 NOTIFY，远端实例投本地连接（自环按 instanceId 去重）
+   * - 周期上报本实例在线集合（presence.ping），isOnline 聚合全局视图
+   * - 心跳 tick 顺带清理失联实例的陈旧在线集合（远端实例崩溃无法发下线通知）
+   */
+  attachPubSub(pubsub: ClusterPubSub): void {
+    this.pubsub = pubsub;
+    pubsub.on('ws.delivery', (msg) => {
+      const { from, userId, event } = msg as { from: string; userId: string; event: unknown };
+      if (from === pubsub.instanceId) return;
+      this.deliverLocal(userId, event);
+    });
+    pubsub.on('presence.ping', (msg) => {
+      const { from, userIds } = msg as { from: string; userIds: string[] };
+      if (from === pubsub.instanceId) return;
+      this.remoteInstances.set(from, {
+        seenAt: Date.now(),
+        userIds: new Set(userIds),
+      });
+    });
+    this.presencePingTimer = globalThis.setInterval(() => void this.publishPresencePing(), 60_000);
+    this.presencePingTimer.unref?.();
+    void this.publishPresencePing();
+  }
+
+  private async publishPresencePing(): Promise<void> {
+    const pubsub = this.pubsub;
+    if (!pubsub) return;
+    await pubsub
+      .publish('presence.ping', {
+        from: pubsub.instanceId,
+        userIds: [...this.conns.keys()],
+      })
+      .catch((e) => this.events.onPubSubError?.(e as Error));
+  }
+
+  /** 清理失联远端实例的在线集合（3 分钟无 ping 视为下线；挂 heartbeatTick 周期执行） */
+  cleanupStaleRemoteInstances(now = Date.now()): void {
+    for (const [instanceId, remote] of this.remoteInstances) {
+      if (now - remote.seenAt > 180_000) this.remoteInstances.delete(instanceId);
+    }
   }
 
   /** 附加到 HTTP 服务器（@hono/node-server 的 server 实例） */
@@ -87,6 +141,7 @@ export class RealtimeServer {
    * 上一轮 tick 置 false 后本轮仍为 false（即未收到 pong）→ terminate 清理。
    */
   heartbeatTick(): void {
+    this.cleanupStaleRemoteInstances();
     for (const set of this.conns.values()) {
       for (const ws of set) {
         const sock = ws as WebSocket & { isAlive?: boolean };
@@ -157,8 +212,21 @@ export class RealtimeServer {
     }
   }
 
-  /** 投递事件给在线用户（9.4：提交事务后调用；离线用户靠 /sync 补齐） */
+  /** 投递事件给在线用户（9.4：提交事务后调用；离线用户靠 /sync 补齐）。
+   *  多实例：同时广播到集群（用户实际连接所在实例投递本地连接；自环去重） */
   deliver(userId: string, event: unknown): number {
+    const delivered = this.deliverLocal(userId, event);
+    const pubsub = this.pubsub;
+    if (pubsub) {
+      void pubsub
+        .publish('ws.delivery', { from: pubsub.instanceId, userId, event })
+        .catch((e) => this.events.onPubSubError?.(e as Error));
+    }
+    return delivered;
+  }
+
+  /** 本实例连接投递（远端消息到达时使用，不再回广播） */
+  private deliverLocal(userId: string, event: unknown): number {
     const set = this.conns.get(userId);
     if (!set) return 0;
     const payload = JSON.stringify(event);
@@ -168,9 +236,13 @@ export class RealtimeServer {
     return set.size;
   }
 
-  /** 查询在线状态（Presence 快照；供 /friends 等请求附上当前在线标识） */
+  /** 查询在线状态（Presence 快照；本实例连接 ∪ 远端实例上报的在线集合） */
   isOnline(userId: string): boolean {
-    return this.conns.has(userId);
+    if (this.conns.has(userId)) return true;
+    for (const remote of this.remoteInstances.values()) {
+      if (remote.userIds.has(userId)) return true;
+    }
+    return false;
   }
 
   /** 强制断开某用户全部连接（账号暂停等管理操作；close 事件自然清理 conns） */
@@ -186,6 +258,10 @@ export class RealtimeServer {
   }
 
   close(): void {
+    if (this.presencePingTimer !== null) {
+      clearInterval(this.presencePingTimer);
+      this.presencePingTimer = null;
+    }
     if (this.heartbeatTimer !== null) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;

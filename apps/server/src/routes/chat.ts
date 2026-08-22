@@ -238,6 +238,11 @@ export function registerChatRoutes(
 
     console.info(`[chat] 进入流式：user=${userId.slice(0, 8)} msg=${message.slice(0, 20)}`);
     return streamSSE(c, async (stream) => {
+      // SSE 保活：15s 注释帧防反代/网关空闲断连（Caddy/Nginx 默认空闲超时会切断长流；
+      // 注释帧不产生客户端事件，parseSseChunks 天然忽略）
+      const keepAlive = globalThis.setInterval(() => {
+        void stream.write(': keep-alive\n\n').catch(() => undefined);
+      }, 15_000);
       // 节点事件 → SSE 帧（writeSSE 内部队列化，保证顺序）
       const emit = (e: GraphEvent): void => {
         void stream.writeSSE({ event: e.type, data: JSON.stringify(e) });
@@ -288,6 +293,7 @@ export function registerChatRoutes(
           data: JSON.stringify({ error: (e as Error).message }),
         });
       } finally {
+        clearInterval(keepAlive);
         leaveConcurrency(deviceId); // 12.7 并发槽位释放（成功/失败都释放）
       }
     });
