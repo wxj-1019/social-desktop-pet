@@ -23,9 +23,14 @@ import {
 
 export { SessionLoginPayloadSchema, SessionRegisterPayloadSchema } from '@pet/protocol';
 
-/** 自建后端地址（D-13）：生产指向 HTTPS 域名；本机默认 127.0.0.1:8787 */
+/** 打包时烧入的服务器地址（electron.vite.config define 注入；vitest 直跑源码时未定义→typeof 安全回落） */
+declare const __PET_PACKAGED_API_BASE__: string | undefined;
+
+/** 自建后端地址（D-13）：运行时环境变量 → 打包烧入值（生产分发）→ 本机默认 */
 export function apiBaseUrl(): string {
-  return process.env['PET_API_BASE'] ?? 'http://127.0.0.1:8787';
+  const packaged =
+    typeof __PET_PACKAGED_API_BASE__ === 'string' ? __PET_PACKAGED_API_BASE__ : undefined;
+  return process.env['PET_API_BASE'] ?? packaged ?? 'http://127.0.0.1:8787';
 }
 
 const SESSION_REQUEST_TIMEOUT_MS = 15_000;

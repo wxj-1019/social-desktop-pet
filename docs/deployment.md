@@ -32,14 +32,30 @@ sudo systemctl daemon-reload && sudo systemctl enable --now pet-server
 curl -s http://127.0.0.1:8787/healthz    # 首次启动自动应用 migrations（幂等）
 ```
 
-**反向代理 + HTTPS（13.1 强制：客户端 API/WS 走 HTTPS/WSS）**：Caddy 最省事（自动证书）：
+**反向代理 + HTTPS（13.1 强制：客户端 API/WS 走 HTTPS/WSS）**：Caddy 最省事（自动证书）。
+完整样例见 `deploy/Caddyfile`（含 WS 升级、SSE 免缓冲 `flush_interval -1`、管理后台静态托管 + /admin/* 同源反代）：
 
 ```caddyfile
 api.pet.example {
-    reverse_proxy 127.0.0.1:8787
+    reverse_proxy 127.0.0.1:8787 {
+        flush_interval -1   # SSE（/chat）流式免缓冲；WS 升级 Caddy 自动透传
+    }
 }
-# 桌面端 PET_API_BASE=https://api.pet.example（同时需收紧客户端 CSP connect-src 到该域名）
+# 桌面端打包注入 PET_API_BASE=https://api.pet.example（见 §四；CSP 按实际地址动态收紧）
 ```
+
+## 二·B、快速路径：docker compose（服务器有 Docker 时 5 分钟起）
+
+```bash
+# 仓库根（含 docker-compose.yml + apps/server/Dockerfile）
+vim docker-compose.yml          # 改 JWT_SECRET（openssl rand -base64 48）；db 密码按需
+docker compose up -d --build    # pgvector + server（首次启动自动迁移）
+curl -s http://127.0.0.1:8787/healthz   # {"ok":true,"db":"ok"}
+```
+
+- 仍需前置 Caddy 提供 HTTPS（compose 内服务只绑本机回环）；数据卷 `pet-pg-data` 持久化
+- 两条路径（systemd / compose）二选一；systemd 见 §二，备份恢复命令相同（compose 下 `docker compose exec db pg_dump ...`）
+- 镜像构建正确性由 CI `docker-build` job 兜底（本地无 Docker 也能安全迭代 Dockerfile）
 
 ## 三、备份（11.4：backupDays=30）
 
@@ -71,9 +87,17 @@ sudo systemctl enable --now pet-backup.timer
 ## 四、Windows 客户端打包（13.1 按用户安装）
 
 ```bash
-pnpm package:win          # electron-vite build && electron-builder --win
+# 生产分发：打包时烧入服务器地址（多台电脑的桌宠连同一后端的关键开关）
+PET_API_BASE=https://api.pet.example pnpm package:win
+# 本地开发包（连本机 127.0.0.1:8787）：直接 pnpm package:win
 # 产物：apps/desktop/release/AI Pet Setup <版本>.exe（NSIS per-user，无需管理员）
 ```
+
+**API 地址读取序**（electron.vite.config define 烧入 + session-service 读取）：
+运行时环境变量 `PET_API_BASE`（开发/e2e）→ 打包烧入值（生产分发）→ `http://127.0.0.1:8787`（本地模式默认）。
+CSP `connect-src` 按 API 地址动态生成（security.ts buildCsp），WS 地址由 API 地址推导——**打包注入后无需其它配置**。
+
+**多机分发流程**：每台电脑安装同一安装包 → 首次启动面板登录（或 OTP 邮箱验证码）→ 自动连接服务器（API/WSS/深链 pet:// 全走 https 域名）→ 管理后台即可看到全部设备与在线状态（设备管理见 admin「用户/设备」页；在线判定 = WS 连接聚合）。
 
 - 安装包需 **Authenticode 签名 + 时间戳**（13.1）；EV 证书 + 云 HSM 选型见 V-11（第 15 周）
 - 未签名包会触发 SmartScreen 警告（新发布者 EV 才可豁免）

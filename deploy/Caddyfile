@@ -1,0 +1,32 @@
+# 生产反向代理样例（Caddy v2）—— 单机部署：API + WS + SSE + 管理后台静态托管
+#
+# 用法：
+#   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile（按域名修改后）
+#   sudo systemctl reload caddy   # 证书自动签发（Let's Encrypt，需 DNS 已指向本机）
+#
+# 多机桌宠连接：客户端打包时 PET_API_BASE=https://api.pet.example（见 deployment.md §四）。
+
+# ---- 桌宠 API 域名（HTTPS + WSS）----
+api.pet.example {
+	# WS（/realtime）升级头 Caddy 自动透传；SSE（/chat）关闭响应缓冲保证流式实时
+	reverse_proxy 127.0.0.1:8787 {
+		flush_interval -1
+	}
+}
+
+# ---- 管理后台域名（静态 + /admin/* API 同源反代）----
+admin.pet.example {
+	# admin 构建产物（pnpm --filter @pet/admin build → apps/admin/dist/ 部署到该目录）
+	root * /opt/pet/admin/dist
+	file_server
+
+	# SPA 路由回落
+	try_files {path} /index.html
+
+	# 管理后台 API（同源相对路径 /admin/*；服务端生产要求 ADMIN_COOKIE_SECURE + PET_TRUST_PROXY，见 docs/admin-deploy.md）
+	handle /admin/* {
+		reverse_proxy 127.0.0.1:8787 {
+			flush_interval -1
+		}
+	}
+}

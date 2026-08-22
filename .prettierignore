@@ -7,3 +7,4 @@ node_modules
 pnpm-lock.yaml
 apps/desktop/out
 apps/desktop/release
+deploy/Caddyfile
