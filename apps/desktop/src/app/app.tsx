@@ -279,7 +279,7 @@ function LoginRequired({ view, onLogin }: { view: ActiveTab; onLogin: () => void
       </span>
       <h2>{TAB_LABELS[view]}需要登录后使用</h2>
       <p>本地模式可以聊天、换角色、改设置；{TAB_LABELS[view]}的数据保存在云端账号里。</p>
-      <button className="login-required__cta" type="button" onClick={onLogin}>
+      <button className="login-required__cta primary-button" type="button" onClick={onLogin}>
         去登录
       </button>
     </main>

@@ -22,6 +22,7 @@ export function CharacterSelect({ onBack: _onBack }: CharacterSelectProps) {
   const characters = listCharacters();
   const [currentId, setCurrentId] = useState<PetId | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     void window.pet.petProfile.get().then((profile) => {
@@ -33,10 +34,14 @@ export function CharacterSelect({ onBack: _onBack }: CharacterSelectProps) {
     async (petId: PetId) => {
       if (petId === currentId || switching) return;
       setSwitching(true);
+      setError(null);
       try {
         // setCharacter 保存 profile + 触发 Main 重载桌宠窗；返回切换后的 petId
         await window.pet.petProfile.setCharacter(petId);
         setCurrentId(petId);
+      } catch {
+        // 此前静默失败（UI 收口）：给用户可感知的失败提示
+        setError('切换形象失败，请再试一次');
       } finally {
         setSwitching(false);
       }
@@ -45,7 +50,11 @@ export function CharacterSelect({ onBack: _onBack }: CharacterSelectProps) {
   );
 
   return (
-    <div className="character-select" data-testid="character-select">
+    <div
+      className="character-select"
+      data-testid="character-select"
+      aria-labelledby="character-select-title"
+    >
       <div className="character-select__header">
         <button
           className="character-select__back"
@@ -56,9 +65,16 @@ export function CharacterSelect({ onBack: _onBack }: CharacterSelectProps) {
           <ArrowLeft size={14} aria-hidden="true" />
           返回
         </button>
-        <h3 className="character-select__title">角色</h3>
+        <h2 className="character-select__title" id="character-select-title">
+          角色
+        </h2>
       </div>
       <p className="character-select__hint">点击卡片即可切换桌宠形象，下次启动自动保持。</p>
+      {error && (
+        <p className="notice notice--error" role="alert">
+          {error}
+        </p>
+      )}
       <div className="character-cards" role="radiogroup" aria-label="可选角色">
         {characters.map((c) => {
           const selected = c.id === currentId;

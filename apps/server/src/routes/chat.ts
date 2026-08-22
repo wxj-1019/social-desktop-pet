@@ -26,6 +26,7 @@ import { buildChatFlow, initialChatFlowState } from '@pet/ai-graph';
 import { DEFAULT_FEATURE_FLAGS, LIMITS } from '@pet/config';
 
 import type { JwtService } from '../auth/jwt.js';
+import { logger } from '../lib/logger.js';
 import { runMemoryExtract } from '../lib/run-memory-extract.js';
 
 import type { BusinessVariables } from './business.js';
@@ -288,9 +289,11 @@ export function registerChatRoutes(
       } catch (e) {
         // 12.7 观测：图执行抛错计入 fail_count（fire-and-forget，不影响 error 帧下发）
         void recordUsageEvent(deps.pool, userId, 'fail').catch(() => undefined);
+        // 供应商错误细节（余额/限流/内部错）不直发客户端——统一友好文案，细节进日志
+        logger.error('chat_stream_failed', { userId, error: (e as Error).message });
         await stream.writeSSE({
           event: 'error',
-          data: JSON.stringify({ error: (e as Error).message }),
+          data: JSON.stringify({ error: 'AI 暂时不可用，请稍后再试' }),
         });
       } finally {
         clearInterval(keepAlive);

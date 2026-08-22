@@ -6,6 +6,8 @@
 import { Bot } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { ViewHeading } from './view-heading.js';
+
 const PLACEHOLDERS = {
   baseUrl: 'https://api.openai.com/v1',
   apiKey: 'sk-…（留空保留已保存的密钥）',
@@ -61,7 +63,7 @@ export function ModelSettingsPage() {
   if (!loaded) {
     return (
       <main className="settings-page" aria-label="模型设置">
-        <div className="friends-state" role="status">
+        <div className="state-block" role="status">
           <span className="soft-loader" aria-hidden="true" />
           <p>正在读取模型配置…</p>
         </div>
@@ -71,17 +73,7 @@ export function ModelSettingsPage() {
 
   return (
     <main className="settings-page" aria-label="模型设置">
-      <div className="view-heading">
-        <div className="view-heading__identity">
-          <span className="view-heading__avatar" aria-hidden="true">
-            <Bot size={18} />
-          </span>
-          <div>
-            <p className="eyebrow">本地 BYOK</p>
-            <h2>模型</h2>
-          </div>
-        </div>
-      </div>
+      <ViewHeading avatar={<Bot size={18} />} eyebrow="本地 BYOK" title="模型" />
 
       <div className="settings-section">
         <div className="settings-section__head">
@@ -143,7 +135,12 @@ export function ModelSettingsPage() {
             />
           </label>
           <div className="settings-section__actions">
-            <button type="button" onClick={() => void save()} disabled={status === 'saving'}>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => void save()}
+              disabled={status === 'saving'}
+            >
               {status === 'saving' ? '保存中…' : '保存模型配置'}
             </button>
             {status === 'saved' && <small className="ok">已保存</small>}

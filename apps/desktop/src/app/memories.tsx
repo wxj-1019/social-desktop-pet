@@ -14,6 +14,7 @@ import { api } from '../lib/api/client.js';
 import { useCurrentCharacter } from '../pet/character-visual.js';
 
 import { MemoryConfirmCard } from './memory-confirm-card.js';
+import { ViewHeading } from './view-heading.js';
 
 const CATEGORY_LABELS: Record<MemoryListItem['category'], string> = {
   preference: '偏好',
@@ -86,28 +87,20 @@ export function MemoriesPage() {
 
   return (
     <main className="memories-page" aria-label="记忆中心">
-      <div className="view-heading">
-        <div className="view-heading__identity">
-          <span className="view-heading__avatar" aria-hidden="true">
-            <Brain size={18} />
-          </span>
-          <div>
-            <p className="eyebrow">记忆中心</p>
-            <h2>
-              {config.petName}记住的{memories.length}件小事
-            </h2>
-          </div>
-        </div>
-      </div>
+      <ViewHeading
+        avatar={<Brain size={18} />}
+        eyebrow="记忆中心"
+        title={`${config.petName}记住的${memories.length}件小事`}
+      />
 
       {error && (
-        <p className="notice notice--warning" role="status">
+        <p className="notice notice--error" role="status">
           {error}
         </p>
       )}
 
       {!loaded && (
-        <div className="friends-state" role="status">
+        <div className="state-block" role="status">
           <span className="soft-loader" aria-hidden="true" />
           <p>正在加载记忆…</p>
         </div>
@@ -128,7 +121,7 @@ export function MemoriesPage() {
       )}
 
       {loaded && memories.length === 0 && !error && (
-        <div className="friends-state">
+        <div className="state-block">
           <strong>还没有记忆</strong>
           <p>和{config.petName}聊聊，它会记住你喜欢的事。</p>
         </div>

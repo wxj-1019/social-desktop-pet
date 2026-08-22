@@ -67,7 +67,7 @@ export function LoginPage({ onAuthed, pendingInvite }: LoginProps) {
       <PanelBrand size="hero" subtitle="你的软绵绵桌面伙伴" />
       <p className="login-intro">登录后，星屿会记住聊天，也能和好友互送小心意。</p>
       {pendingInvite && (
-        <p className="login-hint" role="status">
+        <p className="notice notice--warning" role="status">
           好友正在等你，登录或注册后会继续接受邀请。
         </p>
       )}
@@ -129,11 +129,11 @@ export function LoginPage({ onAuthed, pendingInvite }: LoginProps) {
           </label>
         )}
         {error && (
-          <p className="login-error" role="alert">
+          <p className="notice notice--error" role="alert">
             {error}
           </p>
         )}
-        <button type="submit" disabled={busy}>
+        <button type="submit" className="primary-button" disabled={busy}>
           {busy ? '请稍候…' : mode === 'login' ? '登录并去找星屿' : '注册并认识星屿'}
         </button>
       </form>

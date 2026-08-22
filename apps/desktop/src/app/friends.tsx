@@ -7,6 +7,8 @@ import { syncAfter } from '../lib/inbox-cursor.js';
 import { RealtimeClient, toWsUrl } from '../lib/realtime.js';
 import { CharacterVisual, useCurrentCharacter } from '../pet/character-visual.js';
 
+import { ViewHeading } from './view-heading.js';
+
 interface FriendsPageProps {
   userId: string;
 }
@@ -317,21 +319,18 @@ export function FriendsPage({ userId }: FriendsPageProps) {
 
   return (
     <main className="friends-page" aria-labelledby="friends-title">
-      <div className="view-heading">
-        <div className="view-heading__identity">
-          <span className="view-heading__avatar" aria-hidden="true">
-            <CharacterVisual />
-          </span>
-          <div>
-            <p className="eyebrow">{config.petName}小圈子</p>
-            <h2 id="friends-title">好友</h2>
-          </div>
-        </div>
-        <button className="secondary-button" onClick={() => void createInvite()}>
-          <UsersRound size={16} aria-hidden="true" />
-          邀请好友
-        </button>
-      </div>
+      <ViewHeading
+        avatar={<CharacterVisual />}
+        eyebrow={`${config.petName}小圈子`}
+        title="好友"
+        headingId="friends-title"
+        actions={
+          <button className="secondary-button" onClick={() => void createInvite()}>
+            <UsersRound size={16} aria-hidden="true" />
+            邀请好友
+          </button>
+        }
+      />
 
       {inviteLink && (
         <div className="invite-link">
@@ -363,12 +362,12 @@ export function FriendsPage({ userId }: FriendsPageProps) {
       )}
 
       {loading ? (
-        <div className="friends-state" role="status">
+        <div className="state-block" role="status">
           <span className="soft-loader" aria-hidden="true" />
           <p>正在看看谁在线上…</p>
         </div>
       ) : loadError ? (
-        <div className="friends-state">
+        <div className="state-block">
           <p>暂时没能连上好友列表。</p>
           <button className="secondary-button" onClick={() => void refreshFriends()}>
             <RefreshCw size={15} aria-hidden="true" />
@@ -378,7 +377,7 @@ export function FriendsPage({ userId }: FriendsPageProps) {
       ) : (
         <ul className="friend-list">
           {friends.length === 0 && (
-            <li className="friends-state friends-state--empty">
+            <li className="state-block state-block--empty">
               <span className="friends-empty__character" aria-hidden="true">
                 <CharacterVisual />
               </span>
@@ -477,6 +476,7 @@ function FriendActions({
             <option value="snack_tea">暖茶点</option>
           </select>
           <button
+            className="primary-button"
             aria-label={`送点心给 ${friend.nickname}`}
             onClick={() => void onGift(friend, snack)}
           >
@@ -498,6 +498,7 @@ function FriendActions({
             <option value="leave_message">留句话</option>
           </select>
           <button
+            className="primary-button"
             aria-label={`拜访 ${friend.nickname}`}
             onClick={() => void onVisit(friend, visitType)}
           >

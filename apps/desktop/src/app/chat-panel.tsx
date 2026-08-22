@@ -337,7 +337,7 @@ export function ChatPanel() {
         ))}
       </ul>
       {error && (
-        <p className="notice notice--warning" role="status">
+        <p className="notice notice--error" role="status">
           {error}
         </p>
       )}
@@ -393,6 +393,7 @@ export function ChatPanel() {
         ) : (
           <button
             type="submit"
+            className="primary-button"
             aria-label="发送"
             title="发送"
             disabled={!input.trim() || !historyLoaded}

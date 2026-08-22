@@ -20,6 +20,8 @@ import type { PetRuntimeSnapshot } from '@pet/protocol';
 
 import { CharacterVisual, useCurrentCharacter } from '../pet/character-visual.js';
 
+import { ViewHeading } from './view-heading.js';
+
 /** 设置页滑块范围（60%–140%，Main 端 MIN/MAX_PET_SCALE 内） */
 const SCALE_MIN = 0.6;
 const SCALE_MAX = 1.4;
@@ -74,7 +76,7 @@ export function SettingsPage() {
   if (!loaded) {
     return (
       <main className="settings-page" aria-label="设置">
-        <div className="friends-state" role="status">
+        <div className="state-block" role="status">
           <span className="soft-loader" aria-hidden="true" />
           <p>正在加载设置…</p>
         </div>
@@ -84,17 +86,7 @@ export function SettingsPage() {
 
   return (
     <main className="settings-page" aria-label="设置">
-      <div className="view-heading">
-        <div className="view-heading__identity">
-          <span className="view-heading__avatar" aria-hidden="true">
-            <Settings2 size={18} />
-          </span>
-          <div>
-            <p className="eyebrow">偏好</p>
-            <h2>设置</h2>
-          </div>
-        </div>
-      </div>
+      <ViewHeading avatar={<Settings2 size={18} />} eyebrow="偏好" title="设置" />
 
       <div className="settings-list">
         <label className="settings-item">
