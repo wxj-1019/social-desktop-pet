@@ -42,3 +42,13 @@ export function canSendGift(input: GiftQuotaInput): GiftQuotaResult {
 
 /** 9.5 /sync 分页上限 */
 export const SYNC_PAGE_LIMIT = 200;
+
+/** 7.4 羁绊阶段阈值：有效共同事件（送礼/拜访）累计 progress 决定 stage */
+export const BOND_STAGE_THRESHOLDS = { familiar: 10, trusted: 30 } as const;
+
+/** 羁绊阶段判定（纯函数）：progress < 10 first_meet / < 30 familiar / >=30 trusted */
+export function bondStageFor(progress: number): 'first_meet' | 'familiar' | 'trusted' {
+  if (progress >= BOND_STAGE_THRESHOLDS.trusted) return 'trusted';
+  if (progress >= BOND_STAGE_THRESHOLDS.familiar) return 'familiar';
+  return 'first_meet';
+}

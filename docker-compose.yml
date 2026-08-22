@@ -1,0 +1,37 @@
+# 本地/单机容器化交付（compose）：pgvector Postgres + 自建后端。
+# 用法：docker compose up -d（首次启动 server 自动应用 migrations）。
+# 生产部署见 docs/deployment.md（systemd 路径）；此文件面向容器化环境。
+services:
+  db:
+    # 0001 依赖 pgvector 扩展（与 CI e2e-backend 同镜像族）
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: pet
+      POSTGRES_PASSWORD: pet
+      POSTGRES_DB: pet
+    volumes:
+      - pet-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U pet -d pet']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    environment:
+      DATABASE_URL: postgres://pet:pet@db:5432/pet
+      # 生产必须换成 openssl rand -base64 48 生成的强密钥（<32 字节生产拒绝启动）
+      JWT_SECRET: dev-only-change-me-0123456789abcdef0123456789abcdef
+      PET_BIND_HOST: 0.0.0.0
+      PORT: '8787'
+    ports:
+      - '8787:8787'
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pet-pg-data:

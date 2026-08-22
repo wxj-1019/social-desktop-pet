@@ -16,7 +16,9 @@ import { LIMITS } from '@pet/config';
 import type { JwtService } from '../auth/jwt.js';
 import { canSendGift } from '../lib/business-rules.js';
 import { deliverEvent, flushPendingDeliveries } from '../lib/inbox.js';
+import { logger } from '../lib/logger.js';
 import {
+  advanceBond,
   findActiveFriendship,
   findOrCreateRoom,
   findReceipt,
@@ -88,7 +90,15 @@ export function registerGiftRoutes(
         await client.query('rollback');
         return c.json({ error: verdict.reason }, 403);
       }
+      // TS 窄化（canSendGift 通过即意味着 active 好友存在）
+      if (!friendship) {
+        await client.query('rollback');
+        return c.json({ error: 'not_friend' }, 403);
+      }
       const roomId = await findOrCreateRoom(client, userId, toUserId);
+
+      // 7.4 羁绊推进（有效共同事件 +1，阶段阈值见 business-rules）：与送礼同事务
+      const bond = await advanceBond(client, friendship);
 
       // 同一事务：gift_events + 权威事件 + 双方 inbox + 幂等回执
       const { rows: gRows } = await client.query(
@@ -124,10 +134,16 @@ export function registerGiftRoutes(
       await client.query('commit');
       // 提交后才推 WS（9.4：deliverEvent 外部事务不提前推送）
       flushPendingDeliveries(deps.realtime, delivered.pendingDeliveries);
-      return c.json({ giftId, eventId: delivered.eventId, inboxSeq: delivered.inboxSeqs[userId] });
+      return c.json({
+        giftId,
+        eventId: delivered.eventId,
+        inboxSeq: delivered.inboxSeqs[userId],
+        bond: { stage: bond.stage, progress: bond.progress, stageUpgraded: bond.stageUpgraded },
+      });
     } catch (e) {
       await client.query('rollback');
-      return c.json({ error: (e as Error).message }, 500);
+      logger.error('gift_failed', { error: (e as Error).message });
+      return c.json({ error: 'internal_error' }, 500);
     } finally {
       client.release();
     }

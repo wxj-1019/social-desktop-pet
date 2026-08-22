@@ -10,6 +10,8 @@ import { randomUUID } from 'node:crypto';
 
 import type { MiddlewareHandler } from 'hono';
 
+import { recordRequest } from './metrics.js';
+
 const requestContext = new AsyncLocalStorage<{ requestId: string }>();
 
 /** 当前请求 id（无请求上下文时 undefined；供业务代码附加到日志） */
@@ -57,7 +59,7 @@ export function requestIdMiddleware(): MiddlewareHandler {
 }
 
 /**
- * 访问日志中间件：方法/路径/状态/耗时。
+ * 访问日志中间件：方法/路径/状态/耗时（与 metrics 指标同源采集，一次遍历两份输出）。
  * 挂在 requestIdMiddleware 之后（同一 requestId）。
  * SSE 长连接（/chat）只记到响应头发出；流式耗时由 chat 路由自行记录。
  */
@@ -65,11 +67,10 @@ export function accessLogMiddleware(): MiddlewareHandler {
   return async (c, next) => {
     const started = Date.now();
     await next();
-    logger.info('http.request', {
-      method: c.req.method,
-      path: c.req.path,
-      status: c.res.status,
-      durationMs: Date.now() - started,
-    });
+    const status = c.res.status;
+    const path = c.req.path;
+    const durationMs = Date.now() - started;
+    logger.info('http.request', { method: c.req.method, path, status, durationMs });
+    recordRequest(path, c.req.method, status, durationMs);
   };
 }

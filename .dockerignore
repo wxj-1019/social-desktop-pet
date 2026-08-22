@@ -1,0 +1,17 @@
+# Docker 构建上下文排除（仓库根）：只送源码与清单进镜像。
+# 注意：不能排除 apps/* 与 packages/* —— pnpm workspace 解析需要全部包的 package.json。
+.git
+.github
+.pnpm-store
+node_modules
+**/node_modules
+**/dist
+**/out
+**/coverage
+test-results
+playwright-report
+e2e
+docs
+*.md
+!README.md
+.env*

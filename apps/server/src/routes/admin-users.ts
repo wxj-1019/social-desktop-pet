@@ -136,6 +136,7 @@ export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: 
     const { rows } = await deps.pool.query(
       `select u.id as user_id, u.email, p.nickname, u.account_status, u.suspended_at,
               u.suspended_reason, u.created_at,
+              p.adult_eligible, p.age_assurance_level, p.adult_attested_at,
               (select count(*) from devices d where d.user_id = u.id)::int as device_count,
               (select max(d.last_seen_at) from devices d where d.user_id = u.id) as last_seen_at,
               (select count(*) from devices d
@@ -161,6 +162,10 @@ export function createAdminUsersRouter(deps: AdminUsersDeps): Hono<{ Variables: 
       suspendedAt: r.suspended_at as string | null,
       suspendedReason: r.suspended_reason as string | null,
       createdAt: r.created_at as string,
+      // 合规存档（注册自声明；13.x 年龄保障审计）
+      adultEligible: r.adult_eligible === true,
+      ageAssuranceLevel: (r.age_assurance_level as string | null) ?? 'self_declared',
+      adultAttestedAt: r.adult_attested_at as string | null,
       deviceCount: Number(r.device_count),
       online: Number(r.online) > 0,
       lastSeenAt: r.last_seen_at as string | null,

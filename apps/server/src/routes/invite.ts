@@ -10,6 +10,7 @@ import type pg from 'pg';
 import type { JwtService } from '../auth/jwt.js';
 import { createInviteToken, hashToken, normalizeFriendshipPair } from '../lib/business-rules.js';
 import { deliverEvent, flushPendingDeliveries } from '../lib/inbox.js';
+import { logger } from '../lib/logger.js';
 import { findActiveFriendship, findOrCreateRoom, isBlocked } from '../lib/relationships.js';
 import type { RealtimeServer } from '../realtime/ws.js';
 
@@ -117,7 +118,8 @@ export function registerInviteRoutes(
       return c.json({ friendshipId, roomId, eventId: result.eventId }, 201);
     } catch (e) {
       await client.query('rollback');
-      return c.json({ error: (e as Error).message }, 500);
+      logger.error('invite_failed', { error: (e as Error).message });
+      return c.json({ error: 'internal_error' }, 500);
     } finally {
       client.release();
     }

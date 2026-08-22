@@ -131,3 +131,19 @@ jobs:
           waitlist.spec.ts
           admin.spec.ts
           admin-ui.spec.ts
+
+  # 容器化交付验证（P2）：镜像可构建（本地无 Docker，正确性由此 job 兜底）
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

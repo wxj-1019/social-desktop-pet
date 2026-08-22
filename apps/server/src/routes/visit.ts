@@ -12,7 +12,13 @@ import { LIMITS } from '@pet/config';
 
 import type { JwtService } from '../auth/jwt.js';
 import { deliverEvent, flushPendingDeliveries } from '../lib/inbox.js';
-import { findActiveFriendship, findOrCreateRoom, isBlocked } from '../lib/relationships.js';
+import { logger } from '../lib/logger.js';
+import {
+  advanceBond,
+  findActiveFriendship,
+  findOrCreateRoom,
+  isBlocked,
+} from '../lib/relationships.js';
 import type { RealtimeServer } from '../realtime/ws.js';
 
 import { requireAuth, type BusinessVariables } from './business.js';
@@ -71,6 +77,9 @@ export function registerVisitRoutes(
 
       const roomId = await findOrCreateRoom(client, userId, toUserId);
 
+      // 7.4 羁绊推进 + visits.bond_id 回填（0005 预留的 nullable 列由此接通）
+      const bond = await advanceBond(client, friendship);
+
       // 6.5 配额：每位好友每天最多 N 次可见拜访事件（此前 LIMITS 配置从未执行）
       const { rows: cntRows } = await client.query(
         `select count(*)::int as cnt from visits
@@ -86,9 +95,9 @@ export function registerVisitRoutes(
 
       // visits + 权威事件（A 类，双方 inbox）
       const { rows: vRows } = await client.query(
-        `insert into visits (from_user, to_user, type, status)
-         values ($1, $2, $3, 'arrived') returning visit_id, bond_id`,
-        [userId, toUserId, type],
+        `insert into visits (from_user, to_user, type, status, bond_id)
+         values ($1, $2, $3, 'arrived', $4) returning visit_id`,
+        [userId, toUserId, type, bond.bond_id],
       );
       const visitId = String(vRows[0]?.visit_id);
 
@@ -106,10 +115,15 @@ export function registerVisitRoutes(
       await client.query('commit');
       // 提交后才推 WS（9.4：deliverEvent 外部事务不提前推送）
       flushPendingDeliveries(deps.realtime, delivered.pendingDeliveries);
-      return c.json({ visitId, eventId: delivered.eventId });
+      return c.json({
+        visitId,
+        eventId: delivered.eventId,
+        bond: { stage: bond.stage, progress: bond.progress, stageUpgraded: bond.stageUpgraded },
+      });
     } catch (e) {
       await client.query('rollback');
-      return c.json({ error: (e as Error).message }, 500);
+      logger.error('visit_failed', { error: (e as Error).message });
+      return c.json({ error: 'internal_error' }, 500);
     } finally {
       client.release();
     }

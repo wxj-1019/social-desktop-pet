@@ -271,6 +271,8 @@ export const adminApi = {
       limitHitsToday: number;
       chatFails7d: number;
       limitHits7d: number;
+      giftsToday: number;
+      visitsToday: number;
     }>('/overview');
   },
   overviewTrend() {

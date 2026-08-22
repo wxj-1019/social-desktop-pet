@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  bondStageFor,
   canSendGift,
   createInviteToken,
   hashToken,
@@ -57,5 +58,22 @@ describe('canSendGift（9.4 第 3 步：关系/拉黑/配额）', () => {
 describe('SYNC_PAGE_LIMIT（9.5 分页上限）', () => {
   it('caps single sync page at 200', () => {
     expect(SYNC_PAGE_LIMIT).toBe(200);
+  });
+});
+
+describe('bondStageFor（7.4 羁绊阶段判定）', () => {
+  it('progress < 10 → first_meet；边界 9', () => {
+    expect(bondStageFor(0)).toBe('first_meet');
+    expect(bondStageFor(9)).toBe('first_meet');
+  });
+
+  it('10 ≤ progress < 30 → familiar；边界 10/29', () => {
+    expect(bondStageFor(10)).toBe('familiar');
+    expect(bondStageFor(29)).toBe('familiar');
+  });
+
+  it('progress ≥ 30 → trusted；边界 30/大值', () => {
+    expect(bondStageFor(30)).toBe('trusted');
+    expect(bondStageFor(999)).toBe('trusted');
   });
 });

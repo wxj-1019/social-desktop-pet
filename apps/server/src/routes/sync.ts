@@ -13,6 +13,7 @@ import type pg from 'pg';
 
 import type { JwtService } from '../auth/jwt.js';
 import { SYNC_PAGE_LIMIT } from '../lib/business-rules.js';
+import { logger } from '../lib/logger.js';
 
 import { requireAuth, type BusinessVariables } from './business.js';
 
@@ -100,7 +101,8 @@ export function registerSyncRoutes(
       return c.json({ events, nextInboxSeq: nextSeq, hasMore: events.length >= SYNC_PAGE_LIMIT });
     } catch (e) {
       await client.query('rollback');
-      return c.json({ error: (e as Error).message }, 500);
+      logger.error('sync_failed', { error: (e as Error).message });
+      return c.json({ error: 'internal_error' }, 500);
     } finally {
       client.release();
     }

@@ -159,12 +159,14 @@ export class PgUsersStore {
 export class PgDevicesStore {
   constructor(private readonly pool: pg.Pool) {}
 
-  /** 注册设备并激活（9.8：新设备激活 → 停用旧设备 refresh 会话 + 切换 active_display_device_id） */
+  /** 注册设备并激活（9.8：新设备激活 → 停用旧设备 refresh 会话 + 切换 active_display_device_id）；
+   *  adultSelfDeclared：注册时自声明成年（合规存档，profiles.adult_eligible/adult_attested_at） */
   async register(
     userId: string,
     deviceId: string,
     platform: string,
     nickname: string,
+    adultSelfDeclared = false,
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -174,9 +176,10 @@ export class PgDevicesStore {
       ]);
       // profiles 行（devices.user_id 外键前提；已存在则不动，9.9）
       await client.query(
-        `insert into profiles (user_id, nickname) values ($1, coalesce(nullif($2, ''), '新朋友'))
+        `insert into profiles (user_id, nickname, adult_eligible, adult_attested_at)
+         values ($1, coalesce(nullif($2, ''), '新朋友'), $3, case when $3 then now() else null end)
          on conflict (user_id) do nothing`,
-        [userId, nickname],
+        [userId, nickname, adultSelfDeclared],
       );
       await client.query(
         `insert into devices (device_id, user_id, platform) values ($1::uuid, $2, $3)

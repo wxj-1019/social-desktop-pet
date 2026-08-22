@@ -41,8 +41,15 @@ export interface AuthDeps {
     updatePassword?(userId: string, passwordHash: string): Promise<void>;
   };
   devices: {
-    /** 注册设备并激活（9.8：激活新设备撤销旧设备会话）；nickname 仅首次注册生效 */
-    register(userId: string, deviceId: string, platform: string, nickname: string): Promise<void>;
+    /** 注册设备并激活（9.8：激活新设备撤销旧设备会话）；nickname 仅首次注册生效；
+     *  adultSelfDeclared：注册自声明成年（合规存档，默认 false） */
+    register(
+      userId: string,
+      deviceId: string,
+      platform: string,
+      nickname: string,
+      adultSelfDeclared?: boolean,
+    ): Promise<void>;
   };
   /** 邮箱 OTP（13.2 事务邮件；未注入则 /otp/* 返回 501） */
   otp?: OtpService;
@@ -92,7 +99,15 @@ export function createAuthRouter(deps: AuthDeps): Hono {
       }
       throw e;
     }
-    await deps.devices.register(userId, deviceId, String(platform ?? 'windows'), finalNickname);
+    // 合规存档：注册自声明成年（布尔；默认 false。profiles.adult_eligible + attested_at）
+    const adultSelfDeclared = body['adultSelfDeclared'] === true;
+    await deps.devices.register(
+      userId,
+      deviceId,
+      String(platform ?? 'windows'),
+      finalNickname,
+      adultSelfDeclared,
+    );
     // 4.3 邀请状态机：注册即绑定 waitlist（invited/joined → joined + claimed_by；
     // 幂等；失败仅日志不阻塞注册）
     if (deps.waitlist) {

@@ -18,6 +18,12 @@ describe('OverviewPage', () => {
       chatRequestsToday: 10,
       chatRequests7d: 42,
       signups7d: 2,
+      chatFailsToday: 0,
+      limitHitsToday: 0,
+      chatFails7d: 0,
+      limitHits7d: 0,
+      giftsToday: 0,
+      visitsToday: 0,
       suspendedUsers: 1,
       pendingInvites: 2,
     });

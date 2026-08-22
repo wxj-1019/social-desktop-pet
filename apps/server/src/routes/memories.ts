@@ -24,6 +24,7 @@ import {
 
 import type { JwtService } from '../auth/jwt.js';
 import { rlsClaimsJson } from '../db/pool.js';
+import { logger } from '../lib/logger.js';
 
 import type { BusinessVariables } from './business.js';
 import { requireAuth } from './business.js';
@@ -246,7 +247,8 @@ export function registerMemoriesRoutes(
       return c.json({ ok: true });
     } catch (e) {
       await client.query('rollback');
-      return c.json({ error: (e as Error).message }, 500);
+      logger.error('memories_failed', { error: (e as Error).message });
+      return c.json({ error: 'internal_error' }, 500);
     } finally {
       client.release();
     }

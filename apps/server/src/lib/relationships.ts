@@ -4,6 +4,8 @@
  */
 import type pg from 'pg';
 
+import { bondStageFor } from './business-rules.js';
+
 /** 连接类型：Pool 或事务中的 PoolClient（两者都有 .query） */
 export type Db = pg.Pool | pg.PoolClient;
 
@@ -103,4 +105,79 @@ export async function findOrCreateRoom(
     [memberKey],
   );
   return String(retry[0]?.room_id);
+}
+
+/** 用户的默认宠物（bonds 外键前提；注册不建 pets 行，此处 lazy init：
+ *  character_id 默认 star-isle，name 取 profiles.nickname——桌面端皮肤同步后续接 pet 上报）。 */
+export async function findOrCreatePet(client: pg.PoolClient, userId: string): Promise<string> {
+  const { rows: found } = await client.query(
+    'select pet_id from pets where owner_user_id = $1 order by pet_id limit 1',
+    [userId],
+  );
+  if (found[0]) return String(found[0].pet_id);
+  const { rows: created } = await client.query(
+    `insert into pets (owner_user_id, character_id, name)
+     select $1, 'star-isle', coalesce(nickname, '星屿') from profiles where user_id = $1
+     returning pet_id`,
+    [userId],
+  );
+  if (created[0]) return String(created[0].pet_id);
+  // profiles 不存在（理论不可达：外键链路保证）——兜底直接建
+  const { rows: fallback } = await client.query(
+    `insert into pets (owner_user_id, character_id, name) values ($1, 'star-isle', '星屿') returning pet_id`,
+    [userId],
+  );
+  return String(fallback[0].pet_id);
+}
+
+export interface BondRow {
+  bond_id: string;
+  stage: 'first_meet' | 'familiar' | 'trusted';
+  progress: number;
+}
+
+/** 查/建羁绊（0005：visits.bond_id 由此回填）；pet_a 对应 user_low、pet_b 对应 user_high */
+export async function findOrCreateBond(
+  client: pg.PoolClient,
+  friendship: FriendshipRow,
+): Promise<BondRow> {
+  const { rows: found } = await client.query(
+    `select bond_id, stage, progress from bonds
+     where friendship_id = $1 and status = 'active' limit 1`,
+    [friendship.friendship_id],
+  );
+  if (found[0]) {
+    const r = found[0];
+    return { bond_id: String(r.bond_id), stage: r.stage, progress: Number(r.progress) };
+  }
+  const petA = await findOrCreatePet(client, friendship.user_low_id);
+  const petB = await findOrCreatePet(client, friendship.user_high_id);
+  const { rows: created } = await client.query(
+    `insert into bonds (friendship_id, pet_a_id, pet_b_id)
+     values ($1, $2, $3) returning bond_id, stage, progress`,
+    [friendship.friendship_id, petA, petB],
+  );
+  const r = created[0];
+  return { bond_id: String(r.bond_id), stage: r.stage, progress: Number(r.progress) };
+}
+
+export interface BondAdvanceResult extends BondRow {
+  /** 本次互动是否触发阶段升级（first_meet→familiar→trusted） */
+  stageUpgraded: boolean;
+}
+
+/** 羁绊推进（7.4 有效共同事件累计 +1）：送礼/拜访事务内调用；阶段阈值见 business-rules */
+export async function advanceBond(
+  client: pg.PoolClient,
+  friendship: FriendshipRow,
+): Promise<BondAdvanceResult> {
+  const bond = await findOrCreateBond(client, friendship);
+  const progress = bond.progress + 1;
+  const stage = bondStageFor(progress);
+  await client.query('update bonds set progress = $2, stage = $3 where bond_id = $1', [
+    bond.bond_id,
+    progress,
+    stage,
+  ]);
+  return { ...bond, progress, stage, stageUpgraded: stage !== bond.stage };
 }

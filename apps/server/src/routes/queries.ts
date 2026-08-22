@@ -61,12 +61,14 @@ export function registerQueryRoutes(
                 else f.user_low_id
               end as friend_user_id,
               p.nickname, p.avatar,
-              f.friendship_id, f.accepted_at
+              f.friendship_id, f.accepted_at,
+              b.stage as bond_stage, b.progress as bond_progress
        from friendships f
        join profiles p on p.user_id = case
                 when f.user_low_id = $1 then f.user_high_id
                 else f.user_low_id
               end
+       left join bonds b on b.friendship_id = f.friendship_id and b.status = 'active'
        where f.status = 'active' and (f.user_low_id = $1 or f.user_high_id = $1)
        order by f.accepted_at`,
       [userId],
@@ -80,6 +82,11 @@ export function registerQueryRoutes(
         acceptedAt: (r.accepted_at as Date).toISOString(),
         // 9.2 Presence 快照（内存在线态；后续变化由 presence.changed 事件增量更新）
         online: deps.realtime.isOnline(String(r.friend_user_id)),
+        // 7.4 羁绊（送礼/拜访推进；无互动时 null——first_meet 且 0 进度也展示）
+        bond:
+          r.bond_stage !== null && r.bond_stage !== undefined
+            ? { stage: String(r.bond_stage), progress: Number(r.bond_progress ?? 0) }
+            : { stage: 'first_meet', progress: 0 },
       })),
     });
   });

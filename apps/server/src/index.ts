@@ -25,10 +25,12 @@ import { migrate } from './db/migrate.js';
 import { PgOtpStore } from './db/otp-store.js';
 import { createPool } from './db/pool.js';
 import { PgDevicesStore, PgSessionStore, PgUsersStore } from './db/stores.js';
-import { bodyLimitMiddleware } from './lib/http-guard.js';
+import { parseRequiredEnv } from './lib/env.js';
+import { bodyLimitMiddleware, globalRateLimitMiddleware } from './lib/http-guard.js';
 import { accessLogMiddleware, logger, requestIdMiddleware } from './lib/logger.js';
 import { createNoopMailProvider, createSmtpMailProvider, smtpConfigFromEnv } from './lib/mail.js';
 import { PgMemoryExtractStore } from './lib/memory-store.js';
+import { renderMetrics } from './lib/metrics.js';
 import { runRetentionSweep } from './lib/retention.js';
 import { createPresenceHooks } from './realtime/presence.js';
 import { RealtimeServer } from './realtime/ws.js';
@@ -36,12 +38,6 @@ import { createAdminRouter } from './routes/admin.js';
 import { createAuthRouter, type AuthDeps } from './routes/auth.js';
 import { createBusinessRouter, type BusinessDeps } from './routes/business.js';
 import { registerWaitlistRoutes, WaitlistService, type WaitlistDeps } from './routes/waitlist.js';
-
-function env(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`缺少环境变量 ${name}（参考 .env.example）`);
-  return v;
-}
 
 export interface AppDeps {
   pool: pg.Pool;
@@ -88,6 +84,17 @@ export function buildApp(deps: AppDeps) {
   });
   // ---- 请求体上限（P1-4）：content-length 超限 413（chunked 由路由层校验兜底） ----
   app.use('*', bodyLimitMiddleware());
+  // ---- 全局每 IP 限流（P2 防护收尾）：默认 600 次/分；/healthz 豁免 ----
+  app.use('*', globalRateLimitMiddleware());
+
+  // ---- 未捕获异常兜底：细节进日志（带 requestId），响应不泄漏内部信息 ----
+  app.onError((err, c) => {
+    logger.error('unhandled_error', {
+      error: err.message,
+      stack: err.stack?.slice(0, 600),
+    });
+    return c.json({ error: 'internal_error' }, 500);
+  });
 
   app.get('/healthz', async (c) => {
     // DB 连通性探活：失败返回 503（负载均衡/探针可据此摘除实例）
@@ -101,6 +108,15 @@ export function buildApp(deps: AppDeps) {
       { ok: db === 'ok', db, onlineUsers: deps.realtime.onlineUsers },
       db === 'ok' ? 200 : 503,
     );
+  });
+
+  // Prometheus 指标（P2 观测收尾）：默认仅回环可达；对外部署设 METRICS_TOKEN 开 Bearer
+  app.get('/metrics', (c) => {
+    const token = process.env['METRICS_TOKEN'];
+    if (token && c.req.header('authorization') !== `Bearer ${token}`) {
+      return c.json({ error: 'unauthorized' }, 401);
+    }
+    return c.text(renderMetrics({ pool: deps.pool, realtime: deps.realtime }));
   });
 
   if (deps.devReset) {
@@ -167,14 +183,16 @@ export function buildApp(deps: AppDeps) {
 
 /** 启动（本地开发 / 生产共用一个入口） */
 export async function main(): Promise<void> {
-  const pool = createPool({ connectionString: env('DATABASE_URL') });
+  // 环境变量 schema 校验：必填缺失/非法直接中止启动（宁可不起，不可带病跑）
+  const required = parseRequiredEnv(process.env);
+  const pool = createPool({ connectionString: required.DATABASE_URL });
 
   // 启动迁移（幂等；失败则中止启动，避免跑在未迁移的 schema 上）
   const { applied } = await migrate(pool);
   if (applied.length > 0) logger.info('migrations applied', { applied });
 
   // ---- 自建 Auth（9.8）----
-  const jwtSecret = env('JWT_SECRET');
+  const jwtSecret = required.JWT_SECRET;
   // 8.3 密钥强度：HS256 弱密钥可被离线爆破。生产拒绝 <32 字节；开发警告放行
   // （.env.local 默认 dev-only-change-me 仅本地，e2e 依赖）
   if (jwtSecret.length < 32) {
