@@ -11,6 +11,10 @@ services:
       POSTGRES_DB: pet
     volumes:
       - pet-pg-data:/var/lib/postgresql/data
+    # 仅回环暴露 5432：供宿主机运维命令（admin:create / pg_dump 备份 / 恢复演练）；
+    # 不对公网（ufw 亦未放行）
+    ports:
+      - '127.0.0.1:5432:5432'
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U pet -d pet']
       interval: 5s
